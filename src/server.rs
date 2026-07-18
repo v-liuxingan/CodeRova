@@ -110,14 +110,14 @@ async fn shutdown_signal() {
 struct HealthResponse {
     status: &'static str,
     source_root: String,
-    vscode_available: bool,
+    source_navigator_available: bool,
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
         source_root: state.source_root.display().to_string(),
-        vscode_available: state.navigator.is_available(),
+        source_navigator_available: state.navigator.is_available(),
     })
 }
 

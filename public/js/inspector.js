@@ -57,7 +57,7 @@ function nodeTemplate(node) {
       <p>${escapeHtml(node.crate || "—")}<br>${escapeHtml(node.module || "—")}</p>
     </section>
     <div class="inspect-actions">
-      <button class="primary-action" data-open>↗ 在 VSCode 打开</button>
+      <button class="primary-action" data-open>↗ 在编辑器打开</button>
       <button class="secondary-action" data-collapse title="折叠或展开下游">折叠</button>
       <button class="secondary-action" data-hide title="临时隐藏节点">隐藏</button>
     </div>`;

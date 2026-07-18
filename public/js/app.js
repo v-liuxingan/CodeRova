@@ -64,9 +64,9 @@ async function bootstrap() {
 
 function updateHealth(health) {
   elements.health.classList.add("ready");
-  elements.health.querySelector("span:last-child").textContent = health.vscodeAvailable
+  elements.health.querySelector("span:last-child").textContent = health.sourceNavigatorAvailable
     ? "源码桥接就绪"
-    : "图谱就绪 / VSCode 未配置";
+      : "图谱就绪 / 编辑器未配置";
   elements.health.title = `源码根目录：${health.sourceRoot}`;
 }
 
@@ -167,7 +167,7 @@ async function validateActiveGraph() {
 
 async function openTarget(target) {
   if (!target || !activeSlug) return;
-  setStatus("请求 VSCode 跳转");
+  setStatus("请求编辑器跳转");
   try {
     const response = await api.openSource(activeSlug, target.type, target.id);
     toast(`已定位 ${shortPath(response.path)}:${response.line}`);

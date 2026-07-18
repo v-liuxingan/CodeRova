@@ -1,8 +1,8 @@
 [package]
-name = "codex-callgraph-visualizer"
+name = "callgraph-visualizer"
 version = "0.1.0"
 edition = "2024"
-description = "Local Codex source callgraph explorer"
+description = "Local, evidence-oriented source callgraph explorer"
 license = "MIT"
 
 [dependencies]

@@ -1,8 +1,13 @@
-# Codex Callgraph Visualizer 计划
+# Callgraph Visualizer 计划
 
 ## 1. 背景
 
-学习 Codex 源码时，调用链经常跨越 CLI、TUI、App Server、Core、Model Provider 和 API 等多个 crate。仅通过文件路径和行号阅读，难以快速理解节点之间的走向，尤其容易遗漏闭包回调、Trait 方法分发和异步任务边界。
+阅读大型源码仓库时，调用链经常跨越多个模块、包、进程和服务。仅通过文件路径和行号
+阅读，难以快速理解节点之间的走向，尤其容易遗漏闭包回调、接口或 Trait 分发、异步
+任务边界和远程调用。
+
+Codex 的 TUI 授权链被选为第一条真实验证链，但工具的数据模型、后端和渲染器不依赖
+Codex，也不限定 Rust 项目。
 
 本项目计划构建一个本地调用链可视化工具，将调用链分析结果转换成可展开、可隐藏、可定位源码的有向图。
 
@@ -113,7 +118,7 @@ main
 
 1. 本地桥接服务：页面请求本地服务，由服务执行 `Code.exe --goto`。
 2. VSCode 扩展：扩展注册命令，页面或文件协议将节点信息交给扩展。
-3. CLI 辅助命令：使用 `codex-callgraph open --node <id>` 打开目标位置。
+3. CLI 辅助命令：使用 `callgraph-visualizer open --node <id>` 打开目标位置。
 
 第一版优先采用本地 PowerShell/CLI 辅助命令，减少额外服务依赖；稳定后再考虑 VSCode 扩展。
 

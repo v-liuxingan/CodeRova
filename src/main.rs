@@ -3,14 +3,14 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use callgraph_visualizer::graph_store::read_graph_file;
+use callgraph_visualizer::navigation::{SourceNavigator, VscodeCommandNavigator};
+use callgraph_visualizer::server::serve;
+use callgraph_visualizer::validation::{resolve_source_path, validate_graph};
 use clap::{Parser, Subcommand};
-use codex_callgraph_visualizer::graph_store::read_graph_file;
-use codex_callgraph_visualizer::navigation::{SourceNavigator, VscodeCommandNavigator};
-use codex_callgraph_visualizer::server::serve;
-use codex_callgraph_visualizer::validation::{resolve_source_path, validate_graph};
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Codex 源码调用链可视化工具")]
+#[command(version, about = "本地源码调用链可视化工具")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -24,9 +24,9 @@ enum Commands {
         port: u16,
         #[arg(long, default_value = "127.0.0.1")]
         host: IpAddr,
-        #[arg(long, default_value = "../codex")]
+        #[arg(long, default_value = ".")]
         source_root: PathBuf,
-        #[arg(long, default_value = "E:/develop/utils/vs/bin/code.cmd")]
+        #[arg(long, default_value = "code")]
         code: PathBuf,
         #[arg(long, default_value = "graphs")]
         graphs: PathBuf,
@@ -36,7 +36,7 @@ enum Commands {
     /// 校验调用图结构及源码位置
     Validate {
         graph: PathBuf,
-        #[arg(long, default_value = "../codex")]
+        #[arg(long, default_value = ".")]
         source_root: PathBuf,
         /// 输出机器可读的 JSON 报告
         #[arg(long)]
@@ -49,9 +49,9 @@ enum Commands {
         node: Option<String>,
         #[arg(long, conflicts_with = "node")]
         edge: Option<String>,
-        #[arg(long, default_value = "../codex")]
+        #[arg(long, default_value = ".")]
         source_root: PathBuf,
-        #[arg(long, default_value = "E:/develop/utils/vs/bin/code.cmd")]
+        #[arg(long, default_value = "code")]
         code: PathBuf,
     },
 }
@@ -61,7 +61,7 @@ async fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "codex_callgraph_visualizer=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "callgraph_visualizer=info,tower_http=info".into()),
         )
         .init();
 
@@ -69,8 +69,8 @@ async fn main() -> ExitCode {
     let result = match cli.command.unwrap_or(Commands::Serve {
         port: 4317,
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
-        source_root: PathBuf::from("../codex"),
-        code: PathBuf::from("E:/develop/utils/vs/bin/code.cmd"),
+        source_root: PathBuf::from("."),
+        code: PathBuf::from("code"),
         graphs: PathBuf::from("graphs"),
         public: PathBuf::from("public"),
     }) {

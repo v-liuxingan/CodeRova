@@ -1,10 +1,11 @@
-# Codex Callgraph Visualizer
+# Callgraph Visualizer
 
-本地 Codex 源码调用链浏览器。它把带证据的调用关系保存为标准 JSON，通过 Rust
-服务校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。
+面向任意本地源码仓库的调用链浏览器。它把带证据的调用关系保存为标准 JSON，通过
+Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。数据模型
+不限定编程语言、框架或仓库。
 
-当前已经包含一条基于本地 Codex 提交
-`23899f7cb63a1510e53fddd68740dfc325853e3b` 核验过的 TUI 授权链。
+仓库当前附带一条 Codex TUI 授权链作为真实世界示例，该示例基于提交
+`23899f7cb63a1510e53fddd68740dfc325853e3b` 核验。
 
 ## 功能
 
@@ -22,25 +23,30 @@
 要求 Rust 1.85+。在本目录运行：
 
 ```powershell
-cargo run -- serve
+cargo run -- serve --source-root E:/path/to/your/source
 ```
 
 然后访问 <http://127.0.0.1:4317>。
 
 默认使用：
 
-- Codex 源码根目录：`../codex`
-- VSCode CLI：`E:/develop/utils/vs/bin/code.cmd`
+- 源码根目录：当前目录 `.`
+- VSCode CLI：从 `PATH` 查找 `code`
 - 调用图目录：`graphs`
 - 静态页面目录：`public`
 
-这些路径都可以覆盖：
+查看仓库自带的 Codex 示例：
 
 ```powershell
-cargo run -- serve `
-  --source-root E:/path/to/codex `
-  --code E:/path/to/code.cmd `
-  --port 4317
+cargo run -- serve --source-root ../codex
+```
+
+也可以覆盖编辑器、端口和数据目录：
+
+```powershell
+cargo run -- serve --source-root E:/path/to/source `
+  --code E:/path/to/editor-cli `
+  --graphs E:/path/to/graphs --port 4317
 ```
 
 ## CLI
@@ -105,7 +111,7 @@ cargo run -- validate graphs/tui-authorization.json --source-root ../codex
 
 ```powershell
 python E:/develop/Agent/skills/webapp-testing/scripts/with_server.py `
-  --server "cargo run --quiet -- serve" --port 4317 `
+  --server "cargo run --quiet -- serve --source-root ../codex" --port 4317 `
   -- python tests/e2e_visualizer.py
 ```
 

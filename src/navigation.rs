@@ -23,22 +23,21 @@ impl VscodeCommandNavigator {
 
 impl SourceNavigator for VscodeCommandNavigator {
     fn is_available(&self) -> bool {
-        self.executable.is_file()
+        self.resolved_executable().is_some()
     }
 
     fn open(&self, path: &Path, line: u32) -> Result<(), String> {
-        if !self.is_available() {
-            return Err(format!(
-                "找不到 VSCode 可执行文件：{}",
+        let executable = self.resolved_executable().ok_or_else(|| {
+            format!(
+                "找不到 VSCode CLI 或可执行文件：{}",
                 self.executable.display()
-            ));
-        }
+            )
+        })?;
         if line == 0 {
             return Err("行号必须大于 0".to_owned());
         }
         let target = format!("{}:{line}", path.display());
-        let extension = self
-            .executable
+        let extension = executable
             .extension()
             .and_then(|value| value.to_str())
             .unwrap_or_default();
@@ -55,13 +54,13 @@ impl SourceNavigator for VscodeCommandNavigator {
                     "-WindowStyle",
                     "Hidden",
                     "-Command",
-                    "& $env:CODEX_CALLGRAPH_EDITOR --goto $env:CODEX_CALLGRAPH_TARGET",
+                    "& $env:CALLGRAPH_EDITOR --goto $env:CALLGRAPH_TARGET",
                 ])
-                .env("CODEX_CALLGRAPH_EDITOR", &self.executable)
-                .env("CODEX_CALLGRAPH_TARGET", &target);
+                .env("CALLGRAPH_EDITOR", &executable)
+                .env("CALLGRAPH_TARGET", &target);
             command
         } else {
-            let mut command = Command::new(&self.executable);
+            let mut command = Command::new(&executable);
             command.arg("--goto").arg(&target);
             command
         };
@@ -72,6 +71,34 @@ impl SourceNavigator for VscodeCommandNavigator {
             .spawn()
             .map_err(|error| format!("启动 VSCode 失败：{error}"))?;
         Ok(())
+    }
+}
+
+impl VscodeCommandNavigator {
+    fn resolved_executable(&self) -> Option<PathBuf> {
+        if self.executable.is_file() {
+            return Some(self.executable.clone());
+        }
+        if self.executable.components().count() > 1 {
+            return None;
+        }
+
+        let path = std::env::var_os("PATH")?;
+        let extensions: &[&str] = if cfg!(windows) {
+            &[".exe", ".cmd", ".bat", ".com"]
+        } else {
+            &[""]
+        };
+        for directory in std::env::split_paths(&path) {
+            for extension in extensions {
+                let candidate =
+                    directory.join(format!("{}{extension}", self.executable.to_string_lossy()));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
     }
 }
 

@@ -4,17 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <title>Codex Callgraph Atlas</title>
+    <title>Callgraph Visualizer</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="/" aria-label="Codex Callgraph Atlas">
+        <a class="brand" href="/" aria-label="Callgraph Visualizer">
           <span class="brand-mark" aria-hidden="true">↳</span>
           <span>
             <strong>CALLGRAPH</strong>
-            <small>CODEX SOURCE ATLAS / 0.1</small>
+            <small>SOURCE TRACE ATLAS / 0.1</small>
           </span>
         </a>
         <div class="graph-heading">
@@ -79,7 +79,7 @@
 
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
-          <svg id="graph-canvas" role="img" aria-label="Codex 调用链有向图"></svg>
+          <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
           <div class="canvas-hint">滚轮缩放 · 拖动画布 · 点击节点查看证据</div>
           <div id="empty-state" class="empty-state" hidden>
             <span>∅</span>

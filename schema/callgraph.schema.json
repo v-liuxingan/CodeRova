@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local.codex/callgraph.schema.json",
-  "title": "Codex Callgraph",
+  "$id": "https://local.callgraph/callgraph.schema.json",
+  "title": "Source Callgraph",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "title", "root", "nodes", "edges"],
