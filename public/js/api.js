@@ -30,4 +30,12 @@ export class CallgraphApi {
       body: JSON.stringify({ graph, targetType, id }),
     });
   }
+
+  previewSource(graph, targetType, id) {
+    return request("/api/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ graph, targetType, id }),
+    });
+  }
 }

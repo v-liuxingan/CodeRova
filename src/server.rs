@@ -13,9 +13,12 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::graph_store::{FileGraphStore, GraphStore};
-use crate::model::{CallGraph, GraphSummary, OpenRequest, OpenResponse, ValidationReport};
+use crate::model::{
+    CallGraph, GraphSummary, OpenRequest, OpenResponse, SourcePreview, ValidationReport,
+};
 use crate::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
 use crate::project_catalog::{FileProjectCatalog, ProjectCatalog, ResolvedProject};
+use crate::source_preview::{FileSourcePreviewer, SourcePreviewer};
 use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
@@ -23,6 +26,7 @@ pub struct AppState {
     graph_store: Arc<dyn GraphStore>,
     project_catalog: Arc<dyn ProjectCatalog>,
     source_link_builder: Arc<dyn SourceLinkBuilder>,
+    source_previewer: Arc<dyn SourcePreviewer>,
 }
 
 impl AppState {
@@ -30,11 +34,13 @@ impl AppState {
         graph_store: Arc<dyn GraphStore>,
         project_catalog: Arc<dyn ProjectCatalog>,
         source_link_builder: Arc<dyn SourceLinkBuilder>,
+        source_previewer: Arc<dyn SourcePreviewer>,
     ) -> Self {
         Self {
             graph_store,
             project_catalog,
             source_link_builder,
+            source_previewer,
         }
     }
 }
@@ -79,6 +85,7 @@ pub async fn serve(
         Arc::new(FileGraphStore::new(graphs_dir)),
         Arc::new(project_catalog),
         Arc::new(VscodeUriLinkBuilder),
+        Arc::new(FileSourcePreviewer::default()),
     );
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
@@ -88,6 +95,7 @@ pub async fn serve(
         .route("/api/graphs/{slug}", get(get_graph))
         .route("/api/graphs/{slug}/validation", get(validate_graph_source))
         .route("/api/open", post(build_source_link))
+        .route("/api/preview", post(preview_source))
         .fallback_service(static_files)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -161,33 +169,7 @@ async fn build_source_link(
     Json(request): Json<OpenRequest>,
 ) -> Result<Json<OpenResponse>, AppError> {
     let graph = read_graph(&state, &request.graph)?;
-    let (file, line) = match request.target_type.as_str() {
-        "node" => graph
-            .nodes
-            .iter()
-            .find(|node| node.id == request.id)
-            .map(|node| (node.file.as_str(), node.line))
-            .ok_or_else(|| AppError::NotFound(format!("节点不存在：{}", request.id)))?,
-        "edge" => {
-            let edge = graph
-                .edges
-                .iter()
-                .find(|edge| edge.id == request.id)
-                .ok_or_else(|| AppError::NotFound(format!("连线不存在：{}", request.id)))?;
-            edge.exact_call_site().ok_or_else(|| {
-                AppError::BadRequest(format!(
-                    "连线 {} 没有可跳转的精确调用位置：{}",
-                    request.id,
-                    edge.call_site_note.trim()
-                ))
-            })?
-        }
-        _ => {
-            return Err(AppError::BadRequest(
-                "targetType 必须是 node 或 edge".to_owned(),
-            ));
-        }
-    };
+    let (file, line) = resolve_target_location(&graph, &request)?;
     let project_root = state
         .project_catalog
         .resolve_root(&graph.project_id)
@@ -204,6 +186,56 @@ async fn build_source_link(
         line,
         column,
     }))
+}
+
+async fn preview_source(
+    State(state): State<AppState>,
+    Json(request): Json<OpenRequest>,
+) -> Result<Json<SourcePreview>, AppError> {
+    let graph = read_graph(&state, &request.graph)?;
+    let (file, line) = resolve_target_location(&graph, &request)?;
+    let project_root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let path = resolve_source_path(&project_root, file).map_err(AppError::BadRequest)?;
+    let mut preview = state
+        .source_previewer
+        .preview(&path, line)
+        .map_err(AppError::BadRequest)?;
+    preview.path = file.to_owned();
+    Ok(Json(preview))
+}
+
+fn resolve_target_location<'a>(
+    graph: &'a CallGraph,
+    request: &OpenRequest,
+) -> Result<(&'a str, u32), AppError> {
+    match request.target_type.as_str() {
+        "node" => graph
+            .nodes
+            .iter()
+            .find(|node| node.id == request.id)
+            .map(|node| (node.file.as_str(), node.line))
+            .ok_or_else(|| AppError::NotFound(format!("节点不存在：{}", request.id))),
+        "edge" => {
+            let edge = graph
+                .edges
+                .iter()
+                .find(|edge| edge.id == request.id)
+                .ok_or_else(|| AppError::NotFound(format!("连线不存在：{}", request.id)))?;
+            edge.exact_call_site().ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "连线 {} 没有可跳转的精确调用位置：{}",
+                    request.id,
+                    edge.call_site_note.trim()
+                ))
+            })
+        }
+        _ => Err(AppError::BadRequest(
+            "targetType 必须是 node 或 edge".to_owned(),
+        )),
+    }
 }
 
 fn read_graph(state: &AppState, slug: &str) -> Result<CallGraph, AppError> {

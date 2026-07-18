@@ -131,3 +131,21 @@ pub struct OpenResponse {
     pub line: u32,
     pub column: u32,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourcePreview {
+    pub path: String,
+    pub focus_line: u32,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub lines: Vec<SourcePreviewLine>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourcePreviewLine {
+    pub number: u32,
+    pub text: String,
+    pub focus: bool,
+}

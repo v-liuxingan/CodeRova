@@ -24,12 +24,6 @@ def stub_source_open(route):
     )
 
 
-def click_source_step(page, selector):
-    with page.expect_request("**/api/open") as request_info:
-        page.locator(selector).click()
-    return request_info.value.post_data_json
-
-
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 980}, device_scale_factor=1)
@@ -95,6 +89,25 @@ with sync_playwright() as playwright:
             )
             assert link_response.ok
             assert link_response.json()["uri"].startswith("vscode://file/E:/")
+            preview_response = page.request.post(
+                "http://127.0.0.1:4317/api/preview",
+                data={
+                    "graph": summary["slug"],
+                    "targetType": target_type,
+                    "id": target_id,
+                },
+            )
+            assert preview_response.ok, (
+                summary["slug"],
+                target_type,
+                target_id,
+                preview_response.status,
+                preview_response.text(),
+            )
+            preview = preview_response.json()
+            assert preview["lines"]
+            assert sum(line["focus"] for line in preview["lines"]) == 1
+            assert preview["startLine"] <= preview["focusLine"] <= preview["endLine"]
 
     expected_graphs = {
         "Codex shell tool approval and sandbox execution": (17, 33),
@@ -179,6 +192,15 @@ with sync_playwright() as playwright:
         },
     )
     assert unavailable_link.status == 400
+    unavailable_preview = page.request.post(
+        "http://127.0.0.1:4317/api/preview",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "edge",
+            "id": "edge.auth-to-request-phase",
+        },
+    )
+    assert unavailable_preview.status == 400
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.main"
@@ -190,18 +212,22 @@ with sync_playwright() as playwright:
         "data-trace-node-id"
     ) == "cli.cli-main"
 
-    page.route("**/api/open", stub_source_open)
-    call_request = click_source_step(page, "#trace-callsite")
-    assert call_request == {
-        "graph": "tui-authorization",
-        "targetType": "edge",
-        "id": "edge.main-cli-main",
-    }
+    trace_open_requests = []
+    page.on(
+        "request",
+        lambda request: trace_open_requests.append(request.post_data_json)
+        if request.url.endswith("/api/open") and request.method == "POST"
+        else None,
+    )
+    page.locator("#trace-next").click()
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-position"
+    ) == "edge"
     assert "异步入口" in page.locator("#inspector-content h2").inner_text()
+    assert "main.rs:959" in page.locator(".source-preview-meta").inner_text()
+    assert page.locator(".source-preview-line.focus").count() == 1
 
-    next_request = click_source_step(page, "#trace-next")
-    assert next_request["targetType"] == "node"
-    assert next_request["id"] == "cli.cli-main"
+    page.locator("#trace-next").click()
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.cli-main"
@@ -209,47 +235,45 @@ with sync_playwright() as playwright:
         "data-trace-edge-id"
     ) == "edge.cli-main-interactive"
 
-    previous_request = click_source_step(page, "#trace-previous")
-    assert previous_request["targetType"] == "node"
-    assert previous_request["id"] == "cli.main"
+    page.locator("#trace-previous").click()
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-position"
+    ) == "edge"
+    assert "异步入口" in page.locator("#inspector-content h2").inner_text()
+
+    page.locator("#trace-previous").click()
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.main"
 
-    with page.expect_request("**/api/open") as right_request_info:
-        page.keyboard.press("ArrowRight")
-    assert right_request_info.value.post_data_json == {
-        "graph": "tui-authorization",
-        "targetType": "edge",
-        "id": "edge.main-cli-main",
-    }
+    page.locator("#trace-callsite").click()
+    assert "异步入口" in page.locator("#inspector-content h2").inner_text()
+    page.locator("#trace-previous").click()
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.main"
+
+    page.keyboard.press("ArrowRight")
     assert page.locator(".source-stepper").get_attribute(
         "data-current-position"
     ) == "edge"
 
-    with page.expect_request("**/api/open") as right_node_request_info:
-        page.keyboard.press("ArrowRight")
-    assert right_node_request_info.value.post_data_json["targetType"] == "node"
-    assert right_node_request_info.value.post_data_json["id"] == "cli.cli-main"
+    page.keyboard.press("ArrowRight")
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.cli-main"
 
-    with page.expect_request("**/api/open") as left_edge_request_info:
-        page.keyboard.press("ArrowLeft")
-    assert left_edge_request_info.value.post_data_json["targetType"] == "edge"
-    assert left_edge_request_info.value.post_data_json["id"] == "edge.main-cli-main"
+    page.keyboard.press("ArrowLeft")
     assert page.locator(".source-stepper").get_attribute(
         "data-current-position"
     ) == "edge"
 
-    with page.expect_request("**/api/open") as left_node_request_info:
-        page.keyboard.press("ArrowLeft")
-    assert left_node_request_info.value.post_data_json["targetType"] == "node"
-    assert left_node_request_info.value.post_data_json["id"] == "cli.main"
+    page.keyboard.press("ArrowLeft")
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.main"
+    assert trace_open_requests == []
+    assert page.evaluate("document.hasFocus()")
 
     page.locator("#search").focus()
     page.keyboard.press("ArrowRight")
@@ -257,7 +281,6 @@ with sync_playwright() as playwright:
         "data-current-node"
     ) == "cli.main"
     page.locator("#search").blur()
-    page.unroute("**/api/open", stub_source_open)
 
     page.locator("#fit-view").click()
     page.locator(
@@ -309,15 +332,15 @@ with sync_playwright() as playwright:
 
     page.locator("#instant-open-toggle").click()
     assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "false"
-    with page.expect_request("**/api/open") as unavailable_back_request:
-        page.keyboard.press("ArrowLeft")
-    assert unavailable_back_request.value.post_data_json["targetType"] == "node"
-    assert unavailable_back_request.value.post_data_json["id"] == "login.auth-manager-shared"
+    page.keyboard.press("ArrowLeft")
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "login.auth-manager-shared"
 
-    with page.expect_request("**/api/open") as unavailable_forward_request:
-        page.keyboard.press("ArrowRight")
-    assert unavailable_forward_request.value.post_data_json["targetType"] == "node"
-    assert unavailable_forward_request.value.post_data_json["id"] == "core.current-client-setup"
+    page.keyboard.press("ArrowRight")
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "core.current-client-setup"
     page.unroute("**/api/open", stub_source_open)
 
     selected_node = page.locator('[data-node-id="core.current-client-setup"]')

@@ -5,6 +5,7 @@ import { Inspector } from "./inspector.js";
 import { LayeredLayout } from "./layouts/layered-layout.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
+import { SourcePreviewController } from "./source-preview-controller.js";
 import { themes } from "./theme-registry.js";
 import { TraceNavigator } from "./trace-navigator.js";
 
@@ -46,6 +47,7 @@ const inspector = new Inspector(
   document.querySelector("#inspector-content"),
 );
 const clickNavigation = new ClickNavigationPolicy();
+const sourcePreview = new SourcePreviewController(api, inspector);
 
 let activeSlug = null;
 let activeGraph = null;
@@ -146,6 +148,7 @@ function render(currentState, reason) {
   const visibleGraph = currentState.getVisibleGraph();
   renderer.render(visibleGraph, currentState);
   inspector.render(currentState.selected, currentState.graph);
+  void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
   elements.visibleCount.textContent =
     `${visibleGraph.nodes.length} / ${currentState.graph.nodes.length} 节点`;
   elements.empty.hidden = visibleGraph.nodes.length !== 0;
@@ -240,13 +243,13 @@ function bindControls() {
     elements.instantOpenToggle.textContent =
       `点击跳转：${enabled ? "开" : "关"}`;
   });
-  elements.tracePrevious.addEventListener("click", () => navigateTrace("previous"));
+  elements.tracePrevious.addEventListener("click", () => navigateTrace("stepBackward"));
   elements.traceCallSite.addEventListener("click", () => navigateTrace("callSite"));
   elements.traceBranch.addEventListener("change", (event) => {
     const target = traceNavigator?.selectBranch(event.target.value);
     if (target) state?.select(target);
   });
-  elements.traceNext.addEventListener("click", () => navigateTrace("next"));
+  elements.traceNext.addEventListener("click", () => navigateTrace("stepForward"));
   window.addEventListener("keydown", (event) => {
     if (event.key === "/" && document.activeElement !== elements.search) {
       event.preventDefault();
@@ -288,15 +291,15 @@ function renderTraceControls() {
     elements.tracePrevious,
     snapshot.previousNode,
     snapshot.previousNode
-      ? `上一节点：${snapshot.previousNode.label}（←）`
-      : "当前节点没有上游节点",
+      ? `上一步：${snapshot.previousNode.label} 或其调用位置（←）`
+      : "当前调用链没有上一步",
   );
   configureTraceButton(
     elements.traceNext,
     snapshot.nextNode,
     snapshot.nextNode
-      ? `下一节点：${snapshot.nextNode.label}（→）`
-      : "当前节点没有下游节点",
+      ? `下一步：调用位置或 ${snapshot.nextNode.label}（→）`
+      : "当前调用链没有下一步",
   );
 
   const callAvailable = Boolean(snapshot.callEdge && snapshot.callSite?.available);
@@ -358,7 +361,7 @@ function navigateTrace(action) {
     return;
   }
   state?.select(target);
-  void openTarget(target);
+  setStatus(`已在网页内预览 ${target.type === "edge" ? "调用位置" : "节点源码"}`);
 }
 
 function toast(message, error = false) {

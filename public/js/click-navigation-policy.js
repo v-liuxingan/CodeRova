@@ -11,15 +11,19 @@ export class ClickNavigationPolicy {
   }
 
   shouldOpen(graph, target) {
-    if (!this.enabled || !graph || !target) return false;
-    if (target.type === "node") {
-      const node = graph.nodes.find((candidate) => candidate.id === target.id);
-      return Boolean(node?.file && Number(node.line) > 0);
-    }
-    if (target.type === "edge") {
-      const edge = graph.edges.find((candidate) => candidate.id === target.id);
-      return Boolean(edge && resolveEdgeCallSite(edge).available);
-    }
-    return false;
+    return this.enabled && isSourceTargetAvailable(graph, target);
   }
+}
+
+export function isSourceTargetAvailable(graph, target) {
+  if (!graph || !target) return false;
+  if (target.type === "node") {
+    const node = graph.nodes.find((candidate) => candidate.id === target.id);
+    return Boolean(node?.file && Number(node.line) > 0);
+  }
+  if (target.type === "edge") {
+    const edge = graph.edges.find((candidate) => candidate.id === target.id);
+    return Boolean(edge && resolveEdgeCallSite(edge).available);
+  }
+  return false;
 }

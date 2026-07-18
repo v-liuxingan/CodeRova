@@ -8,6 +8,7 @@ HTTP / CLI adapters
        ├── GraphStore ─────── FileGraphStore
        ├── ProjectCatalog ─── FileProjectCatalog
        ├── SourceLinkBuilder ─ VscodeUriLinkBuilder
+       ├── SourcePreviewer ─── FileSourcePreviewer
        ├── validation
        └── domain model
 
@@ -17,6 +18,7 @@ UI controller
        ├── Layout ─────────── LayeredLayout
        ├── Renderer ───────── SvgRenderer
        ├── ThemeRegistry ───── Halo / Aether / Signal
+       ├── SourcePreviewController
        └── CallgraphApi
 ```
 
@@ -50,6 +52,12 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 和所选项目根目录的边界校验发生在生成 URI 之前。后端只返回数据，不启动 PowerShell、
 `cmd.exe`、编辑器或任何其他子进程；前端在用户明确点击后把 URI 交给浏览器。
 
+### `SourcePreviewer`
+
+负责为已经过项目根目录校验的源码位置读取有限上下文。默认 `FileSourcePreviewer`
+限制文件大小为 4 MiB，并只返回目标行前后各 6 行。HTTP 预览接口不接受前端文件路径，
+与外部编辑器 URI 共用调用图目标解析和项目根目录边界。
+
 ### `validation`
 
 校验分为两层：
@@ -71,7 +79,14 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 优先使用真实访问历史返回；前进顺序为“节点 → 精确调用边 → 下游节点”，不可跳转的抽象边会自动略过。
 分支默认选择可达下游节点最多的边；多分支节点显示下游分支选择器，切换选择或手动选择连线后，
 后续前进会沿用户指定分支推进。
-步进器只返回节点或连线目标，源码协议跳转仍由 `CallgraphApi` 与后端统一校验。
+步进器只返回节点或连线目标。工具栏按钮和键盘方向键都调用同一 `stepBackward` /
+`stepForward` 入口，避免出现一种交互包含边、另一种交互跳过边的状态分叉。
+
+### `SourcePreviewController`
+
+连续步进默认通过 `CallgraphApi` 获取网页内源码上下文，不触发外部协议，因此浏览器持续
+持有键盘焦点。控制器负责结果缓存与异步请求版本检查；`Inspector` 只负责安全地用
+`textContent` 渲染源码。切换到 IDE 仍由检查器中的显式按钮完成。
 
 ### `ClickNavigationPolicy`
 

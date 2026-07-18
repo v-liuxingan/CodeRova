@@ -387,6 +387,59 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .callsite-notice { display: grid; gap: 5px; border: 1px dashed color-mix(in srgb, var(--amber) 58%, var(--line)); border-radius: var(--radius); padding: 11px; background: color-mix(in srgb, var(--amber) 7%, var(--canvas)); }
 .callsite-notice strong { color: var(--amber); font: 700 10px "Cascadia Code", monospace; }
 .callsite-notice span { color: var(--text-secondary); font-size: 11px; line-height: 1.55; }
+.source-preview { padding-bottom: 4px; }
+.source-preview-body {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--canvas) 92%, var(--panel));
+}
+.source-preview-loading, .source-preview-error {
+  display: block;
+  padding: 14px;
+  color: var(--text-subtle);
+  font: 9px/1.5 "Cascadia Code", monospace;
+}
+.source-preview-error { color: var(--rose); }
+.source-preview-meta {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--cyan);
+  font: 8px "Cascadia Code", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-preview-code {
+  max-height: 238px;
+  overflow: auto;
+  padding: 6px 0;
+  scrollbar-width: thin;
+}
+.source-preview-line {
+  min-width: max-content;
+  display: grid;
+  grid-template-columns: 42px auto;
+  color: var(--text-secondary);
+  font: 9px/1.65 "Cascadia Code", monospace;
+}
+.source-preview-line > span {
+  padding-right: 9px;
+  color: var(--text-subtle);
+  text-align: right;
+  user-select: none;
+}
+.source-preview-line > code {
+  display: block;
+  padding: 0 10px;
+  white-space: pre;
+}
+.source-preview-line.focus {
+  color: var(--paper);
+  background: color-mix(in srgb, var(--acid) 15%, transparent);
+  box-shadow: inset 2px 0 var(--acid);
+}
+.source-preview-line.focus > span { color: var(--acid); }
 .confidence { display: flex; gap: 9px; align-items: center; }
 .confidence-track { height: 4px; flex: 1; background: var(--line); }
 .confidence-track i { display: block; height: 100%; background: var(--acid); }
