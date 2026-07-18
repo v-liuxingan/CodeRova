@@ -22,16 +22,19 @@ with sync_playwright() as playwright:
     page.wait_for_load_state("networkidle")
     page.wait_for_selector(".graph-option")
 
+    assert page.locator("html").get_attribute("data-theme") == "halo"
+    assert page.locator("#theme-select").input_value() == "halo"
+    assert page.locator("#theme-select option").count() == 3
+    page.locator("#theme-select").select_option("aether")
     assert page.locator("html").get_attribute("data-theme") == "aether"
-    assert page.locator("#theme-select").input_value() == "aether"
     page.locator("#theme-select").select_option("signal")
     assert page.locator("html").get_attribute("data-theme") == "signal"
     page.reload()
     page.wait_for_load_state("networkidle")
     page.wait_for_selector(".graph-option")
     assert page.locator("#theme-select").input_value() == "signal"
-    page.locator("#theme-select").select_option("aether")
-    assert page.locator("html").get_attribute("data-theme") == "aether"
+    page.locator("#theme-select").select_option("halo")
+    assert page.locator("html").get_attribute("data-theme") == "halo"
 
     health = page.request.get("http://127.0.0.1:4317/api/health")
     assert health.ok

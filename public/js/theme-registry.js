@@ -1,4 +1,4 @@
-const STORAGE_KEY = "callgraph_theme";
+const STORAGE_KEY = "callgraph_theme_v2";
 
 export class ThemeRegistry {
   constructor(root = document.documentElement) {
@@ -41,6 +41,12 @@ export class ThemeRegistry {
 }
 
 export const themes = new ThemeRegistry()
+  .register({
+    id: "halo",
+    label: "Halo",
+    description: "雾白蓝 · 明亮科技",
+    colorScheme: "light",
+  })
   .register({
     id: "aether",
     label: "Aether",

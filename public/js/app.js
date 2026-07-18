@@ -64,7 +64,7 @@ function initializeThemes() {
     option.title = theme.description;
     elements.themeSelect.append(option);
   }
-  elements.themeSelect.value = themes.initialize("aether");
+  elements.themeSelect.value = themes.initialize("halo");
   elements.themeSelect.addEventListener("change", () => themes.apply(elements.themeSelect.value));
   themes.subscribe(() => {
     if (state) render(state, "theme");

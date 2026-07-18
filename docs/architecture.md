@@ -15,7 +15,7 @@ UI controller
        ├── GraphState
        ├── Layout ─────────── LayeredLayout
        ├── Renderer ───────── SvgRenderer
-       ├── ThemeRegistry ───── Aether / Signal
+       ├── ThemeRegistry ───── Halo / Aether / Signal
        └── CallgraphApi
 ```
 
