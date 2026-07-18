@@ -4,6 +4,7 @@ import { Inspector } from "./inspector.js";
 import { LayeredLayout } from "./layouts/layered-layout.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
+import { themes } from "./theme-registry.js";
 
 const api = new CallgraphApi();
 const elements = {
@@ -19,6 +20,7 @@ const elements = {
   canvas: document.querySelector("#graph-canvas"),
   empty: document.querySelector("#empty-state"),
   orientation: document.querySelector("#orientation"),
+  themeSelect: document.querySelector("#theme-select"),
 };
 
 const rendererRegistry = new RendererRegistry().register(
@@ -40,6 +42,7 @@ let state = null;
 let unsubscribe = null;
 let firstRender = true;
 
+initializeThemes();
 renderer.setCallbacks({
   onSelect: (target) => state?.select(target),
   onToggleCollapse: (nodeId) => state?.toggleCollapse(nodeId),
@@ -52,6 +55,21 @@ inspector.setCallbacks({
 
 bindControls();
 bootstrap().catch(showFatal);
+
+function initializeThemes() {
+  for (const theme of themes.list()) {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.label;
+    option.title = theme.description;
+    elements.themeSelect.append(option);
+  }
+  elements.themeSelect.value = themes.initialize("aether");
+  elements.themeSelect.addEventListener("change", () => themes.apply(elements.themeSelect.value));
+  themes.subscribe(() => {
+    if (state) render(state, "theme");
+  });
+}
 
 async function bootstrap() {
   elements.status.textContent = "连接本地 Rust 服务";

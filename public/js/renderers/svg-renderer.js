@@ -1,12 +1,12 @@
 const NS = "http://www.w3.org/2000/svg";
-const markerColors = {
-  direct: "#7a8275",
-  callback: "#ff9d3d",
-  spawn: "#ff9d3d",
-  "async-boundary": "#ff9d3d",
-  "trait-dispatch": "#5bd8d0",
-  "data-flow": "#ff6f79",
-  remote: "#ff6f79",
+const markerColorVariables = {
+  direct: "--edge-direct",
+  callback: "--edge-async",
+  spawn: "--edge-async",
+  "async-boundary": "--edge-async",
+  "trait-dispatch": "--edge-trait",
+  "data-flow": "--edge-data",
+  remote: "--edge-data",
 };
 
 export class SvgRenderer {
@@ -40,7 +40,9 @@ export class SvgRenderer {
 
   installDefinitions() {
     const defs = svgElement("defs");
-    for (const [kind, color] of Object.entries(markerColors)) {
+    const styles = getComputedStyle(document.documentElement);
+    for (const [kind, variable] of Object.entries(markerColorVariables)) {
+      const color = styles.getPropertyValue(variable).trim();
       const marker = svgElement("marker", {
         id: `arrow-${kind}`,
         viewBox: "0 0 10 10",
@@ -69,7 +71,7 @@ export class SvgRenderer {
     const pathData = vertical
       ? `M ${start.x} ${start.y} C ${start.x} ${start.y + delta}, ${end.x} ${end.y - delta}, ${end.x} ${end.y}`
       : `M ${start.x} ${start.y} C ${start.x + delta} ${start.y}, ${end.x - delta} ${end.y}, ${end.x} ${end.y}`;
-    const kind = markerColors[edge.kind] ? edge.kind : "direct";
+    const kind = markerColorVariables[edge.kind] ? edge.kind : "direct";
     const path = svgElement("path", {
       class: `graph-edge ${edge.kind}${state.selected?.type === "edge" && state.selected.id === edge.id ? " selected" : ""}`,
       d: pathData,

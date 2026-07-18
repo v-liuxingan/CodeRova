@@ -15,6 +15,7 @@ UI controller
        ├── GraphState
        ├── Layout ─────────── LayeredLayout
        ├── Renderer ───────── SvgRenderer
+       ├── ThemeRegistry ───── Aether / Signal
        └── CallgraphApi
 ```
 
@@ -79,6 +80,12 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 
 `RendererRegistry` 负责按名称创建实现。当前 `SvgRenderer` 是默认实现；Canvas 或 WebGL
 实现可以复用 `GraphState` 和任意布局器。
+
+### Theme
+
+`ThemeRegistry` 负责注册、选择和持久化主题。主题通过 `data-theme` 与语义化 CSS 变量控制
+页面及 SVG 的节点、连线和箭头颜色；渲染器不持有固定色值。新增主题只需注册元数据并
+提供对应变量覆盖，不需要修改图状态、布局或 API。
 
 ## 调用关系语义
 

@@ -17,6 +17,7 @@ Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向�
 - 节点跳到定义位置，连线跳到调用发生位置。
 - Rust CLI 校验图结构和真实源码位置。
 - 后端校验后由浏览器触发 `vscode://` 外部协议，不创建 shell 或编辑器进程。
+- 可注册、可持久化切换的界面主题；默认 `Aether` 科技简约主题，保留 `Signal` 经典主题。
 
 ## 启动
 
@@ -121,6 +122,7 @@ public/js/
   layouts/             与渲染器无关的布局算法
   renderers/           可替换渲染器；当前为 SVG
   renderer-registry.js 渲染器插件注册
+  theme-registry.js    可注册主题与本地持久化切换
 schema/
   callgraph.schema.json  调用图 0.2
   projects.schema.json   项目目录配置 0.1
