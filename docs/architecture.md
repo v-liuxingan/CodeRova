@@ -13,6 +13,7 @@ HTTP / CLI adapters
 
 UI controller
        ├── GraphState
+       ├── TraceNavigator
        ├── Layout ─────────── LayeredLayout
        ├── Renderer ───────── SvgRenderer
        ├── ThemeRegistry ───── Halo / Aether / Signal
@@ -63,6 +64,12 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 
 只管理图的可见性与选择状态，不读写 DOM。折叠、隐藏、边类型筛选和路径聚焦都在这里
 计算，因此换渲染器不会丢失交互语义。
+
+### `TraceNavigator`
+
+维护独立于渲染器的源码步进游标。它把当前节点映射为上游节点、主调用边和下游节点，
+优先使用真实访问历史返回；分支默认选择可达下游节点最多的边，手动选择连线后则沿用户指定分支推进。
+步进器只返回节点或连线目标，源码协议跳转仍由 `CallgraphApi` 与后端统一校验。
 
 ### Layout
 

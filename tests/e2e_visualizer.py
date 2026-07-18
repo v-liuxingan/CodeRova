@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -5,6 +6,28 @@ from playwright.sync_api import sync_playwright
 
 ARTIFACTS = Path(__file__).parent / "artifacts"
 ARTIFACTS.mkdir(exist_ok=True)
+
+
+def stub_source_open(route):
+    request = route.request.post_data_json
+    route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps(
+            {
+                "uri": f"#source-{request['id']}",
+                "path": f"codex-rs/{request['id']}.rs",
+                "line": 1,
+                "column": 1,
+            }
+        ),
+    )
+
+
+def click_source_step(page, selector):
+    with page.expect_request("**/api/open") as request_info:
+        page.locator(selector).click()
+    return request_info.value.post_data_json
 
 
 with sync_playwright() as playwright:
@@ -91,6 +114,10 @@ with sync_playwright() as playwright:
             "(text) => document.querySelector('#validation-badge')?.textContent === text",
             arg=f"{source_location_count} 处源码有效",
         )
+        if title == "Codex shell tool approval and sandbox execution":
+            assert page.locator("#trace-callsite").get_attribute(
+                "data-trace-edge-id"
+            ) == "shell.output-to-runtime"
 
     page.wait_for_selector('[data-node-id="cli.main"]')
 
@@ -129,6 +156,44 @@ with sync_playwright() as playwright:
         },
     )
     assert unavailable_link.status == 400
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.main"
+    assert page.locator("#trace-previous").is_disabled()
+    assert page.locator("#trace-callsite").get_attribute(
+        "data-trace-edge-id"
+    ) == "edge.main-cli-main"
+    assert page.locator("#trace-next").get_attribute(
+        "data-trace-node-id"
+    ) == "cli.cli-main"
+
+    page.route("**/api/open", stub_source_open)
+    call_request = click_source_step(page, "#trace-callsite")
+    assert call_request == {
+        "graph": "tui-authorization",
+        "targetType": "edge",
+        "id": "edge.main-cli-main",
+    }
+    assert "异步入口" in page.locator("#inspector-content h2").inner_text()
+
+    next_request = click_source_step(page, "#trace-next")
+    assert next_request["targetType"] == "node"
+    assert next_request["id"] == "cli.cli-main"
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.cli-main"
+    assert page.locator("#trace-callsite").get_attribute(
+        "data-trace-edge-id"
+    ) == "edge.cli-main-interactive"
+
+    previous_request = click_source_step(page, "#trace-previous")
+    assert previous_request["targetType"] == "node"
+    assert previous_request["id"] == "cli.main"
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.main"
+    page.unroute("**/api/open", stub_source_open)
+
     page.locator("#fit-view").click()
     page.locator(
         '[data-edge-hit-id="edge.auth-to-request-phase"]'
@@ -137,6 +202,13 @@ with sync_playwright() as playwright:
     )
     assert "已省略中间节点" in page.locator("#inspector-content").inner_text()
     assert page.locator("#inspector-content [data-open]").count() == 0
+    assert page.locator("#trace-callsite").is_disabled()
+    assert "省略了多个中间节点" in (
+        page.locator("#trace-callsite").get_attribute("title") or ""
+    )
+    assert page.locator("#trace-next").get_attribute(
+        "data-trace-node-id"
+    ) == "core.current-client-setup"
 
     selected_node = page.locator('[data-node-id="core.current-client-setup"]')
     selected_node.click()
@@ -226,6 +298,7 @@ with sync_playwright() as playwright:
 
     page.locator("#zoom-in").click()
     page.locator("#zoom-in").click()
+    page.wait_for_timeout(3700)
     page.screenshot(path=str(ARTIFACTS / "callgraph-overview.png"), full_page=True)
     assert not console_errors, f"browser console errors: {console_errors}"
     browser.close()

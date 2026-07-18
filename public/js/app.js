@@ -5,6 +5,7 @@ import { LayeredLayout } from "./layouts/layered-layout.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
 import { themes } from "./theme-registry.js";
+import { TraceNavigator } from "./trace-navigator.js";
 
 const api = new CallgraphApi();
 const elements = {
@@ -21,6 +22,10 @@ const elements = {
   empty: document.querySelector("#empty-state"),
   orientation: document.querySelector("#orientation"),
   themeSelect: document.querySelector("#theme-select"),
+  sourceStepper: document.querySelector(".source-stepper"),
+  tracePrevious: document.querySelector("#trace-previous"),
+  traceCallSite: document.querySelector("#trace-callsite"),
+  traceNext: document.querySelector("#trace-next"),
 };
 
 const rendererRegistry = new RendererRegistry().register(
@@ -39,12 +44,13 @@ const inspector = new Inspector(
 let activeSlug = null;
 let activeGraph = null;
 let state = null;
+let traceNavigator = null;
 let unsubscribe = null;
 let firstRender = true;
 
 initializeThemes();
 renderer.setCallbacks({
-  onSelect: (target) => state?.select(target),
+  onSelect: selectGraphTarget,
   onToggleCollapse: (nodeId) => state?.toggleCollapse(nodeId),
 });
 inspector.setCallbacks({
@@ -116,6 +122,8 @@ async function activateGraph(slug) {
   firstRender = true;
   unsubscribe?.();
   state = new GraphState(graph);
+  traceNavigator = new TraceNavigator(graph);
+  state.selected = { type: "node", id: graph.root };
   unsubscribe = state.subscribe(render);
 
   document.querySelectorAll(".graph-option").forEach((element) => {
@@ -143,6 +151,7 @@ function render(currentState, reason) {
   elements.kindFilters.querySelectorAll("[data-kind]").forEach((button) => {
     button.classList.toggle("active", currentState.enabledKinds.has(button.dataset.kind));
   });
+  renderTraceControls();
   if (firstRender) {
     requestAnimationFrame(() => renderer.focusStart(currentState.orientation));
     firstRender = false;
@@ -218,6 +227,9 @@ function bindControls() {
   document.querySelector("#fit-view").addEventListener("click", () => renderer.fit());
   document.querySelector("#reset-view").addEventListener("click", () => state?.resetVisibility());
   elements.orientation.addEventListener("click", () => state?.toggleOrientation());
+  elements.tracePrevious.addEventListener("click", () => navigateTrace("previous"));
+  elements.traceCallSite.addEventListener("click", () => navigateTrace("callSite"));
+  elements.traceNext.addEventListener("click", () => navigateTrace("next"));
   window.addEventListener("keydown", (event) => {
     if (event.key === "/" && document.activeElement !== elements.search) {
       event.preventDefault();
@@ -225,6 +237,59 @@ function bindControls() {
     }
     if (event.key === "Escape") state?.select(null);
   });
+}
+
+function selectGraphTarget(target) {
+  traceNavigator?.syncSelection(target);
+  state?.select(target);
+}
+
+function renderTraceControls() {
+  if (!traceNavigator) return;
+  const snapshot = traceNavigator.snapshot();
+  elements.sourceStepper.dataset.currentNode = snapshot.currentNode?.id || "";
+  configureTraceButton(
+    elements.tracePrevious,
+    snapshot.previousNode,
+    snapshot.previousNode
+      ? `上一节点：${snapshot.previousNode.label}`
+      : "当前节点没有上游节点",
+  );
+  configureTraceButton(
+    elements.traceNext,
+    snapshot.nextNode,
+    snapshot.nextNode
+      ? `下一节点：${snapshot.nextNode.label}`
+      : "当前节点没有下游节点",
+  );
+
+  const callAvailable = Boolean(snapshot.callEdge && snapshot.callSite?.available);
+  elements.traceCallSite.disabled = !callAvailable;
+  elements.traceCallSite.title = callAvailable
+    ? `调用位置：${snapshot.callSite.compactLabel}`
+    : snapshot.callSite?.note || "当前节点没有下游调用";
+  elements.traceCallSite.dataset.traceEdgeId = snapshot.callEdge?.id || "";
+}
+
+function configureTraceButton(button, node, title) {
+  button.disabled = !node;
+  button.title = title;
+  button.dataset.traceNodeId = node?.id || "";
+}
+
+function navigateTrace(action) {
+  const target = traceNavigator?.[action]?.();
+  if (!target) {
+    const snapshot = traceNavigator?.snapshot();
+    const message =
+      action === "callSite" && snapshot?.callSite?.note
+        ? snapshot.callSite.note
+        : "当前调用链没有可导航的目标";
+    toast(message, true);
+    return;
+  }
+  state?.select(target);
+  void openTarget(target);
 }
 
 function toast(message, error = false) {

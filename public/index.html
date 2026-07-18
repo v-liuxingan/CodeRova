@@ -89,6 +89,21 @@
           </div>
         </div>
 
+        <nav class="source-stepper" aria-label="源码步进导航">
+            <button id="trace-previous" class="trace-step" disabled>
+              <span aria-hidden="true">←</span>
+              <strong>上一节点</strong>
+            </button>
+            <button id="trace-callsite" class="trace-step callsite" disabled>
+              <span aria-hidden="true">↗</span>
+              <strong>调用位置</strong>
+            </button>
+            <button id="trace-next" class="trace-step" disabled>
+              <strong>下一节点</strong>
+              <span aria-hidden="true">→</span>
+            </button>
+        </nav>
+
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
           <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
