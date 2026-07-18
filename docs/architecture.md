@@ -6,7 +6,7 @@
 HTTP / CLI adapters
        │
        ├── GraphStore ─────── FileGraphStore
-       ├── SourceNavigator ── VscodeCommandNavigator
+       ├── SourceLinkBuilder ─ VscodeUriLinkBuilder
        ├── validation
        └── domain model
 
@@ -26,17 +26,17 @@ UI controller
 负责列举和读取调用图。默认 `FileGraphStore` 读取 `graphs/*.json`。如果以后需要
 SQLite、Git 版本库或实时分析器，可实现相同的 `list` / `load` 边界，HTTP 层无需改变。
 
-### `SourceNavigator`
+### `SourceLinkBuilder`
 
-负责打开已经过验证的源码位置。默认 `VscodeCommandNavigator` 调用：
+负责把已经过验证的源码位置转换成外部编辑器 URI。默认 `VscodeUriLinkBuilder` 生成：
 
 ```text
-code.cmd --goto <absolute-path>:<line>
+vscode://file/<absolute-path>:<line>:<column>
 ```
 
-VSCode 扩展、JetBrains、远程开发桥接或只生成链接的实现都可以替换它。路径规范化和
-源码根目录边界校验发生在调用 navigator 之前。Windows 下 `.cmd` / `.bat` 启动器通过
-环境变量传递路径，避免空格和 shell 元字符引起的引用或注入问题。
+VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都可以替换它。路径规范化
+和源码根目录边界校验发生在生成 URI 之前。后端只返回数据，不启动 PowerShell、
+`cmd.exe`、编辑器或任何其他子进程；前端在用户明确点击后把 URI 交给浏览器。
 
 ### `validation`
 

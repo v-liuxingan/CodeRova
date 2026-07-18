@@ -23,7 +23,7 @@ export class CallgraphApi {
     return request("/api/health");
   }
 
-  openSource(graph, targetType, id) {
+  buildSourceLink(graph, targetType, id) {
     return request("/api/open", {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -1,124 +1,72 @@
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
 
-/// Opens a verified source location in an external editor.
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+
+const URI_PATH_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
+
+/// Converts a verified source location into an editor-owned external URI.
 ///
-/// The default implementation launches VSCode. Future implementations may use
-/// a VSCode extension URI, another editor, or a remote-development bridge.
-pub trait SourceNavigator: Send + Sync {
-    fn is_available(&self) -> bool;
-    fn open(&self, path: &Path, line: u32) -> Result<(), String>;
+/// Implementations must only build data. Opening the URI remains an explicit
+/// browser/user action, so the server never launches a shell or child process.
+pub trait SourceLinkBuilder: Send + Sync {
+    fn build(&self, path: &Path, line: u32, column: u32) -> Result<String, String>;
 }
 
-#[derive(Debug, Clone)]
-pub struct VscodeCommandNavigator {
-    executable: PathBuf,
-}
+#[derive(Debug, Clone, Default)]
+pub struct VscodeUriLinkBuilder;
 
-impl VscodeCommandNavigator {
-    pub fn new(executable: PathBuf) -> Self {
-        Self { executable }
-    }
-}
-
-impl SourceNavigator for VscodeCommandNavigator {
-    fn is_available(&self) -> bool {
-        self.resolved_executable().is_some()
-    }
-
-    fn open(&self, path: &Path, line: u32) -> Result<(), String> {
-        let executable = self.resolved_executable().ok_or_else(|| {
-            format!(
-                "找不到 VSCode CLI 或可执行文件：{}",
-                self.executable.display()
-            )
-        })?;
-        if line == 0 {
-            return Err("行号必须大于 0".to_owned());
+impl SourceLinkBuilder for VscodeUriLinkBuilder {
+    fn build(&self, path: &Path, line: u32, column: u32) -> Result<String, String> {
+        if line == 0 || column == 0 {
+            return Err("行号和列号必须大于 0".to_owned());
         }
-        let target = format!("{}:{line}", path.display());
-        let extension = executable
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default();
-        let mut command = if cfg!(windows)
-            && (extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat"))
-        {
-            // Keep paths out of the PowerShell program text. Environment variables
-            // avoid quoting bugs and command injection for spaces or metacharacters.
-            let mut command = Command::new("powershell.exe");
-            command
-                .args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-WindowStyle",
-                    "Hidden",
-                    "-Command",
-                    "& $env:CALLGRAPH_EDITOR --goto $env:CALLGRAPH_TARGET",
-                ])
-                .env("CALLGRAPH_EDITOR", &executable)
-                .env("CALLGRAPH_TARGET", &target);
-            command
-        } else {
-            let mut command = Command::new(&executable);
-            command.arg("--goto").arg(&target);
-            command
-        };
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| format!("启动 VSCode 失败：{error}"))?;
-        Ok(())
-    }
-}
-
-impl VscodeCommandNavigator {
-    fn resolved_executable(&self) -> Option<PathBuf> {
-        if self.executable.is_file() {
-            return Some(self.executable.clone());
-        }
-        if self.executable.components().count() > 1 {
-            return None;
-        }
-
-        let path = std::env::var_os("PATH")?;
-        let extensions: &[&str] = if cfg!(windows) {
-            &[".exe", ".cmd", ".bat", ".com"]
-        } else {
-            &[""]
-        };
-        for directory in std::env::split_paths(&path) {
-            for extension in extensions {
-                let candidate =
-                    directory.join(format!("{}{extension}", self.executable.to_string_lossy()));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
-            }
-        }
-        None
+        let raw = path.to_string_lossy();
+        let without_verbatim_prefix = raw
+            .strip_prefix(r"\\?\UNC\")
+            .map(|value| format!("//{value}"))
+            .or_else(|| raw.strip_prefix(r"\\?\").map(str::to_owned))
+            .unwrap_or_else(|| raw.into_owned());
+        let normalized = without_verbatim_prefix.replace('\\', "/");
+        let encoded = utf8_percent_encode(&normalized, URI_PATH_ENCODE_SET);
+        Ok(format!("vscode://file/{encoded}:{line}:{column}"))
     }
 }
 
 #[cfg(test)]
-pub struct RecordingNavigator {
-    pub available: bool,
-    pub opened: std::sync::Mutex<Vec<(PathBuf, u32)>>,
-}
+mod tests {
+    use super::*;
 
-#[cfg(test)]
-impl SourceNavigator for RecordingNavigator {
-    fn is_available(&self) -> bool {
-        self.available
+    #[test]
+    fn builds_windows_vscode_uri_and_encodes_unsafe_characters() {
+        let uri = VscodeUriLinkBuilder
+            .build(Path::new(r"E:\Work Space\a#b.rs"), 12, 3)
+            .expect("URI should be generated");
+        assert_eq!(uri, "vscode://file/E:/Work%20Space/a%23b.rs:12:3");
     }
 
-    fn open(&self, path: &Path, line: u32) -> Result<(), String> {
-        self.opened
-            .lock()
-            .map_err(|_| "recording navigator lock poisoned".to_owned())?
-            .push((path.to_owned(), line));
-        Ok(())
+    #[test]
+    fn removes_windows_verbatim_prefix() {
+        let uri = VscodeUriLinkBuilder
+            .build(Path::new(r"\\?\E:\source\main.rs"), 7, 1)
+            .expect("URI should be generated");
+        assert_eq!(uri, "vscode://file/E:/source/main.rs:7:1");
+    }
+
+    #[test]
+    fn rejects_zero_position() {
+        let error = VscodeUriLinkBuilder
+            .build(Path::new("src/main.rs"), 0, 1)
+            .expect_err("zero line should fail");
+        assert_eq!(error, "行号和列号必须大于 0");
     }
 }

@@ -114,19 +114,15 @@ main
 
 ## 6. VSCode 跳转方案
 
-浏览器页面不能直接执行本地 PowerShell 命令，因此需要本地跳转桥接层。候选方案：
+浏览器通过 VSCode 注册的外部协议打开源码：
 
-1. 本地桥接服务：页面请求本地服务，由服务执行 `Code.exe --goto`。
-2. VSCode 扩展：扩展注册命令，页面或文件协议将节点信息交给扩展。
-3. CLI 辅助命令：使用 `callgraph-visualizer open --node <id>` 打开目标位置。
+1. 页面向本地服务提交调用图 slug、目标类型和 ID。
+2. 服务端从图数据解析位置，验证路径位于 `source-root` 内。
+3. 服务端返回 `vscode://file/<path>:<line>:<column>`。
+4. 前端在用户点击上下文中将 URI 交给浏览器。
 
-第一版优先采用本地 PowerShell/CLI 辅助命令，减少额外服务依赖；稳定后再考虑 VSCode 扩展。
-
-当前可用的 VSCode CLI（直接启动 `Code.exe` 会触发 Windows 740 提权错误）：
-
-```text
-E:\develop\utils\vs\bin\code.cmd
-```
+服务端不启动 PowerShell、`cmd.exe`、`Code.exe` 或隐藏子进程。CLI 的 `open` 命令只输出
+经过相同校验的 URI。未来可以通过 `SourceLinkBuilder` 增加其他编辑器协议。
 
 ## 7. 分阶段计划
 
@@ -144,9 +140,10 @@ E:\develop\utils\vs\bin\code.cmd
 
 ### 阶段三：跳转工具
 
-- 实现 `Code.exe --goto` 调用封装。
+- 实现可替换的外部编辑器 URI 生成器。
 - 支持节点跳转和连线调用点跳转。
-- 增加 Windows 路径、空格路径和行号校验。
+- 增加 Windows verbatim path、空格、URI 保留字符和行号校验。
+- 禁止服务端启动 shell、命令脚本或编辑器子进程。
 
 ### 阶段四：分析结果生成
 
@@ -166,7 +163,7 @@ E:\develop\utils\vs\bin\code.cmd
 - [x] 手工录入并按本地 Codex 源码核验第一条 TUI 授权调用链。
 - [x] 第一版使用模块化 SVG 自绘，保留替换 Canvas/WebGL 的渲染器接口。
 - [x] 实现节点展开/折叠、隐藏、聚焦和类型筛选状态。
-- [x] 实现 Rust CLI 与 `SourceNavigator` VSCode 跳转器。
+- [x] 实现 Rust CLI 与 `SourceLinkBuilder` VSCode URI 生成器。
 - [x] 实现只监听 localhost 的本地 HTTP 桥接服务。
 - [ ] 将调用链文件与 `codex-source-architecture` 学习项目关联。
 

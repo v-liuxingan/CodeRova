@@ -14,26 +14,26 @@ use tower_http::trace::TraceLayer;
 
 use crate::graph_store::{FileGraphStore, GraphStore};
 use crate::model::{CallGraph, GraphSummary, OpenRequest, OpenResponse, ValidationReport};
-use crate::navigation::{SourceNavigator, VscodeCommandNavigator};
+use crate::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
 use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
 pub struct AppState {
     graph_store: Arc<dyn GraphStore>,
     source_root: Arc<PathBuf>,
-    navigator: Arc<dyn SourceNavigator>,
+    source_link_builder: Arc<dyn SourceLinkBuilder>,
 }
 
 impl AppState {
     pub fn new(
         graph_store: Arc<dyn GraphStore>,
         source_root: PathBuf,
-        navigator: Arc<dyn SourceNavigator>,
+        source_link_builder: Arc<dyn SourceLinkBuilder>,
     ) -> Self {
         Self {
             graph_store,
             source_root: Arc::new(source_root),
-            navigator,
+            source_link_builder,
         }
     }
 }
@@ -72,12 +72,11 @@ pub async fn serve(
     public_dir: PathBuf,
     graphs_dir: PathBuf,
     source_root: PathBuf,
-    code_executable: PathBuf,
 ) -> Result<(), String> {
     let state = AppState::new(
         Arc::new(FileGraphStore::new(graphs_dir)),
         source_root,
-        Arc::new(VscodeCommandNavigator::new(code_executable)),
+        Arc::new(VscodeUriLinkBuilder),
     );
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
@@ -86,7 +85,7 @@ pub async fn serve(
         .route("/api/graphs", get(list_graphs))
         .route("/api/graphs/{slug}", get(get_graph))
         .route("/api/graphs/{slug}/validation", get(validate_graph_source))
-        .route("/api/open", post(open_in_vscode))
+        .route("/api/open", post(build_source_link))
         .fallback_service(static_files)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -110,14 +109,12 @@ async fn shutdown_signal() {
 struct HealthResponse {
     status: &'static str,
     source_root: String,
-    source_navigator_available: bool,
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
         source_root: state.source_root.display().to_string(),
-        source_navigator_available: state.navigator.is_available(),
     })
 }
 
@@ -155,7 +152,7 @@ async fn validate_graph_source(
     )))
 }
 
-async fn open_in_vscode(
+async fn build_source_link(
     State(state): State<AppState>,
     Json(request): Json<OpenRequest>,
 ) -> Result<Json<OpenResponse>, AppError> {
@@ -181,14 +178,16 @@ async fn open_in_vscode(
     };
     let path =
         resolve_source_path(state.source_root.as_ref(), file).map_err(AppError::BadRequest)?;
-    state
-        .navigator
-        .open(&path, line)
+    let column = 1;
+    let uri = state
+        .source_link_builder
+        .build(&path, line, column)
         .map_err(AppError::Internal)?;
     Ok(Json(OpenResponse {
-        opened: true,
+        uri,
         path: path.display().to_string(),
         line,
+        column,
     }))
 }
 

@@ -25,6 +25,20 @@ with sync_playwright() as playwright:
     assert page.locator(".graph-node").count() == 19
     assert "TUI authorization" in page.locator("#graph-title").inner_text()
     assert "38 处源码有效" in page.locator("#validation-badge").inner_text()
+    source_link = page.request.post(
+        "http://127.0.0.1:4317/api/open",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "node",
+            "id": "cli.main",
+        },
+    )
+    assert source_link.ok
+    source_link_body = source_link.json()
+    assert source_link_body["uri"].startswith("vscode://file/E:/")
+    assert source_link_body["uri"].endswith(
+        "/codex/codex-rs/cli/src/main.rs:956:1"
+    )
 
     page.locator("#fit-view").click()
     page.locator('[data-node-id="core.current-client-setup"]').click()

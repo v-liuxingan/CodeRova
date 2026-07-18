@@ -103,7 +103,8 @@ pub struct OpenRequest {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenResponse {
-    pub opened: bool,
+    pub uri: String,
     pub path: String,
     pub line: u32,
+    pub column: u32,
 }

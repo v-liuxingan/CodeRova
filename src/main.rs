@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use callgraph_visualizer::graph_store::read_graph_file;
-use callgraph_visualizer::navigation::{SourceNavigator, VscodeCommandNavigator};
+use callgraph_visualizer::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
 use callgraph_visualizer::server::serve;
 use callgraph_visualizer::validation::{resolve_source_path, validate_graph};
 use clap::{Parser, Subcommand};
@@ -26,8 +26,6 @@ enum Commands {
         host: IpAddr,
         #[arg(long, default_value = ".")]
         source_root: PathBuf,
-        #[arg(long, default_value = "code")]
-        code: PathBuf,
         #[arg(long, default_value = "graphs")]
         graphs: PathBuf,
         #[arg(long, default_value = "public")]
@@ -42,7 +40,7 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// 在 VSCode 中打开一个节点或连线的源码位置
+    /// 为节点或连线生成经过校验的 VSCode 源码 URI
     Open {
         graph: PathBuf,
         #[arg(long, conflicts_with = "edge")]
@@ -51,8 +49,6 @@ enum Commands {
         edge: Option<String>,
         #[arg(long, default_value = ".")]
         source_root: PathBuf,
-        #[arg(long, default_value = "code")]
-        code: PathBuf,
     },
 }
 
@@ -70,7 +66,6 @@ async fn main() -> ExitCode {
         port: 4317,
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
         source_root: PathBuf::from("."),
-        code: PathBuf::from("code"),
         graphs: PathBuf::from("graphs"),
         public: PathBuf::from("public"),
     }) {
@@ -78,12 +73,11 @@ async fn main() -> ExitCode {
             port,
             host,
             source_root,
-            code,
             graphs,
             public,
         } => {
             let address = SocketAddr::new(host, port);
-            serve(address, public, graphs, source_root, code).await
+            serve(address, public, graphs, source_root).await
         }
         Commands::Validate {
             graph,
@@ -95,14 +89,7 @@ async fn main() -> ExitCode {
             node,
             edge,
             source_root,
-            code,
-        } => open_command(
-            &graph,
-            node.as_deref(),
-            edge.as_deref(),
-            &source_root,
-            &code,
-        ),
+        } => open_command(&graph, node.as_deref(), edge.as_deref(), &source_root),
     };
 
     match result {
@@ -155,7 +142,6 @@ fn open_command(
     node_id: Option<&str>,
     edge_id: Option<&str>,
     source_root: &Path,
-    code: &Path,
 ) -> Result<(), String> {
     let graph = read_graph_file(graph_path)?;
     let (file, line) = match (node_id, edge_id) {
@@ -180,7 +166,7 @@ fn open_command(
     {
         return Err(format!("源码行号无效：{}:{line}", path.display()));
     }
-    VscodeCommandNavigator::new(code.to_owned()).open(&path, line)?;
-    println!("已请求 VSCode 打开 {}:{line}", path.display());
+    let uri = VscodeUriLinkBuilder.build(&path, line, 1)?;
+    println!("{uri}");
     Ok(())
 }

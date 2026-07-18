@@ -64,9 +64,7 @@ async function bootstrap() {
 
 function updateHealth(health) {
   elements.health.classList.add("ready");
-  elements.health.querySelector("span:last-child").textContent = health.sourceNavigatorAvailable
-    ? "源码桥接就绪"
-      : "图谱就绪 / 编辑器未配置";
+  elements.health.querySelector("span:last-child").textContent = "源码协议就绪";
   elements.health.title = `源码根目录：${health.sourceRoot}`;
 }
 
@@ -167,11 +165,12 @@ async function validateActiveGraph() {
 
 async function openTarget(target) {
   if (!target || !activeSlug) return;
-  setStatus("请求编辑器跳转");
+  setStatus("生成源码协议链接");
   try {
-    const response = await api.openSource(activeSlug, target.type, target.id);
-    toast(`已定位 ${shortPath(response.path)}:${response.line}`);
-    setStatus("已发送源码跳转");
+    const response = await api.buildSourceLink(activeSlug, target.type, target.id);
+    window.location.href = response.uri;
+    toast(`已交给浏览器打开 ${shortPath(response.path)}:${response.line}`);
+    setStatus("已触发外部源码协议");
   } catch (error) {
     toast(error.message, true);
     setStatus("源码跳转失败");
