@@ -125,18 +125,24 @@ schema/
   callgraph.schema.json  调用图 0.2
   projects.schema.json   项目目录配置 0.1
 graphs/
+  codex-shell-tool-execution.json
+  codex-thread-resume.json
+  codex-turn-lifecycle.json
   tui-authorization.json
 ```
 
 模块扩展方式见 [架构说明](docs/architecture.md)，原始设想与阶段规划见
-[路线图](docs/roadmap.md)。
+[路线图](docs/roadmap.md)。本地 Codex 核心功能的多链路验证结果见
+[Codex 核心功能系统性验证](docs/codex-core-validation.md)。
 
 ## 验证
 
 ```powershell
 cargo fmt --check
 cargo test
-cargo run -- validate graphs/tui-authorization.json
+Get-ChildItem graphs/*.json | ForEach-Object {
+  cargo run --quiet -- validate $_.FullName
+}
 ```
 
 浏览器端到端测试使用 Playwright，并自动管理 Rust 服务：

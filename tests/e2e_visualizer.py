@@ -20,7 +20,7 @@ with sync_playwright() as playwright:
 
     page.goto("http://127.0.0.1:4317")
     page.wait_for_load_state("networkidle")
-    page.wait_for_selector('[data-node-id="cli.main"]')
+    page.wait_for_selector(".graph-option")
 
     health = page.request.get("http://127.0.0.1:4317/api/health")
     assert health.ok
@@ -31,7 +31,54 @@ with sync_playwright() as playwright:
 
     graphs = page.request.get("http://127.0.0.1:4317/api/graphs")
     assert graphs.ok
-    assert graphs.json()[0]["projectId"] == "codex"
+    graph_summaries = graphs.json()
+    assert len(graph_summaries) == 4
+    assert all(graph["projectId"] == "codex" for graph in graph_summaries)
+    assert sum(graph["nodeCount"] for graph in graph_summaries) == 62
+    assert sum(graph["edgeCount"] for graph in graph_summaries) == 60
+    assert page.locator(".graph-option").count() == 4
+
+    for summary in graph_summaries:
+        graph_response = page.request.get(
+            f"http://127.0.0.1:4317/api/graphs/{summary['slug']}"
+        )
+        assert graph_response.ok
+        graph = graph_response.json()
+        targets = [("node", graph["root"]), ("edge", graph["edges"][0]["id"])]
+        for target_type, target_id in targets:
+            link_response = page.request.post(
+                "http://127.0.0.1:4317/api/open",
+                data={
+                    "graph": summary["slug"],
+                    "targetType": target_type,
+                    "id": target_id,
+                },
+            )
+            assert link_response.ok
+            assert link_response.json()["uri"].startswith("vscode://file/E:/")
+
+    expected_graphs = {
+        "Codex shell tool approval and sandbox execution": (17, 33),
+        "Codex persisted thread resume": (12, 24),
+        "Codex interactive turn lifecycle": (14, 27),
+        "TUI authorization call graph": (19, 38),
+    }
+    for title, (node_count, source_location_count) in expected_graphs.items():
+        page.locator(".graph-option", has_text=title).click()
+        page.wait_for_function(
+            "(title) => document.querySelector('#graph-title')?.textContent === title",
+            arg=title,
+        )
+        page.wait_for_function(
+            "(count) => document.querySelectorAll('.graph-node').length === count",
+            arg=node_count,
+        )
+        page.wait_for_function(
+            "(text) => document.querySelector('#validation-badge')?.textContent === text",
+            arg=f"{source_location_count} 处源码有效",
+        )
+
+    page.wait_for_selector('[data-node-id="cli.main"]')
 
     assert page.locator(".graph-node").count() == 19
     assert "TUI authorization" in page.locator("#graph-title").inner_text()
