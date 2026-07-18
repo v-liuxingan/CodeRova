@@ -113,8 +113,22 @@ with sync_playwright() as playwright:
     )
 
     page.locator("#fit-view").click()
-    page.locator('[data-node-id="core.current-client-setup"]').click()
+    selected_node = page.locator('[data-node-id="core.current-client-setup"]')
+    selected_node.click()
     assert "ModelClient::current_client_setup" in page.locator("#inspector-content h2").inner_text()
+    canvas_box = page.locator("#graph-canvas").bounding_box()
+    assert canvas_box
+    drag_start = (canvas_box["x"] + 20, canvas_box["y"] + 20)
+    page.mouse.move(*drag_start)
+    page.mouse.down()
+    page.mouse.move(drag_start[0] + 90, drag_start[1] + 55, steps=5)
+    page.mouse.up()
+    assert "selected" in (selected_node.get_attribute("class") or "")
+    assert "ModelClient::current_client_setup" in page.locator("#inspector-content h2").inner_text()
+    page.mouse.click(*drag_start)
+    assert "selected" not in (selected_node.get_attribute("class") or "")
+    selected_node.click()
+    page.locator("#fit-view").click()
     page.get_by_role("button", name="上游").click()
     upstream_count = page.locator(".graph-node").count()
     assert 1 < upstream_count < 19

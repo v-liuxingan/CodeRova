@@ -196,6 +196,8 @@ export class SvgRenderer {
 
   bindViewportEvents() {
     let drag = null;
+    let suppressCanvasClick = false;
+    const dragThreshold = 4;
     this.svg.addEventListener("wheel", (event) => {
       event.preventDefault();
       const rect = this.svg.getBoundingClientRect();
@@ -211,23 +213,33 @@ export class SvgRenderer {
         y: event.clientY,
         originX: this.transform.x,
         originY: this.transform.y,
+        moved: false,
       };
+      suppressCanvasClick = false;
       this.svg.setPointerCapture(event.pointerId);
       this.svg.parentElement.classList.add("dragging");
     });
     this.svg.addEventListener("pointermove", (event) => {
       if (!drag) return;
-      this.transform.x = drag.originX + event.clientX - drag.x;
-      this.transform.y = drag.originY + event.clientY - drag.y;
+      const deltaX = event.clientX - drag.x;
+      const deltaY = event.clientY - drag.y;
+      if (Math.hypot(deltaX, deltaY) >= dragThreshold) drag.moved = true;
+      this.transform.x = drag.originX + deltaX;
+      this.transform.y = drag.originY + deltaY;
       this.applyTransform();
     });
-    const finish = () => {
+    const finish = (event) => {
+      suppressCanvasClick = event.type === "pointerup" && Boolean(drag?.moved);
       drag = null;
       this.svg.parentElement.classList.remove("dragging");
     };
     this.svg.addEventListener("pointerup", finish);
     this.svg.addEventListener("pointercancel", finish);
     this.svg.addEventListener("click", (event) => {
+      if (suppressCanvasClick) {
+        suppressCanvasClick = false;
+        return;
+      }
       if (event.target === this.svg) this.callbacks.onSelect?.(null);
     });
   }
