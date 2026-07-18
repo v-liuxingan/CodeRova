@@ -192,6 +192,27 @@ with sync_playwright() as playwright:
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.main"
+
+    with page.expect_request("**/api/open") as right_request_info:
+        page.keyboard.press("ArrowRight")
+    assert right_request_info.value.post_data_json["id"] == "cli.cli-main"
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.cli-main"
+
+    with page.expect_request("**/api/open") as left_request_info:
+        page.keyboard.press("ArrowLeft")
+    assert left_request_info.value.post_data_json["id"] == "cli.main"
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.main"
+
+    page.locator("#search").focus()
+    page.keyboard.press("ArrowRight")
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-node"
+    ) == "cli.main"
+    page.locator("#search").blur()
     page.unroute("**/api/open", stub_source_open)
 
     page.locator("#fit-view").click()

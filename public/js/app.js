@@ -236,6 +236,21 @@ function bindControls() {
       elements.search.focus();
     }
     if (event.key === "Escape") state?.select(null);
+    if (
+      !event.altKey
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.shiftKey
+      && !isEditableTarget(event.target)
+      && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      const action = event.key === "ArrowLeft" ? "previous" : "next";
+      const button = action === "previous" ? elements.tracePrevious : elements.traceNext;
+      if (!button.disabled) {
+        event.preventDefault();
+        navigateTrace(action);
+      }
+    }
   });
 }
 
@@ -252,14 +267,14 @@ function renderTraceControls() {
     elements.tracePrevious,
     snapshot.previousNode,
     snapshot.previousNode
-      ? `上一节点：${snapshot.previousNode.label}`
+      ? `上一节点：${snapshot.previousNode.label}（←）`
       : "当前节点没有上游节点",
   );
   configureTraceButton(
     elements.traceNext,
     snapshot.nextNode,
     snapshot.nextNode
-      ? `下一节点：${snapshot.nextNode.label}`
+      ? `下一节点：${snapshot.nextNode.label}（→）`
       : "当前节点没有下游节点",
   );
 
@@ -275,6 +290,11 @@ function configureTraceButton(button, node, title) {
   button.disabled = !node;
   button.title = title;
   button.dataset.traceNodeId = node?.id || "";
+}
+
+function isEditableTarget(target) {
+  return target instanceof HTMLElement
+    && (target.matches("input, textarea, select") || target.isContentEditable);
 }
 
 function navigateTrace(action) {
