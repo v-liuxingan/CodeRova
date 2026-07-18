@@ -74,17 +74,42 @@ export class SvgRenderer {
       ? `M ${start.x} ${start.y} C ${start.x} ${start.y + delta}, ${end.x} ${end.y - delta}, ${end.x} ${end.y}`
       : `M ${start.x} ${start.y} C ${start.x + delta} ${start.y}, ${end.x - delta} ${end.y}, ${end.x} ${end.y}`;
     const kind = markerColorVariables[edge.kind] ? edge.kind : "direct";
+    const callSite = resolveEdgeCallSite(edge);
+    const selectEdge = (event) => {
+      event.stopPropagation();
+      this.callbacks.onSelect?.({ type: "edge", id: edge.id });
+    };
+    const handleEdgeKey = (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectEdge(event);
+    };
+    const hitTarget = svgElement("path", {
+      class: "graph-edge-hit",
+      d: pathData,
+      tabindex: "0",
+      role: "button",
+      "aria-label": callSite.available
+        ? `${edge.label || "调用关系"}，调用位置 ${callSite.compactLabel}`
+        : `${edge.label || "调用关系"}，${callSite.shortLabel}`,
+      "data-edge-hit-id": edge.id,
+    });
+    const title = svgElement("title");
+    title.textContent = callSite.available
+      ? `单击查看调用位置 ${callSite.compactLabel}`
+      : `单击查看说明：${callSite.shortLabel}`;
+    hitTarget.append(title);
+    hitTarget.addEventListener("click", selectEdge);
+    hitTarget.addEventListener("keydown", handleEdgeKey);
+
     const path = svgElement("path", {
       class: `graph-edge ${edge.kind}${state.selected?.type === "edge" && state.selected.id === edge.id ? " selected" : ""}`,
       d: pathData,
       "marker-end": `url(#arrow-${kind})`,
       "data-edge-id": edge.id,
     });
-    path.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this.callbacks.onSelect?.({ type: "edge", id: edge.id });
-    });
-    this.edgeLayer.append(path);
+    path.addEventListener("click", selectEdge);
+    this.edgeLayer.append(hitTarget, path);
 
     const midpoint = {
       x: (start.x + end.x) / 2,
@@ -101,7 +126,6 @@ export class SvgRenderer {
       this.edgeLayer.append(label);
     }
 
-    const callSite = resolveEdgeCallSite(edge);
     const callSiteLabel = svgElement("text", {
       class: `edge-callsite${callSite.available ? "" : " unavailable"}`,
       x: midpoint.x,
@@ -227,7 +251,7 @@ export class SvgRenderer {
       });
     }, { passive: false });
     this.svg.addEventListener("pointerdown", (event) => {
-      if (event.target.closest?.(".graph-node, .graph-edge")) return;
+      if (event.target.closest?.(".graph-node, .graph-edge, .graph-edge-hit")) return;
       drag = {
         x: event.clientX,
         y: event.clientY,

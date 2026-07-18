@@ -131,7 +131,7 @@ with sync_playwright() as playwright:
     assert unavailable_link.status == 400
     page.locator("#fit-view").click()
     page.locator(
-        '.graph-edge[data-edge-id="edge.auth-to-request-phase"]'
+        '[data-edge-hit-id="edge.auth-to-request-phase"]'
     ).evaluate(
         "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
     )
@@ -177,10 +177,26 @@ with sync_playwright() as playwright:
     page.locator("#reset-view").click()
     assert page.locator(".graph-node").count() == 19
 
-    page.locator(
-        '.graph-edge[data-edge-id="edge.client-runtime-start"]'
-    ).click(force=True)
+    edge_hit_target = page.locator(
+        '[data-edge-hit-id="edge.client-runtime-start"]'
+    )
+    edge_midpoint = edge_hit_target.evaluate(
+        """element => {
+            const point = element.getPointAtLength(element.getTotalLength() / 2);
+            const screen = point.matrixTransform(element.getScreenCTM());
+            return { x: screen.x, y: screen.y };
+        }"""
+    )
+    hit_test_x = edge_midpoint["x"] + 6
+    hit_test_y = edge_midpoint["y"]
+    assert page.evaluate(
+        """([x, y]) =>
+            document.elementFromPoint(x, y)?.dataset.edgeHitId || null""",
+        [hit_test_x, hit_test_y],
+    ) == "edge.client-runtime-start"
+    page.mouse.click(hit_test_x, hit_test_y)
     assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
+    assert page.locator("#inspector-content [data-open]").count() == 1
     assert "codex_app_server::in_process::start" in page.locator(
         "#inspector-content"
     ).inner_text()
