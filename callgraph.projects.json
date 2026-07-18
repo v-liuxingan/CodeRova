@@ -1,0 +1,4 @@
+{
+  "schemaVersion": "0.1",
+  "projects": [{"id": "callgraph-visualizer", "name": "CodeRova", "root": "."}]
+}

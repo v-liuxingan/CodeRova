@@ -52,7 +52,8 @@ main
 
 ```json
 {
-  "schemaVersion": "0.1",
+  "schemaVersion": "0.2",
+  "projectId": "codex",
   "title": "TUI authorization call graph",
   "root": "cli.main",
   "nodes": [
@@ -86,6 +87,7 @@ main
 
 ### 4.1 节点字段
 
+- `projectId`：图所引用的稳定项目标识；实际根目录由项目目录配置解析。
 - `id`：稳定标识。
 - `kind`：函数、结构体、Trait、模块、进程、远程服务等。
 - `file`、`line`、`endLine`：源码定位。
@@ -117,9 +119,10 @@ main
 浏览器通过 VSCode 注册的外部协议打开源码：
 
 1. 页面向本地服务提交调用图 slug、目标类型和 ID。
-2. 服务端从图数据解析位置，验证路径位于 `source-root` 内。
-3. 服务端返回 `vscode://file/<path>:<line>:<column>`。
-4. 前端在用户点击上下文中将 URI 交给浏览器。
+2. 服务端读取图的 `projectId`，从项目目录配置解析当前项目根路径。
+3. 服务端拼接项目内相对路径，并验证规范化路径仍位于对应项目根目录内。
+4. 服务端返回 `vscode://file/<path>:<line>:<column>`。
+5. 前端在用户点击上下文中将 URI 交给浏览器。
 
 服务端不启动 PowerShell、`cmd.exe`、`Code.exe` 或隐藏子进程。CLI 的 `open` 命令只输出
 经过相同校验的 URI。未来可以通过 `SourceLinkBuilder` 增加其他编辑器协议。
@@ -159,7 +162,8 @@ main
 
 ## 8. 当前进度
 
-- [x] 确认 JSON schema 的 0.1 字段名称并提供 JSON Schema。
+- [x] 提供调用图 0.2 与项目目录配置 0.1 的 JSON Schema。
+- [x] 通过 `projectId`、项目根目录和项目内相对路径支持源码仓库迁移。
 - [x] 手工录入并按本地 Codex 源码核验第一条 TUI 授权调用链。
 - [x] 第一版使用模块化 SVG 自绘，保留替换 Canvas/WebGL 的渲染器接口。
 - [x] 实现节点展开/折叠、隐藏、聚焦和类型筛选状态。

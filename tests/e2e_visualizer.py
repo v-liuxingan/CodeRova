@@ -22,6 +22,17 @@ with sync_playwright() as playwright:
     page.wait_for_load_state("networkidle")
     page.wait_for_selector('[data-node-id="cli.main"]')
 
+    health = page.request.get("http://127.0.0.1:4317/api/health")
+    assert health.ok
+    projects = health.json()["projects"]
+    assert len(projects) == 1
+    assert projects[0]["id"] == "codex"
+    assert projects[0]["rootExists"]
+
+    graphs = page.request.get("http://127.0.0.1:4317/api/graphs")
+    assert graphs.ok
+    assert graphs.json()[0]["projectId"] == "codex"
+
     assert page.locator(".graph-node").count() == 19
     assert "TUI authorization" in page.locator("#graph-title").inner_text()
     assert "38 处源码有效" in page.locator("#validation-badge").inner_text()

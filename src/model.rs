@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct CallGraph {
     pub schema_version: String,
+    pub project_id: String,
     pub title: String,
     pub root: String,
     #[serde(default)]
@@ -68,6 +69,7 @@ pub struct GraphSummary {
     pub slug: String,
     pub title: String,
     pub description: String,
+    pub project_id: String,
     pub node_count: usize,
     pub edge_count: usize,
 }

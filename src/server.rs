@@ -15,24 +15,25 @@ use tower_http::trace::TraceLayer;
 use crate::graph_store::{FileGraphStore, GraphStore};
 use crate::model::{CallGraph, GraphSummary, OpenRequest, OpenResponse, ValidationReport};
 use crate::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
+use crate::project_catalog::{FileProjectCatalog, ProjectCatalog, ResolvedProject};
 use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
 pub struct AppState {
     graph_store: Arc<dyn GraphStore>,
-    source_root: Arc<PathBuf>,
+    project_catalog: Arc<dyn ProjectCatalog>,
     source_link_builder: Arc<dyn SourceLinkBuilder>,
 }
 
 impl AppState {
     pub fn new(
         graph_store: Arc<dyn GraphStore>,
-        source_root: PathBuf,
+        project_catalog: Arc<dyn ProjectCatalog>,
         source_link_builder: Arc<dyn SourceLinkBuilder>,
     ) -> Self {
         Self {
             graph_store,
-            source_root: Arc::new(source_root),
+            project_catalog,
             source_link_builder,
         }
     }
@@ -71,11 +72,12 @@ pub async fn serve(
     address: SocketAddr,
     public_dir: PathBuf,
     graphs_dir: PathBuf,
-    source_root: PathBuf,
+    projects_config: PathBuf,
 ) -> Result<(), String> {
+    let project_catalog = FileProjectCatalog::from_file(&projects_config)?;
     let state = AppState::new(
         Arc::new(FileGraphStore::new(graphs_dir)),
-        source_root,
+        Arc::new(project_catalog),
         Arc::new(VscodeUriLinkBuilder),
     );
     let index = public_dir.join("index.html");
@@ -108,13 +110,13 @@ async fn shutdown_signal() {
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
     status: &'static str,
-    source_root: String,
+    projects: Vec<ResolvedProject>,
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
-        source_root: state.source_root.display().to_string(),
+        projects: state.project_catalog.projects(),
     })
 }
 
@@ -126,6 +128,7 @@ async fn list_graphs(State(state): State<AppState>) -> Result<Json<Vec<GraphSumm
             slug,
             title: graph.title,
             description: graph.description,
+            project_id: graph.project_id,
             node_count: graph.nodes.len(),
             edge_count: graph.edges.len(),
         });
@@ -146,10 +149,11 @@ async fn validate_graph_source(
     AxumPath(slug): AxumPath<String>,
 ) -> Result<Json<ValidationReport>, AppError> {
     let graph = read_graph(&state, &slug)?;
-    Ok(Json(validate_graph(
-        &graph,
-        Some(state.source_root.as_ref()),
-    )))
+    let project_root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(validate_graph(&graph, Some(&project_root))))
 }
 
 async fn build_source_link(
@@ -176,8 +180,11 @@ async fn build_source_link(
             ));
         }
     };
-    let path =
-        resolve_source_path(state.source_root.as_ref(), file).map_err(AppError::BadRequest)?;
+    let project_root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let path = resolve_source_path(&project_root, file).map_err(AppError::BadRequest)?;
     let column = 1;
     let uri = state
         .source_link_builder

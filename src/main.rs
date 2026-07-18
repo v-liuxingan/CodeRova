@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use callgraph_visualizer::graph_store::read_graph_file;
 use callgraph_visualizer::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
+use callgraph_visualizer::project_catalog::{FileProjectCatalog, ProjectCatalog};
 use callgraph_visualizer::server::serve;
 use callgraph_visualizer::validation::{resolve_source_path, validate_graph};
 use clap::{Parser, Subcommand};
@@ -24,8 +25,8 @@ enum Commands {
         port: u16,
         #[arg(long, default_value = "127.0.0.1")]
         host: IpAddr,
-        #[arg(long, default_value = ".")]
-        source_root: PathBuf,
+        #[arg(long, default_value = "callgraph.projects.json")]
+        config: PathBuf,
         #[arg(long, default_value = "graphs")]
         graphs: PathBuf,
         #[arg(long, default_value = "public")]
@@ -34,8 +35,8 @@ enum Commands {
     /// 校验调用图结构及源码位置
     Validate {
         graph: PathBuf,
-        #[arg(long, default_value = ".")]
-        source_root: PathBuf,
+        #[arg(long, default_value = "callgraph.projects.json")]
+        config: PathBuf,
         /// 输出机器可读的 JSON 报告
         #[arg(long)]
         json: bool,
@@ -47,8 +48,8 @@ enum Commands {
         node: Option<String>,
         #[arg(long, conflicts_with = "node")]
         edge: Option<String>,
-        #[arg(long, default_value = ".")]
-        source_root: PathBuf,
+        #[arg(long, default_value = "callgraph.projects.json")]
+        config: PathBuf,
     },
 }
 
@@ -65,31 +66,31 @@ async fn main() -> ExitCode {
     let result = match cli.command.unwrap_or(Commands::Serve {
         port: 4317,
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
-        source_root: PathBuf::from("."),
+        config: PathBuf::from("callgraph.projects.json"),
         graphs: PathBuf::from("graphs"),
         public: PathBuf::from("public"),
     }) {
         Commands::Serve {
             port,
             host,
-            source_root,
+            config,
             graphs,
             public,
         } => {
             let address = SocketAddr::new(host, port);
-            serve(address, public, graphs, source_root).await
+            serve(address, public, graphs, config).await
         }
         Commands::Validate {
             graph,
-            source_root,
+            config,
             json,
-        } => validate_command(&graph, &source_root, json),
+        } => validate_command(&graph, &config, json),
         Commands::Open {
             graph,
             node,
             edge,
-            source_root,
-        } => open_command(&graph, node.as_deref(), edge.as_deref(), &source_root),
+            config,
+        } => open_command(&graph, node.as_deref(), edge.as_deref(), &config),
     };
 
     match result {
@@ -101,9 +102,11 @@ async fn main() -> ExitCode {
     }
 }
 
-fn validate_command(graph_path: &Path, source_root: &Path, json: bool) -> Result<(), String> {
+fn validate_command(graph_path: &Path, config_path: &Path, json: bool) -> Result<(), String> {
     let graph = read_graph_file(graph_path)?;
-    let report = validate_graph(&graph, Some(source_root));
+    let catalog = FileProjectCatalog::from_file(config_path)?;
+    let project_root = catalog.resolve_root(&graph.project_id)?;
+    let report = validate_graph(&graph, Some(&project_root));
     if json {
         println!(
             "{}",
@@ -112,8 +115,9 @@ fn validate_command(graph_path: &Path, source_root: &Path, json: bool) -> Result
         );
     } else {
         println!(
-            "{} — {} 个节点，{} 条连线",
+            "{} [{}] — {} 个节点，{} 条连线",
             graph.title,
+            graph.project_id,
             graph.nodes.len(),
             graph.edges.len()
         );
@@ -141,7 +145,7 @@ fn open_command(
     graph_path: &Path,
     node_id: Option<&str>,
     edge_id: Option<&str>,
-    source_root: &Path,
+    config_path: &Path,
 ) -> Result<(), String> {
     let graph = read_graph_file(graph_path)?;
     let (file, line) = match (node_id, edge_id) {
@@ -159,7 +163,9 @@ fn open_command(
             .ok_or_else(|| format!("连线不存在：{id}"))?,
         _ => return Err("必须且只能指定 --node 或 --edge".to_owned()),
     };
-    let path = resolve_source_path(source_root, file)?;
+    let catalog = FileProjectCatalog::from_file(config_path)?;
+    let project_root = catalog.resolve_root(&graph.project_id)?;
+    let path = resolve_source_path(&project_root, file)?;
     if fs::read_to_string(&path)
         .map(|content| line as usize > content.lines().count())
         .unwrap_or(true)

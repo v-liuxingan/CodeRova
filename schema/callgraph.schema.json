@@ -4,9 +4,14 @@
   "title": "Source Callgraph",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "title", "root", "nodes", "edges"],
+  "required": ["schemaVersion", "projectId", "title", "root", "nodes", "edges"],
   "properties": {
-    "schemaVersion": { "const": "0.1" },
+    "schemaVersion": { "const": "0.2" },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Stable id resolved through callgraph.projects.json"
+    },
     "title": { "type": "string", "minLength": 1 },
     "description": { "type": "string" },
     "sourceRevision": { "type": ["string", "null"] },

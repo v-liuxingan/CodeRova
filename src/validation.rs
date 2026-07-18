@@ -30,11 +30,19 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     let mut warnings = Vec::new();
     let mut source_locations = Vec::new();
 
-    if graph.schema_version != "0.1" {
+    if graph.schema_version != "0.2" {
         errors.push(format!(
-            "不支持 schemaVersion {:?}，当前仅支持 0.1",
+            "不支持 schemaVersion {:?}，当前仅支持 0.2",
             graph.schema_version
         ));
+    }
+    if graph.project_id.is_empty()
+        || !graph
+            .project_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        errors.push("projectId 必须是非空的字母、数字、连字符或下划线组合".to_owned());
     }
     if graph.title.trim().is_empty() {
         errors.push("title 不能为空".to_owned());
@@ -182,7 +190,8 @@ mod tests {
 
     fn graph() -> CallGraph {
         CallGraph {
-            schema_version: "0.1".into(),
+            schema_version: "0.2".into(),
+            project_id: "demo".into(),
             title: "test".into(),
             root: "a".into(),
             description: String::new(),

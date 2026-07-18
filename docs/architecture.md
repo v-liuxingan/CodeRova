@@ -6,6 +6,7 @@
 HTTP / CLI adapters
        │
        ├── GraphStore ─────── FileGraphStore
+       ├── ProjectCatalog ─── FileProjectCatalog
        ├── SourceLinkBuilder ─ VscodeUriLinkBuilder
        ├── validation
        └── domain model
@@ -26,6 +27,15 @@ UI controller
 负责列举和读取调用图。默认 `FileGraphStore` 读取 `graphs/*.json`。如果以后需要
 SQLite、Git 版本库或实时分析器，可实现相同的 `list` / `load` 边界，HTTP 层无需改变。
 
+### `ProjectCatalog`
+
+负责把调用图中稳定的 `projectId` 映射为当前机器上的项目根目录。默认
+`FileProjectCatalog` 读取 `callgraph.projects.json`；其中相对根路径以配置文件所在目录
+为基准解析。项目迁移后只需修改目录配置，不需要重写图里的源码位置。
+
+目录解析与图存储彼此独立，因此同一个图目录可以引用多个源码项目，也可以用数据库、
+工作区发现器或远程挂载实现替换文件配置。
+
 ### `SourceLinkBuilder`
 
 负责把已经过验证的源码位置转换成外部编辑器 URI。默认 `VscodeUriLinkBuilder` 生成：
@@ -35,7 +45,7 @@ vscode://file/<absolute-path>:<line>:<column>
 ```
 
 VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都可以替换它。路径规范化
-和源码根目录边界校验发生在生成 URI 之前。后端只返回数据，不启动 PowerShell、
+和所选项目根目录的边界校验发生在生成 URI 之前。后端只返回数据，不启动 PowerShell、
 `cmd.exe`、编辑器或任何其他子进程；前端在用户明确点击后把 URI 交给浏览器。
 
 ### `validation`
@@ -43,7 +53,8 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 校验分为两层：
 
 1. 图约束：schema 版本、ID 唯一性、端点存在、枚举、置信度、相对路径。
-2. 源码约束：文件存在、行号不超过文件长度、路径没有逃逸源码根目录。
+2. 项目约束：`projectId` 能从 `ProjectCatalog` 解析到当前机器上的根目录。
+3. 源码约束：文件存在、行号不超过文件长度、路径没有逃逸对应项目根目录。
 
 ## 前端接口
 

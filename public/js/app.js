@@ -63,9 +63,14 @@ async function bootstrap() {
 }
 
 function updateHealth(health) {
-  elements.health.classList.add("ready");
-  elements.health.querySelector("span:last-child").textContent = "源码协议就绪";
-  elements.health.title = `源码根目录：${health.sourceRoot}`;
+  const missingRoots = health.projects.filter((project) => !project.rootExists);
+  elements.health.classList.toggle("ready", missingRoots.length === 0);
+  elements.health.querySelector("span:last-child").textContent = missingRoots.length
+    ? `${missingRoots.length} 个项目根路径无效`
+    : `${health.projects.length} 个项目已就绪`;
+  elements.health.title = health.projects
+    .map((project) => `${project.id}: ${project.root}`)
+    .join("\n");
 }
 
 function renderGraphList(graphs) {
@@ -77,7 +82,8 @@ function renderGraphList(graphs) {
     const title = document.createElement("strong");
     title.textContent = graph.title;
     const meta = document.createElement("small");
-    meta.textContent = `${graph.nodeCount} NODES · ${graph.edgeCount} EDGES`;
+    meta.textContent =
+      `${graph.projectId.toUpperCase()} · ${graph.nodeCount} NODES · ${graph.edgeCount} EDGES`;
     button.append(title, meta);
     button.addEventListener("click", () => activateGraph(graph.slug));
     elements.graphList.append(button);

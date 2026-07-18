@@ -23,29 +23,62 @@ Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向�
 要求 Rust 1.85+。在本目录运行：
 
 ```powershell
-cargo run -- serve --source-root E:/path/to/your/source
+cargo run -- serve
 ```
 
 然后访问 <http://127.0.0.1:4317>。
 
 默认使用：
 
-- 源码根目录：当前目录 `.`
+- 项目目录配置：`callgraph.projects.json`
 - 源码跳转协议：`vscode://file/...:line:column`
 - 调用图目录：`graphs`
 - 静态页面目录：`public`
 
-查看仓库自带的 Codex 示例：
+默认配置已经把仓库自带的 Codex 示例映射到 `../codex`：
+
+也可以覆盖项目配置、端口和数据目录：
 
 ```powershell
-cargo run -- serve --source-root ../codex
+cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
+  --graphs E:/path/to/graphs --port 4317
 ```
 
-也可以覆盖端口和数据目录：
+## 项目根路径
 
-```powershell
-cargo run -- serve --source-root E:/path/to/source `
-  --graphs E:/path/to/graphs --port 4317
+调用图只保存稳定的 `projectId` 和项目内相对路径。项目在当前机器上的实际位置集中定义
+在 `callgraph.projects.json`：
+
+```json
+{
+  "schemaVersion": "0.1",
+  "projects": [
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
+      "root": "../codex"
+    }
+  ]
+}
+```
+
+`root` 可以是绝对路径，也可以是相对于项目配置文件的路径。源码迁移后只需修改这里，
+不需要重写调用图。需要保存机器专属路径时，可以创建已被 Git 忽略的
+`callgraph.projects.local.json`，并使用 `--config` 指定。
+
+调用图 0.2 通过 `projectId` 引用项目：
+
+```json
+{
+  "schemaVersion": "0.2",
+  "projectId": "codex",
+  "nodes": [
+    {
+      "file": "codex-rs/cli/src/main.rs",
+      "line": 956
+    }
+  ]
+}
 ```
 
 ## CLI
@@ -53,25 +86,23 @@ cargo run -- serve --source-root E:/path/to/source `
 校验图结构和每个节点/连线的源码位置：
 
 ```powershell
-cargo run -- validate graphs/tui-authorization.json --source-root ../codex
+cargo run -- validate graphs/tui-authorization.json
 ```
 
 输出 JSON 校验报告：
 
 ```powershell
-cargo run -- validate graphs/tui-authorization.json --source-root ../codex --json
+cargo run -- validate graphs/tui-authorization.json --json
 ```
 
 为节点或调用点生成经过校验的 VSCode URI：
 
 ```powershell
 cargo run -- open graphs/tui-authorization.json `
-  --node cli.main `
-  --source-root ../codex
+  --node cli.main
 
 cargo run -- open graphs/tui-authorization.json `
-  --edge edge.client-runtime-start `
-  --source-root ../codex
+  --edge edge.client-runtime-start
 ```
 
 ## 项目结构
@@ -81,6 +112,7 @@ src/
   graph_store.rs       GraphStore 接口与 JSON 文件仓储
   model.rs             领域数据模型
   navigation.rs        SourceLinkBuilder 接口与 VSCode URI 实现
+  project_catalog.rs   ProjectCatalog 接口与项目根路径配置
   validation.rs        图一致性与源码位置校验
   server.rs            HTTP API 和静态资源适配层
   main.rs              serve / validate / open CLI
@@ -90,7 +122,8 @@ public/js/
   renderers/           可替换渲染器；当前为 SVG
   renderer-registry.js 渲染器插件注册
 schema/
-  callgraph.schema.json
+  callgraph.schema.json  调用图 0.2
+  projects.schema.json   项目目录配置 0.1
 graphs/
   tui-authorization.json
 ```
@@ -103,20 +136,21 @@ graphs/
 ```powershell
 cargo fmt --check
 cargo test
-cargo run -- validate graphs/tui-authorization.json --source-root ../codex
+cargo run -- validate graphs/tui-authorization.json
 ```
 
 浏览器端到端测试使用 Playwright，并自动管理 Rust 服务：
 
 ```powershell
 python E:/develop/Agent/skills/webapp-testing/scripts/with_server.py `
-  --server "cargo run --quiet -- serve --source-root ../codex" --port 4317 `
+  --server "cargo run --quiet -- serve" --port 4317 `
   -- python tests/e2e_visualizer.py
 ```
 
 ## 安全边界
 
 HTTP 跳转接口不接受任意文件路径。它只接受调用图 slug、目标类型和目标 ID，服务端
-从已加载图中重新解析源码位置，并校验规范化路径仍位于 `source-root` 内，再返回
+从已加载图中读取 `projectId`，通过项目目录配置解析根路径，并校验规范化源码路径仍
+位于对应项目根目录内，再返回
 `vscode://` URI。服务端不执行 PowerShell、命令脚本或编辑器进程；外部协议只能由
 前端在用户点击后交给浏览器处理。
