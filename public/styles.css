@@ -241,6 +241,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .tool-group > button + button { border-left: 0; }
 .tool:hover, .icon-tool:hover, .tool.active { color: var(--paper); border-color: #596451; background: var(--panel-2); }
 .tool.active { color: var(--acid); }
+.instant-open-toggle[aria-pressed="true"] {
+  color: var(--on-accent);
+  border-color: var(--acid);
+  background: var(--acid);
+}
+.instant-open-toggle[aria-pressed="true"]:hover { color: var(--on-accent); }
 .icon-tool { min-width: 30px; padding: 0 7px; font-family: "Cascadia Code", monospace; }
 .tool-divider { height: 18px; border-left: 1px solid var(--line); margin: 0 2px; }
 .toolbar-meta { margin-left: auto; display: flex; gap: 12px; align-items: center; color: var(--muted); font: 9px "Cascadia Code", monospace; white-space: nowrap; }
@@ -260,7 +266,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
   background: color-mix(in srgb, var(--panel-2) 58%, var(--panel));
 }
 .source-stepper::before {
-  content: "SOURCE WALK";
+  content: "SOURCE WALK · ← / →";
   margin-right: 10px;
   color: var(--text-subtle);
   font: 8px "Cascadia Code", monospace;
@@ -295,6 +301,35 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .trace-step.callsite:hover:not(:disabled) { filter: brightness(1.06); }
 .trace-step:disabled { opacity: .34; cursor: not-allowed; }
 .trace-step.callsite:disabled { color: var(--muted); background: var(--panel-2); filter: none; }
+.trace-branch {
+  height: 31px;
+  max-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-subtle);
+  background: var(--panel);
+  font: 8px "Cascadia Code", monospace;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+.trace-branch[hidden] { display: none; }
+.trace-branch select {
+  min-width: 0;
+  max-width: 170px;
+  border: 0;
+  outline: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font: 9px "Microsoft YaHei UI", sans-serif;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.trace-branch select:focus-visible { color: var(--paper); }
+.source-stepper:has(.trace-branch:not([hidden]))::before { display: none; }
 .canvas-grid {
   position: absolute; inset: 0; opacity: .38; pointer-events: none;
   background-image:

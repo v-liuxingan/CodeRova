@@ -46,6 +46,8 @@ with sync_playwright() as playwright:
     page.wait_for_selector(".graph-option")
 
     assert page.locator("html").get_attribute("data-theme") == "halo"
+    assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "false"
+    assert page.locator("#instant-open-toggle").inner_text() == "点击跳转：关"
     assert page.locator("#theme-select").input_value() == "halo"
     assert page.locator("#theme-select option").count() == 3
     page.locator("#theme-select").select_option("aether")
@@ -118,6 +120,27 @@ with sync_playwright() as playwright:
             assert page.locator("#trace-callsite").get_attribute(
                 "data-trace-edge-id"
             ) == "shell.output-to-runtime"
+            assert page.locator("#trace-branch-wrap").is_visible()
+            assert page.locator("#trace-branch option").count() == 2
+            assert page.locator("#trace-branch").input_value() == "shell.output-to-runtime"
+            assert page.locator("#trace-branch-label").inner_text() == "分支 2/2"
+            assert "ToolCallRuntime::handle_tool_call" in page.locator(
+                "#trace-branch option:checked"
+            ).inner_text()
+            page.locator("#trace-branch").select_option("shell.output-to-build")
+            assert page.locator("#trace-branch-label").inner_text() == "分支 1/2"
+            assert page.locator("#trace-callsite").get_attribute(
+                "data-trace-edge-id"
+            ) == "shell.output-to-build"
+            assert page.locator("#trace-next").get_attribute(
+                "data-trace-node-id"
+            ) == "tools.build-tool-call"
+            page.locator("#trace-branch").select_option("shell.output-to-runtime")
+            page.locator('[data-edge-hit-id="shell.output-to-build"]').evaluate(
+                "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+            )
+            assert page.locator("#trace-branch").input_value() == "shell.output-to-build"
+            page.locator("#trace-branch").select_option("shell.output-to-runtime")
 
     page.wait_for_selector('[data-node-id="cli.main"]')
 
@@ -195,14 +218,35 @@ with sync_playwright() as playwright:
 
     with page.expect_request("**/api/open") as right_request_info:
         page.keyboard.press("ArrowRight")
-    assert right_request_info.value.post_data_json["id"] == "cli.cli-main"
+    assert right_request_info.value.post_data_json == {
+        "graph": "tui-authorization",
+        "targetType": "edge",
+        "id": "edge.main-cli-main",
+    }
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-position"
+    ) == "edge"
+
+    with page.expect_request("**/api/open") as right_node_request_info:
+        page.keyboard.press("ArrowRight")
+    assert right_node_request_info.value.post_data_json["targetType"] == "node"
+    assert right_node_request_info.value.post_data_json["id"] == "cli.cli-main"
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.cli-main"
 
-    with page.expect_request("**/api/open") as left_request_info:
+    with page.expect_request("**/api/open") as left_edge_request_info:
         page.keyboard.press("ArrowLeft")
-    assert left_request_info.value.post_data_json["id"] == "cli.main"
+    assert left_edge_request_info.value.post_data_json["targetType"] == "edge"
+    assert left_edge_request_info.value.post_data_json["id"] == "edge.main-cli-main"
+    assert page.locator(".source-stepper").get_attribute(
+        "data-current-position"
+    ) == "edge"
+
+    with page.expect_request("**/api/open") as left_node_request_info:
+        page.keyboard.press("ArrowLeft")
+    assert left_node_request_info.value.post_data_json["targetType"] == "node"
+    assert left_node_request_info.value.post_data_json["id"] == "cli.main"
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.main"
@@ -230,6 +274,51 @@ with sync_playwright() as playwright:
     assert page.locator("#trace-next").get_attribute(
         "data-trace-node-id"
     ) == "core.current-client-setup"
+
+    instant_open_requests = []
+    page.on(
+        "request",
+        lambda request: instant_open_requests.append(request.post_data_json)
+        if request.url.endswith("/api/open") and request.method == "POST"
+        else None,
+    )
+    page.route("**/api/open", stub_source_open)
+    page.locator("#instant-open-toggle").click()
+    assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "true"
+    assert page.locator("#instant-open-toggle").inner_text() == "点击跳转：开"
+
+    with page.expect_request("**/api/open") as instant_node_request:
+        page.locator('[data-node-id="cli.main"]').evaluate(
+            "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+        )
+    assert instant_node_request.value.post_data_json["targetType"] == "node"
+    assert instant_node_request.value.post_data_json["id"] == "cli.main"
+
+    with page.expect_request("**/api/open") as instant_edge_request:
+        page.locator('[data-edge-hit-id="edge.main-cli-main"]').evaluate(
+            "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+        )
+    assert instant_edge_request.value.post_data_json["targetType"] == "edge"
+    assert instant_edge_request.value.post_data_json["id"] == "edge.main-cli-main"
+
+    page.locator('[data-edge-hit-id="edge.auth-to-request-phase"]').evaluate(
+        "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+    )
+    page.wait_for_timeout(100)
+    assert len(instant_open_requests) == 2
+
+    page.locator("#instant-open-toggle").click()
+    assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "false"
+    with page.expect_request("**/api/open") as unavailable_back_request:
+        page.keyboard.press("ArrowLeft")
+    assert unavailable_back_request.value.post_data_json["targetType"] == "node"
+    assert unavailable_back_request.value.post_data_json["id"] == "login.auth-manager-shared"
+
+    with page.expect_request("**/api/open") as unavailable_forward_request:
+        page.keyboard.press("ArrowRight")
+    assert unavailable_forward_request.value.post_data_json["targetType"] == "node"
+    assert unavailable_forward_request.value.post_data_json["id"] == "core.current-client-setup"
+    page.unroute("**/api/open", stub_source_open)
 
     selected_node = page.locator('[data-node-id="core.current-client-setup"]')
     selected_node.click()

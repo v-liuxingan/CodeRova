@@ -1,4 +1,5 @@
 import { CallgraphApi } from "./api.js";
+import { ClickNavigationPolicy } from "./click-navigation-policy.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
 import { LayeredLayout } from "./layouts/layered-layout.js";
@@ -25,7 +26,11 @@ const elements = {
   sourceStepper: document.querySelector(".source-stepper"),
   tracePrevious: document.querySelector("#trace-previous"),
   traceCallSite: document.querySelector("#trace-callsite"),
+  traceBranchWrap: document.querySelector("#trace-branch-wrap"),
+  traceBranchLabel: document.querySelector("#trace-branch-label"),
+  traceBranch: document.querySelector("#trace-branch"),
   traceNext: document.querySelector("#trace-next"),
+  instantOpenToggle: document.querySelector("#instant-open-toggle"),
 };
 
 const rendererRegistry = new RendererRegistry().register(
@@ -40,6 +45,7 @@ const inspector = new Inspector(
   document.querySelector("#inspector-empty"),
   document.querySelector("#inspector-content"),
 );
+const clickNavigation = new ClickNavigationPolicy();
 
 let activeSlug = null;
 let activeGraph = null;
@@ -227,8 +233,19 @@ function bindControls() {
   document.querySelector("#fit-view").addEventListener("click", () => renderer.fit());
   document.querySelector("#reset-view").addEventListener("click", () => state?.resetVisibility());
   elements.orientation.addEventListener("click", () => state?.toggleOrientation());
+  elements.instantOpenToggle.addEventListener("click", () => {
+    const enabled = clickNavigation.toggle();
+    elements.instantOpenToggle.classList.toggle("active", enabled);
+    elements.instantOpenToggle.setAttribute("aria-pressed", String(enabled));
+    elements.instantOpenToggle.textContent =
+      `点击跳转：${enabled ? "开" : "关"}`;
+  });
   elements.tracePrevious.addEventListener("click", () => navigateTrace("previous"));
   elements.traceCallSite.addEventListener("click", () => navigateTrace("callSite"));
+  elements.traceBranch.addEventListener("change", (event) => {
+    const target = traceNavigator?.selectBranch(event.target.value);
+    if (target) state?.select(target);
+  });
   elements.traceNext.addEventListener("click", () => navigateTrace("next"));
   window.addEventListener("keydown", (event) => {
     if (event.key === "/" && document.activeElement !== elements.search) {
@@ -244,8 +261,8 @@ function bindControls() {
       && !isEditableTarget(event.target)
       && (event.key === "ArrowLeft" || event.key === "ArrowRight")
     ) {
-      const action = event.key === "ArrowLeft" ? "previous" : "next";
-      const button = action === "previous" ? elements.tracePrevious : elements.traceNext;
+      const action = event.key === "ArrowLeft" ? "stepBackward" : "stepForward";
+      const button = event.key === "ArrowLeft" ? elements.tracePrevious : elements.traceNext;
       if (!button.disabled) {
         event.preventDefault();
         navigateTrace(action);
@@ -257,12 +274,16 @@ function bindControls() {
 function selectGraphTarget(target) {
   traceNavigator?.syncSelection(target);
   state?.select(target);
+  if (clickNavigation.shouldOpen(activeGraph, target)) void openTarget(target);
 }
 
 function renderTraceControls() {
   if (!traceNavigator) return;
   const snapshot = traceNavigator.snapshot();
   elements.sourceStepper.dataset.currentNode = snapshot.currentNode?.id || "";
+  elements.sourceStepper.dataset.currentPosition =
+    state?.selected?.type === "edge" ? "edge" : "node";
+  renderTraceBranches(snapshot);
   configureTraceButton(
     elements.tracePrevious,
     snapshot.previousNode,
@@ -284,6 +305,34 @@ function renderTraceControls() {
     ? `调用位置：${snapshot.callSite.compactLabel}`
     : snapshot.callSite?.note || "当前节点没有下游调用";
   elements.traceCallSite.dataset.traceEdgeId = snapshot.callEdge?.id || "";
+}
+
+function renderTraceBranches(snapshot) {
+  const showBranches = snapshot.branches.length > 1;
+  elements.traceBranchWrap.hidden = !showBranches;
+  if (!showBranches) {
+    elements.traceBranch.replaceChildren();
+    return;
+  }
+
+  const selectedIndex = snapshot.branches.findIndex((branch) => branch.selected);
+  elements.traceBranchLabel.textContent =
+    `分支 ${Math.max(0, selectedIndex) + 1}/${snapshot.branches.length}`;
+
+  const options = snapshot.branches.map(({ edge, node, callSite, selected }) => {
+    const option = document.createElement("option");
+    option.value = edge.id;
+    const location = callSite.available
+      ? callSite.compactLabel
+      : callSite.shortLabel || "无调用位置";
+    option.textContent =
+      `${node?.label || edge.to} · ${edge.kind} · ${location}`;
+    option.title = `${edge.id} → ${node?.label || edge.to}`;
+    option.selected = selected;
+    return option;
+  });
+  elements.traceBranch.replaceChildren(...options);
+  elements.traceBranch.title = "选择右箭头继续跟随的下游分支";
 }
 
 function configureTraceButton(button, node, title) {
