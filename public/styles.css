@@ -262,15 +262,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .empty-state { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--muted); }
 .empty-state span { font: 50px "Cascadia Code", monospace; color: var(--line); }
 
-.graph-edge-hit { fill: none; stroke: var(--paper); stroke-opacity: .001; stroke-width: 18; cursor: pointer; pointer-events: stroke; vector-effect: non-scaling-stroke; }
+.graph-edge-group { cursor: pointer; outline: none; }
+.graph-edge-hit { fill: none; stroke: transparent; stroke-width: 24; pointer-events: stroke; vector-effect: non-scaling-stroke; }
 .graph-edge { fill: none; stroke: var(--edge-direct); stroke-width: 1.4; opacity: .68; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
 .graph-edge.callback, .graph-edge.spawn, .graph-edge.async-boundary { stroke: var(--amber); stroke-dasharray: 7 5; }
 .graph-edge.trait-dispatch { stroke: var(--cyan); stroke-dasharray: 2 5; }
 .graph-edge.data-flow { stroke: var(--rose); stroke-dasharray: 10 5 2 5; }
-.graph-edge-hit:hover + .graph-edge, .graph-edge-hit:focus-visible + .graph-edge, .graph-edge:hover, .graph-edge.selected { opacity: 1; stroke-width: 2.5; }
-.graph-edge-hit:focus-visible { outline: none; }
-.edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: none; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
-.edge-callsite { fill: var(--cyan); font: 700 8px "Cascadia Code", monospace; pointer-events: none; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; letter-spacing: .02em; }
+.graph-edge-group:hover .graph-edge, .graph-edge-group:focus-visible .graph-edge { opacity: 1; stroke-width: 2; }
+.graph-edge.selected { opacity: 1; stroke: var(--acid); stroke-width: 2; }
+.edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: visiblePainted; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
+.edge-callsite { fill: var(--cyan); font: 700 8px "Cascadia Code", monospace; pointer-events: visiblePainted; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; letter-spacing: .02em; }
 .edge-callsite.unavailable { fill: var(--amber); font-weight: 600; }
 .graph-node { cursor: pointer; transform-box: fill-box; transform-origin: center; }
 .node-box { fill: var(--node-bg); stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; transition: .15s; rx: var(--radius); filter: drop-shadow(0 8px 16px rgb(0 0 0 / 13%)); }

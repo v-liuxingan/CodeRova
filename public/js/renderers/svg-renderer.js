@@ -84,23 +84,28 @@ export class SvgRenderer {
       event.preventDefault();
       selectEdge(event);
     };
-    const hitTarget = svgElement("path", {
-      class: "graph-edge-hit",
-      d: pathData,
+    const edgeGroup = svgElement("g", {
+      class: "graph-edge-group",
       tabindex: "0",
       role: "button",
       "aria-label": callSite.available
         ? `${edge.label || "调用关系"}，调用位置 ${callSite.compactLabel}`
         : `${edge.label || "调用关系"}，${callSite.shortLabel}`,
+      "data-edge-group-id": edge.id,
+    });
+    edgeGroup.addEventListener("click", selectEdge);
+    edgeGroup.addEventListener("keydown", handleEdgeKey);
+
+    const hitTarget = svgElement("path", {
+      class: "graph-edge-hit",
+      d: pathData,
       "data-edge-hit-id": edge.id,
     });
     const title = svgElement("title");
     title.textContent = callSite.available
       ? `单击查看调用位置 ${callSite.compactLabel}`
       : `单击查看说明：${callSite.shortLabel}`;
-    hitTarget.append(title);
-    hitTarget.addEventListener("click", selectEdge);
-    hitTarget.addEventListener("keydown", handleEdgeKey);
+    edgeGroup.append(title);
 
     const path = svgElement("path", {
       class: `graph-edge ${edge.kind}${state.selected?.type === "edge" && state.selected.id === edge.id ? " selected" : ""}`,
@@ -108,8 +113,7 @@ export class SvgRenderer {
       "marker-end": `url(#arrow-${kind})`,
       "data-edge-id": edge.id,
     });
-    path.addEventListener("click", selectEdge);
-    this.edgeLayer.append(hitTarget, path);
+    edgeGroup.append(hitTarget, path);
 
     const midpoint = {
       x: (start.x + end.x) / 2,
@@ -123,7 +127,7 @@ export class SvgRenderer {
         "text-anchor": "middle",
       });
       label.textContent = edge.label;
-      this.edgeLayer.append(label);
+      edgeGroup.append(label);
     }
 
     const callSiteLabel = svgElement("text", {
@@ -137,7 +141,8 @@ export class SvgRenderer {
     callSiteLabel.textContent = callSite.available
       ? callSite.compactLabel
       : `◇ ${callSite.shortLabel}`;
-    this.edgeLayer.append(callSiteLabel);
+    edgeGroup.append(callSiteLabel);
+    this.edgeLayer.append(edgeGroup);
   }
 
   drawNode(entry, state, visibleEdges) {
@@ -251,7 +256,7 @@ export class SvgRenderer {
       });
     }, { passive: false });
     this.svg.addEventListener("pointerdown", (event) => {
-      if (event.target.closest?.(".graph-node, .graph-edge, .graph-edge-hit")) return;
+      if (event.target.closest?.(".graph-node, .graph-edge-group")) return;
       drag = {
         x: event.clientX,
         y: event.clientY,

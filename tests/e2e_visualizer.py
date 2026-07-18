@@ -180,26 +180,49 @@ with sync_playwright() as playwright:
     edge_hit_target = page.locator(
         '[data-edge-hit-id="edge.client-runtime-start"]'
     )
-    edge_midpoint = edge_hit_target.evaluate(
+    edge_hit_points = edge_hit_target.evaluate(
         """element => {
-            const point = element.getPointAtLength(element.getTotalLength() / 2);
-            const screen = point.matrixTransform(element.getScreenCTM());
-            return { x: screen.x, y: screen.y };
+            const length = element.getTotalLength();
+            const matrix = element.getScreenCTM();
+            return [0.1, 0.25, 0.5, 0.75, 0.9].flatMap(ratio => {
+                const distance = length * ratio;
+                const point = element.getPointAtLength(distance);
+                const before = element.getPointAtLength(Math.max(0, distance - 1));
+                const after = element.getPointAtLength(Math.min(length, distance + 1));
+                const dx = after.x - before.x;
+                const dy = after.y - before.y;
+                const magnitude = Math.hypot(dx, dy) || 1;
+                const normal = { x: -dy / magnitude, y: dx / magnitude };
+                const screen = point.matrixTransform(matrix);
+                return [-10, 10].map(offset => ({
+                    x: screen.x + normal.x * offset,
+                    y: screen.y + normal.y * offset,
+                }));
+            });
         }"""
     )
-    hit_test_x = edge_midpoint["x"] + 6
-    hit_test_y = edge_midpoint["y"]
-    assert page.evaluate(
-        """([x, y]) =>
-            document.elementFromPoint(x, y)?.dataset.edgeHitId || null""",
-        [hit_test_x, hit_test_y],
-    ) == "edge.client-runtime-start"
+    for point in edge_hit_points:
+        assert page.evaluate(
+            """([x, y]) =>
+                document.elementFromPoint(x, y)
+                    ?.closest(".graph-edge-group")
+                    ?.dataset.edgeGroupId || null""",
+            [point["x"], point["y"]],
+        ) == "edge.client-runtime-start"
+    hit_test_x = edge_hit_points[4]["x"]
+    hit_test_y = edge_hit_points[4]["y"]
     page.mouse.click(hit_test_x, hit_test_y)
     assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
     assert page.locator("#inspector-content [data-open]").count() == 1
     assert "codex_app_server::in_process::start" in page.locator(
         "#inspector-content"
     ).inner_text()
+    page.keyboard.press("Escape")
+    assert page.locator("#inspector-empty").is_visible()
+    page.locator(
+        '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
+    ).click()
+    assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
 
     page.locator("#zoom-in").click()
     page.locator("#zoom-in").click()
