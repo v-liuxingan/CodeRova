@@ -268,6 +268,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .graph-edge.data-flow { stroke: var(--rose); stroke-dasharray: 10 5 2 5; }
 .graph-edge:hover, .graph-edge.selected { opacity: 1; stroke-width: 2.5; }
 .edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: none; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
+.edge-callsite { fill: var(--cyan); font: 700 8px "Cascadia Code", monospace; pointer-events: none; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; letter-spacing: .02em; }
+.edge-callsite.unavailable { fill: var(--amber); font-weight: 600; }
 .graph-node { cursor: pointer; transform-box: fill-box; transform-origin: center; }
 .node-box { fill: var(--node-bg); stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; transition: .15s; rx: var(--radius); filter: drop-shadow(0 8px 16px rgb(0 0 0 / 13%)); }
 .node-accent { fill: var(--acid); }
@@ -299,6 +301,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .inspect-section h3 { color: var(--muted); font: 9px "Cascadia Code", monospace; letter-spacing: .15em; margin: 0 0 9px; }
 .inspect-section p { font-size: 12px; line-height: 1.65; color: var(--text-secondary); margin: 0; overflow-wrap: anywhere; }
 .source-card { background: var(--canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 11px; font: 9px/1.6 "Cascadia Code", monospace; color: var(--cyan); overflow-wrap: anywhere; }
+.callsite-notice { display: grid; gap: 5px; border: 1px dashed color-mix(in srgb, var(--amber) 58%, var(--line)); border-radius: var(--radius); padding: 11px; background: color-mix(in srgb, var(--amber) 7%, var(--canvas)); }
+.callsite-notice strong { color: var(--amber); font: 700 10px "Cascadia Code", monospace; }
+.callsite-notice span { color: var(--text-secondary); font-size: 11px; line-height: 1.55; }
 .confidence { display: flex; gap: 9px; align-items: center; }
 .confidence-track { height: 4px; flex: 1; background: var(--line); }
 .confidence-track i { display: block; height: 100%; background: var(--acid); }

@@ -49,7 +49,13 @@ pub struct GraphEdge {
     pub kind: String,
     #[serde(default)]
     pub label: String,
+    #[serde(default = "default_call_site_status")]
+    pub call_site_status: String,
+    #[serde(default)]
+    pub call_site_note: String,
+    #[serde(default)]
     pub file: String,
+    #[serde(default)]
     pub line: u32,
     #[serde(default)]
     pub description: String,
@@ -57,6 +63,21 @@ pub struct GraphEdge {
     pub evidence: String,
     #[serde(default = "default_confidence")]
     pub confidence: f32,
+}
+
+pub const CALL_SITE_EXACT: &str = "exact";
+pub const CALL_SITE_VIRTUAL_NODE: &str = "virtual-node";
+pub const CALL_SITE_OMITTED_NODES: &str = "omitted-nodes";
+
+fn default_call_site_status() -> String {
+    CALL_SITE_EXACT.to_owned()
+}
+
+impl GraphEdge {
+    pub fn exact_call_site(&self) -> Option<(&str, u32)> {
+        (self.call_site_status == CALL_SITE_EXACT && !self.file.is_empty() && self.line > 0)
+            .then_some((self.file.as_str(), self.line))
+    }
 }
 
 fn default_confidence() -> f32 {

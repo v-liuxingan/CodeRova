@@ -2,7 +2,10 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::model::{CallGraph, SourceLocationStatus, ValidationReport};
+use crate::model::{
+    CALL_SITE_EXACT, CALL_SITE_OMITTED_NODES, CALL_SITE_VIRTUAL_NODE, CallGraph,
+    SourceLocationStatus, ValidationReport,
+};
 
 const NODE_KINDS: &[&str] = &[
     "function",
@@ -102,14 +105,38 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
         if edge.evidence.trim().is_empty() {
             warnings.push(format!("连线 {} 缺少 evidence", edge.id));
         }
-        validate_relative_source_path(&edge.file, &edge.id, &mut errors);
-        if edge.line == 0 {
-            errors.push(format!("连线 {} 的 line 必须大于 0", edge.id));
-        }
-        if let Some(root) = source_root {
-            source_locations.push(check_source_location(
-                root, "edge", &edge.id, &edge.file, edge.line,
-            ));
+        match edge.call_site_status.as_str() {
+            CALL_SITE_EXACT => {
+                if edge.file.is_empty() {
+                    errors.push(format!("连线 {} 的精确调用位置缺少 file", edge.id));
+                } else {
+                    validate_relative_source_path(&edge.file, &edge.id, &mut errors);
+                }
+                if edge.line == 0 {
+                    errors.push(format!("连线 {} 的精确调用位置 line 必须大于 0", edge.id));
+                }
+                if let Some(root) = source_root
+                    && let Some((file, line)) = edge.exact_call_site()
+                {
+                    source_locations
+                        .push(check_source_location(root, "edge", &edge.id, file, line));
+                }
+            }
+            CALL_SITE_VIRTUAL_NODE | CALL_SITE_OMITTED_NODES => {
+                if !edge.file.is_empty() || edge.line != 0 {
+                    errors.push(format!(
+                        "连线 {} 的调用位置不可用时不能同时提供 file 或 line",
+                        edge.id
+                    ));
+                }
+                if edge.call_site_note.trim().is_empty() {
+                    warnings.push(format!("连线 {} 缺少调用位置不可用说明", edge.id));
+                }
+            }
+            status => errors.push(format!(
+                "连线 {} 的 callSiteStatus 无效：{}",
+                edge.id, status
+            )),
         }
     }
 
@@ -230,6 +257,8 @@ mod tests {
                 to: "b".into(),
                 kind: "direct".into(),
                 label: "calls".into(),
+                call_site_status: CALL_SITE_EXACT.into(),
+                call_site_note: String::new(),
                 file: "src/main.rs".into(),
                 line: 1,
                 description: String::new(),
@@ -253,5 +282,31 @@ mod tests {
         let report = validate_graph(&graph, None);
         assert!(!report.valid);
         assert_eq!(report.errors.len(), 2);
+    }
+
+    #[test]
+    fn accepts_documented_unavailable_call_site() {
+        let mut graph = graph();
+        let edge = &mut graph.edges[0];
+        edge.call_site_status = CALL_SITE_OMITTED_NODES.into();
+        edge.call_site_note = "several adapter nodes are omitted".into();
+        edge.file.clear();
+        edge.line = 0;
+
+        let report = validate_graph(&graph, None);
+
+        assert!(report.valid, "{:?}", report.errors);
+        assert!(report.source_locations.is_empty());
+    }
+
+    #[test]
+    fn rejects_location_on_virtual_edge() {
+        let mut graph = graph();
+        graph.edges[0].call_site_status = CALL_SITE_VIRTUAL_NODE.into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(!report.valid);
+        assert_eq!(report.errors.len(), 1);
     }
 }

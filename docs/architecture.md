@@ -92,9 +92,11 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 图是一般有向图，不强制为树。`direct` 表示确定的调用表达式，间接关系必须使用
 `callback`、`trait-dispatch`、`spawn`、`async-boundary` 或 `data-flow`。每条边携带：
 
-- 调用发生位置；
+- 调用位置状态：`exact`、`virtual-node` 或 `omitted-nodes`；
+- `exact` 边携带项目内相对文件和行号，另外两种状态携带不可用说明；
 - 人类可读的 evidence；
 - 0 到 1 的 confidence。
 
 样例中的 `AuthManager::shared_from_config → ModelClient::current_client_setup` 是跨启动阶段
 和请求阶段的数据流，不是直接函数调用，因此显式标记为 `data-flow` 和较低置信度。
+它同时使用 `omitted-nodes` 调用位置状态，避免把下游读取位置误表述为上游的直接调用点。

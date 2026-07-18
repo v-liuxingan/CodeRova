@@ -168,12 +168,20 @@ async fn build_source_link(
             .find(|node| node.id == request.id)
             .map(|node| (node.file.as_str(), node.line))
             .ok_or_else(|| AppError::NotFound(format!("节点不存在：{}", request.id)))?,
-        "edge" => graph
-            .edges
-            .iter()
-            .find(|edge| edge.id == request.id)
-            .map(|edge| (edge.file.as_str(), edge.line))
-            .ok_or_else(|| AppError::NotFound(format!("连线不存在：{}", request.id)))?,
+        "edge" => {
+            let edge = graph
+                .edges
+                .iter()
+                .find(|edge| edge.id == request.id)
+                .ok_or_else(|| AppError::NotFound(format!("连线不存在：{}", request.id)))?;
+            edge.exact_call_site().ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "连线 {} 没有可跳转的精确调用位置：{}",
+                    request.id,
+                    edge.call_site_note.trim()
+                ))
+            })?
+        }
         _ => {
             return Err(AppError::BadRequest(
                 "targetType 必须是 node 或 edge".to_owned(),

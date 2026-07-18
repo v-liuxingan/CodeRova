@@ -1,3 +1,5 @@
+import { resolveEdgeCallSite } from "./call-site.js";
+
 export class Inspector {
   constructor(emptyElement, contentElement) {
     this.emptyElement = emptyElement;
@@ -65,6 +67,18 @@ function nodeTemplate(node) {
 
 function edgeTemplate(edge) {
   const percent = Math.round(edge.confidence * 100);
+  const callSite = resolveEdgeCallSite(edge);
+  const callSiteContent = callSite.available
+    ? `<div class="source-card">${escapeHtml(callSite.file)}:${callSite.line}</div>`
+    : `<div class="callsite-notice">
+        <strong>${escapeHtml(callSite.shortLabel)}</strong>
+        <span>${escapeHtml(callSite.note)}</span>
+      </div>`;
+  const openAction = callSite.available
+    ? `<div class="inspect-actions">
+        <button class="primary-action" data-open>↗ 打开调用位置</button>
+      </div>`
+    : "";
   return `
     <span class="inspect-type">EDGE / ${escapeHtml(edge.kind).toUpperCase()}</span>
     <h2>${escapeHtml(edge.label || "调用关系")}</h2>
@@ -72,7 +86,7 @@ function edgeTemplate(edge) {
     <div class="inspect-role">${escapeHtml(edge.description || "调用边")}</div>
     <section class="inspect-section">
       <h3>CALL SITE</h3>
-      <div class="source-card">${escapeHtml(edge.file)}:${edge.line}</div>
+      ${callSiteContent}
     </section>
     <section class="inspect-section">
       <h3>EVIDENCE</h3>
@@ -85,9 +99,7 @@ function edgeTemplate(edge) {
         <span>${percent}%</span>
       </div>
     </section>
-    <div class="inspect-actions">
-      <button class="primary-action" data-open>↗ 打开调用位置</button>
-    </div>`;
+    ${openAction}`;
 }
 
 function escapeHtml(value) {

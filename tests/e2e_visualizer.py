@@ -74,8 +74,8 @@ with sync_playwright() as playwright:
     expected_graphs = {
         "Codex shell tool approval and sandbox execution": (17, 33),
         "Codex persisted thread resume": (12, 24),
-        "Codex interactive turn lifecycle": (14, 27),
-        "TUI authorization call graph": (19, 38),
+        "Codex interactive turn lifecycle": (14, 26),
+        "TUI authorization call graph": (19, 37),
     }
     for title, (node_count, source_location_count) in expected_graphs.items():
         page.locator(".graph-option", has_text=title).click()
@@ -96,7 +96,16 @@ with sync_playwright() as playwright:
 
     assert page.locator(".graph-node").count() == 19
     assert "TUI authorization" in page.locator("#graph-title").inner_text()
-    assert "38 处源码有效" in page.locator("#validation-badge").inner_text()
+    assert "37 处源码有效" in page.locator("#validation-badge").inner_text()
+    assert page.locator(
+        '.edge-callsite[data-callsite-status="exact"]'
+    ).count() == 18
+    assert page.locator(
+        '.edge-callsite[data-callsite-status="omitted-nodes"]'
+    ).text_content() == "◇ 已省略中间节点"
+    assert page.locator(
+        '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
+    ).text_content() == "lib.rs:462"
     source_link = page.request.post(
         "http://127.0.0.1:4317/api/open",
         data={
@@ -111,8 +120,24 @@ with sync_playwright() as playwright:
     assert source_link_body["uri"].endswith(
         "/codex/codex-rs/cli/src/main.rs:956:1"
     )
-
+    unavailable_link = page.request.post(
+        "http://127.0.0.1:4317/api/open",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "edge",
+            "id": "edge.auth-to-request-phase",
+        },
+    )
+    assert unavailable_link.status == 400
     page.locator("#fit-view").click()
+    page.locator(
+        '.graph-edge[data-edge-id="edge.auth-to-request-phase"]'
+    ).evaluate(
+        "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+    )
+    assert "已省略中间节点" in page.locator("#inspector-content").inner_text()
+    assert page.locator("#inspector-content [data-open]").count() == 0
+
     selected_node = page.locator('[data-node-id="core.current-client-setup"]')
     selected_node.click()
     assert "ModelClient::current_client_setup" in page.locator("#inspector-content h2").inner_text()
@@ -152,7 +177,9 @@ with sync_playwright() as playwright:
     page.locator("#reset-view").click()
     assert page.locator(".graph-node").count() == 19
 
-    page.locator('[data-edge-id="edge.client-runtime-start"]').click(force=True)
+    page.locator(
+        '.graph-edge[data-edge-id="edge.client-runtime-start"]'
+    ).click(force=True)
     assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
     assert "codex_app_server::in_process::start" in page.locator(
         "#inspector-content"

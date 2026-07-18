@@ -1,3 +1,5 @@
+import { resolveEdgeCallSite } from "../call-site.js";
+
 const NS = "http://www.w3.org/2000/svg";
 const markerColorVariables = {
   direct: "--edge-direct",
@@ -84,16 +86,34 @@ export class SvgRenderer {
     });
     this.edgeLayer.append(path);
 
+    const midpoint = {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2,
+    };
     if (edge.label) {
       const label = svgElement("text", {
         class: "edge-label",
-        x: (start.x + end.x) / 2,
-        y: (start.y + end.y) / 2 - 5,
+        x: midpoint.x,
+        y: midpoint.y - 7,
         "text-anchor": "middle",
       });
       label.textContent = edge.label;
       this.edgeLayer.append(label);
     }
+
+    const callSite = resolveEdgeCallSite(edge);
+    const callSiteLabel = svgElement("text", {
+      class: `edge-callsite${callSite.available ? "" : " unavailable"}`,
+      x: midpoint.x,
+      y: midpoint.y + 8,
+      "text-anchor": "middle",
+      "data-edge-id": edge.id,
+      "data-callsite-status": callSite.status,
+    });
+    callSiteLabel.textContent = callSite.available
+      ? callSite.compactLabel
+      : `◇ ${callSite.shortLabel}`;
+    this.edgeLayer.append(callSiteLabel);
   }
 
   drawNode(entry, state, visibleEdges) {

@@ -155,12 +155,19 @@ fn open_command(
             .find(|node| node.id == id)
             .map(|node| (node.file.as_str(), node.line))
             .ok_or_else(|| format!("节点不存在：{id}"))?,
-        (None, Some(id)) => graph
-            .edges
-            .iter()
-            .find(|edge| edge.id == id)
-            .map(|edge| (edge.file.as_str(), edge.line))
-            .ok_or_else(|| format!("连线不存在：{id}"))?,
+        (None, Some(id)) => {
+            let edge = graph
+                .edges
+                .iter()
+                .find(|edge| edge.id == id)
+                .ok_or_else(|| format!("连线不存在：{id}"))?;
+            edge.exact_call_site().ok_or_else(|| {
+                format!(
+                    "连线 {id} 没有可跳转的精确调用位置：{}",
+                    edge.call_site_note.trim()
+                )
+            })?
+        }
         _ => return Err("必须且只能指定 --node 或 --edge".to_owned()),
     };
     let catalog = FileProjectCatalog::from_file(config_path)?;
