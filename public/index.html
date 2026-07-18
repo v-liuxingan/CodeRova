@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Codex Callgraph Atlas</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Codex Callgraph Atlas">
+          <span class="brand-mark" aria-hidden="true">↳</span>
+          <span>
+            <strong>CALLGRAPH</strong>
+            <small>CODEX SOURCE ATLAS / 0.1</small>
+          </span>
+        </a>
+        <div class="graph-heading">
+          <span class="eyebrow">ACTIVE TRACE</span>
+          <h1 id="graph-title">正在装载调用链…</h1>
+        </div>
+        <div class="health" id="health">
+          <span class="health-dot"></span>
+          <span>连接中</span>
+        </div>
+      </header>
+
+      <aside class="rail" aria-label="调用图目录与筛选">
+        <section class="rail-section">
+          <div class="section-label"><span>01</span> 图谱目录</div>
+          <div id="graph-list" class="graph-list"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-label"><span>02</span> 快速检索</div>
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="search" type="search" placeholder="函数 / crate / 文件" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+          <div id="kind-filters" class="filter-stack"></div>
+        </section>
+
+        <section class="rail-section rail-bottom">
+          <div class="section-label"><span>03</span> 图例</div>
+          <div class="legend">
+            <span><i class="edge-swatch direct"></i>直接调用</span>
+            <span><i class="edge-swatch callback"></i>回调 / 异步</span>
+            <span><i class="edge-swatch trait"></i>Trait 分发</span>
+            <span><i class="edge-swatch data"></i>数据流</span>
+          </div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <div class="toolbar" role="toolbar" aria-label="图谱操作">
+          <div class="tool-group">
+            <button class="tool active" data-focus="all">全图</button>
+            <button class="tool" data-focus="upstream">上游</button>
+            <button class="tool" data-focus="downstream">下游</button>
+            <button class="tool" data-focus="path">完整路径</button>
+          </div>
+          <span class="tool-divider"></span>
+          <div class="tool-group">
+            <button class="icon-tool" id="zoom-out" aria-label="缩小">−</button>
+            <button class="icon-tool" id="fit-view" aria-label="适合窗口">适配</button>
+            <button class="icon-tool" id="zoom-in" aria-label="放大">＋</button>
+          </div>
+          <span class="tool-divider"></span>
+          <button class="tool" id="orientation">纵向布局</button>
+          <button class="tool" id="reset-view">恢复全部</button>
+          <div class="toolbar-meta">
+            <span id="visible-count">0 / 0 节点</span>
+            <span id="validation-badge" class="validation-badge">待校验</span>
+          </div>
+        </div>
+
+        <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
+          <div class="canvas-grid"></div>
+          <svg id="graph-canvas" role="img" aria-label="Codex 调用链有向图"></svg>
+          <div class="canvas-hint">滚轮缩放 · 拖动画布 · 点击节点查看证据</div>
+          <div id="empty-state" class="empty-state" hidden>
+            <span>∅</span>
+            <p>当前筛选下没有可见节点</p>
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector" aria-label="节点与连线详情">
+        <div id="inspector-empty" class="inspector-empty">
+          <div class="coordinate">X:— Y:—</div>
+          <div class="inspect-glyph">◎</div>
+          <h2>选择一个节点</h2>
+          <p>查看职责、调用证据和准确源码位置。</p>
+        </div>
+        <div id="inspector-content" hidden></div>
+      </aside>
+
+      <footer class="statusbar">
+        <span id="status-text">初始化中</span>
+        <span>SCHEMA 0.1</span>
+        <span id="revision">REVISION —</span>
+      </footer>
+    </div>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>
