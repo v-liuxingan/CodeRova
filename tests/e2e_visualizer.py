@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from playwright.sync_api import sync_playwright
 ARTIFACTS = Path(__file__).parent / "artifacts"
 ARTIFACTS.mkdir(exist_ok=True)
 TEMP_LAYOUTS = Path(__file__).parent / ".tmp-layouts"
+BASE_URL = os.environ.get("CALLGRAPH_TEST_URL", "http://127.0.0.1:4317")
 shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
 
 
@@ -40,15 +42,23 @@ with sync_playwright() as playwright:
     )
     page.on("pageerror", lambda error: page_errors.append(str(error)))
 
-    page.goto("http://127.0.0.1:4317")
+    page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
     page.wait_for_selector(".graph-option")
 
-    document_response = page.request.get("http://127.0.0.1:4317")
+    document_response = page.request.get(BASE_URL)
     assert "default-src 'self'" in document_response.headers["content-security-policy"]
     assert document_response.headers["x-content-type-options"] == "nosniff"
     assert document_response.headers["referrer-policy"] == "no-referrer"
     assert document_response.headers["x-frame-options"] == "DENY"
+    assert "'unsafe-inline'" not in document_response.headers["content-security-policy"]
+    preview_document_response = page.request.get(f"{BASE_URL}/monaco-preview.html")
+    assert preview_document_response.ok
+    assert (
+        "style-src 'self' 'unsafe-inline'"
+        in preview_document_response.headers["content-security-policy"]
+    )
+    assert preview_document_response.headers["x-frame-options"] == "SAMEORIGIN"
     assert "camera=()" in document_response.headers["permissions-policy"]
     assert document_response.headers["cache-control"] == "no-store"
     assert page.locator("html").get_attribute("data-theme") == "halo"
@@ -67,14 +77,14 @@ with sync_playwright() as playwright:
     page.locator("#theme-select").select_option("halo")
     assert page.locator("html").get_attribute("data-theme") == "halo"
 
-    health = page.request.get("http://127.0.0.1:4317/api/health")
+    health = page.request.get(f"{BASE_URL}/api/health")
     assert health.ok
     projects = health.json()["projects"]
     assert len(projects) == 1
     assert projects[0]["id"] == "codex"
     assert projects[0]["rootExists"]
 
-    graphs = page.request.get("http://127.0.0.1:4317/api/graphs")
+    graphs = page.request.get(f"{BASE_URL}/api/graphs")
     assert graphs.ok
     graph_summaries = graphs.json()
     assert len(graph_summaries) == 4
@@ -84,7 +94,7 @@ with sync_playwright() as playwright:
     assert page.locator(".graph-option").count() == 4
 
     empty_layout = page.request.get(
-        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout"
+        f"{BASE_URL}/api/graphs/tui-authorization/layout"
     )
     assert empty_layout.ok
     assert empty_layout.json() == {
@@ -93,7 +103,7 @@ with sync_playwright() as playwright:
         "positions": {},
     }
     invalid_layout = page.request.put(
-        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout",
+        f"{BASE_URL}/api/graphs/tui-authorization/layout",
         data={
             "schemaVersion": "0.1",
             "graph": "tui-authorization",
@@ -106,14 +116,14 @@ with sync_playwright() as playwright:
 
     for summary in graph_summaries:
         graph_response = page.request.get(
-            f"http://127.0.0.1:4317/api/graphs/{summary['slug']}"
+            f"{BASE_URL}/api/graphs/{summary['slug']}"
         )
         assert graph_response.ok
         graph = graph_response.json()
         targets = [("node", graph["root"]), ("edge", graph["edges"][0]["id"])]
         for target_type, target_id in targets:
             link_response = page.request.post(
-                "http://127.0.0.1:4317/api/open",
+                f"{BASE_URL}/api/open",
                 data={
                     "graph": summary["slug"],
                     "targetType": target_type,
@@ -123,7 +133,7 @@ with sync_playwright() as playwright:
             assert link_response.ok
             assert link_response.json()["uri"].startswith("vscode://file/E:/")
             preview_response = page.request.post(
-                "http://127.0.0.1:4317/api/preview",
+                f"{BASE_URL}/api/preview",
                 data={
                     "graph": summary["slug"],
                     "targetType": target_type,
@@ -148,7 +158,7 @@ with sync_playwright() as playwright:
             assert preview["language"]
 
     expanded_preview = page.request.post(
-        "http://127.0.0.1:4317/api/preview",
+        f"{BASE_URL}/api/preview",
         data={
             "graph": "tui-authorization",
             "targetType": "node",
@@ -165,7 +175,7 @@ with sync_playwright() as playwright:
     assert expanded_preview_body["language"] == "rust"
 
     capped_preview = page.request.post(
-        "http://127.0.0.1:4317/api/preview",
+        f"{BASE_URL}/api/preview",
         data={
             "graph": "tui-authorization",
             "targetType": "node",
@@ -177,7 +187,7 @@ with sync_playwright() as playwright:
     assert capped_preview.json()["contextLines"] == 40
 
     injected_path = page.request.post(
-        "http://127.0.0.1:4317/api/preview",
+        f"{BASE_URL}/api/preview",
         data={
             "graph": "tui-authorization",
             "targetType": "node",
@@ -248,13 +258,26 @@ with sync_playwright() as playwright:
         '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
     ).text_content() == "lib.rs:462"
     page.wait_for_selector(".source-workbench")
+    page.wait_for_selector('.source-editor-host[data-source-surface="monaco"]')
+    assert page.locator("#inspector-source-tab").get_attribute("aria-selected") == "true"
+    assert page.locator("#inspector-source-pane").is_visible()
+    assert not page.locator("#inspector-details-pane").is_visible()
     assert "RUST · 目标 956–962" in page.locator(".source-preview-stats").inner_text()
-    assert page.locator(".source-preview-line.focus").count() == 7
+    assert page.locator(".source-engine-badge").inner_text() == "MONACO · READ ONLY"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "956"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "962"
+    assert page.locator(".source-editor-host").get_attribute("data-read-only") == "true"
+    monaco_frame = page.frame_locator(".monaco-source-frame")
+    monaco_frame.locator(".monaco-editor").wait_for()
+    assert monaco_frame.locator(".monaco-editor").count() == 1
+    assert monaco_frame.locator(".monaco-source-focus").count() >= 1
+    assert "956" in monaco_frame.locator(".line-numbers").all_text_contents()
     assert page.locator(".source-density button").count() == 3
     assert page.locator(".source-density button.active").inner_text() == "标准"
     page.locator(".source-find input").fill("async")
-    assert page.locator(".source-preview-line.search-match").count() >= 1
-    assert page.locator(".source-find span").inner_text() != "0/0"
+    page.wait_for_function(
+        "() => document.querySelector('.source-find span')?.textContent !== '0/0'"
+    )
     page.locator(".source-find input").fill("")
 
     canvas_width_before_resize = page.locator("#graph-canvas").bounding_box()["width"]
@@ -262,7 +285,7 @@ with sync_playwright() as playwright:
     resizer_box = resizer.bounding_box()
     assert resizer_box
     initial_resize_class = page.locator("html").get_attribute("class") or ""
-    assert "inspector-width-440" in initial_resize_class, initial_resize_class
+    assert "inspector-width-520" in initial_resize_class, initial_resize_class
     page.mouse.move(
         resizer_box["x"] + resizer_box["width"] / 2,
         resizer_box["y"] + 120,
@@ -271,35 +294,78 @@ with sync_playwright() as playwright:
     page.mouse.move(resizer_box["x"] - 80, resizer_box["y"] + 120, steps=5)
     page.mouse.up()
     resized_class = page.locator("html").get_attribute("class") or ""
-    assert "inspector-width-520" in resized_class, resized_class
+    assert "inspector-width-600" in resized_class, resized_class
     assert page.locator("#graph-canvas").bounding_box()["width"] < canvas_width_before_resize
     resizer.focus()
     page.keyboard.press("ArrowRight")
-    assert "inspector-width-480" in (page.locator("html").get_attribute("class") or "")
+    assert "inspector-width-560" in (page.locator("html").get_attribute("class") or "")
     resizer.dblclick()
-    assert "inspector-width-440" in (page.locator("html").get_attribute("class") or "")
+    assert "inspector-width-520" in (page.locator("html").get_attribute("class") or "")
 
-    preview_height = page.locator(".source-preview-code").bounding_box()["height"]
-    page.locator("[data-preview-expand]").click()
-    assert "preview-expanded" in (
-        page.locator(".inspector").get_attribute("class") or ""
-    )
+    page.locator("#inspector-details-tab").click()
+    assert page.locator("#inspector-details-pane").is_visible()
+    assert "main" in page.locator("#inspector-content h2").inner_text()
+    page.locator("#inspector-details-tab").press("ArrowRight")
+    assert page.locator("#inspector-source-pane").is_visible()
+    preview_height = page.locator(".source-editor-host").bounding_box()["height"]
+    assert preview_height > 600
+    page.locator("#inspector-focus").click()
+    assert "workbench-focused" in (page.locator(".inspector").get_attribute("class") or "")
     assert "inspector-width-720" in (page.locator("html").get_attribute("class") or "")
-    assert page.locator(".source-preview-code").bounding_box()["height"] > preview_height
-    assert page.locator(".source-preview-code").evaluate("element => element.scrollLeft") == 0
+    assert page.locator("#inspector-focus").inner_text() == "还原"
+    assert page.locator(".source-editor-host").get_attribute("data-source-surface") == "monaco"
     assert page.locator(".source-preview-body").evaluate("element => element.scrollLeft") == 0
-    page.screenshot(path=str(ARTIFACTS / "source-preview-expanded.png"), full_page=True)
-    page.locator("[data-preview-expand]").click()
-    assert "preview-expanded" not in (
-        page.locator(".inspector").get_attribute("class") or ""
-    )
-    assert "inspector-width-440" in (page.locator("html").get_attribute("class") or "")
+    page.screenshot(path=str(ARTIFACTS / "source-workbench-wide.png"), full_page=True)
+
+    canvas_width_before_collapse = page.locator("#graph-canvas").bounding_box()["width"]
+    page.locator("#inspector-collapse").click()
+    assert "inspector-collapsed" in (page.locator("html").get_attribute("class") or "")
+    assert "workbench-focused" not in (page.locator(".inspector").get_attribute("class") or "")
+    assert page.locator(".inspector").bounding_box()["width"] == 44
+    assert page.locator("#graph-canvas").bounding_box()["width"] > canvas_width_before_collapse
+    page.locator("#inspector-collapse").click()
+    assert "inspector-collapsed" not in (page.locator("html").get_attribute("class") or "")
+    assert "inspector-width-520" in (page.locator("html").get_attribute("class") or "")
 
     page.locator(".source-density button", has_text="展开").click()
     page.wait_for_function(
-        "() => document.querySelector('.source-density button.active')?.textContent === '展开'"
+        """() =>
+            document.querySelector('.source-density button.active')?.textContent === '展开'
+            && document.querySelector('.source-editor-host')?.dataset.sourceSurface === 'monaco'
+            && document.querySelector('.source-editor-host')?.getAttribute('aria-busy') === 'false'"""
     )
-    assert page.locator(".source-preview-line").count() > 31
+    assert page.locator(".source-editor-host").get_attribute("data-start-line") == "932"
+    monaco_frame.locator(".codicon-folding-expanded").first.wait_for()
+    page.locator('[data-editor-action="foldAll"]').click()
+    monaco_frame.locator(".codicon-folding-collapsed").first.wait_for()
+    page.locator('[data-editor-action="unfoldAll"]').click()
+    monaco_frame.locator(".codicon-folding-expanded").first.wait_for()
+    wrap_button = page.locator('[data-editor-action="toggleWrap"]')
+    wrap_button.click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-editor-action=\"toggleWrap\"]')"
+        "?.getAttribute('aria-pressed') === 'true'"
+    )
+    assert wrap_button.get_attribute("aria-pressed") == "true"
+    font_before = float(
+        monaco_frame.locator(".view-line").first.evaluate(
+            "element => Number.parseFloat(getComputedStyle(element).fontSize)"
+        )
+    )
+    page.locator('[data-editor-action="fontLarger"]').click()
+    page.wait_for_function(
+        """() => {
+            const frame = document.querySelector('.monaco-source-frame');
+            const line = frame?.contentDocument?.querySelector('.view-line');
+            return line && Number.parseFloat(getComputedStyle(line).fontSize) > 12;
+        }"""
+    )
+    font_after = float(
+        monaco_frame.locator(".view-line").first.evaluate(
+            "element => Number.parseFloat(getComputedStyle(element).fontSize)"
+        )
+    )
+    assert font_after > font_before
     page.locator(".source-density button", has_text="标准").click()
     page.wait_for_function(
         "() => document.querySelector('.source-density button.active')?.textContent === '标准'"
@@ -328,7 +394,7 @@ with sync_playwright() as playwright:
     moved_transform = page.locator('[data-node-id="cli.main"]').get_attribute("transform")
     assert moved_transform != original_transform
     saved_layout = page.request.get(
-        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout"
+        f"{BASE_URL}/api/graphs/tui-authorization/layout"
     ).json()
     assert "cli.main" in saved_layout["positions"]["vertical"]
 
@@ -349,7 +415,7 @@ with sync_playwright() as playwright:
     assert "cli.main" not in layout_reset.value.json()["positions"]["vertical"]
 
     source_link = page.request.post(
-        "http://127.0.0.1:4317/api/open",
+        f"{BASE_URL}/api/open",
         data={
             "graph": "tui-authorization",
             "targetType": "node",
@@ -363,7 +429,7 @@ with sync_playwright() as playwright:
         "/codex/codex-rs/cli/src/main.rs:956:1"
     )
     unavailable_link = page.request.post(
-        "http://127.0.0.1:4317/api/open",
+        f"{BASE_URL}/api/open",
         data={
             "graph": "tui-authorization",
             "targetType": "edge",
@@ -372,7 +438,7 @@ with sync_playwright() as playwright:
     )
     assert unavailable_link.status == 400
     unavailable_preview = page.request.post(
-        "http://127.0.0.1:4317/api/preview",
+        f"{BASE_URL}/api/preview",
         data={
             "graph": "tui-authorization",
             "targetType": "edge",
@@ -405,7 +471,8 @@ with sync_playwright() as playwright:
     assert "异步入口" in page.locator("#inspector-content h2").inner_text()
     assert "main.rs" in page.locator(".source-preview-path").inner_text()
     assert "目标 959" in page.locator(".source-preview-stats").inner_text()
-    assert page.locator(".source-preview-line.focus").count() == 1
+    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "959"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "959"
 
     page.locator("#trace-next").click()
     assert page.locator(".source-stepper").get_attribute(
@@ -469,6 +536,8 @@ with sync_playwright() as playwright:
         "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
     )
     assert "已省略中间节点" in page.locator("#inspector-content").inner_text()
+    assert page.locator("#inspector-details-pane").is_visible()
+    assert page.locator("#inspector-source-tab").is_disabled()
     assert page.locator("#inspector-content [data-open]").count() == 0
     assert page.locator("#trace-callsite").is_disabled()
     assert "省略了多个中间节点" in (

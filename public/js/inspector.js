@@ -2,12 +2,12 @@ import { resolveEdgeCallSite } from "./call-site.js";
 import { SourcePreviewView } from "./source-preview-view.js";
 
 export class Inspector {
-  constructor(emptyElement, contentElement) {
+  constructor(emptyElement, contentElement, sourceBodyElement) {
     this.emptyElement = emptyElement;
     this.contentElement = contentElement;
+    this.sourceBodyElement = sourceBodyElement;
     this.callbacks = {};
     this.targetKey = "";
-    this.previewExpanded = false;
     this.sourcePreviewView = new SourcePreviewView();
   }
 
@@ -21,6 +21,7 @@ export class Inspector {
       this.emptyElement.hidden = false;
       this.contentElement.hidden = true;
       this.contentElement.replaceChildren();
+      this.renderSourcePlaceholder("选择可定位的节点或连线", "源码将在这里以受限上下文安全展示。");
       return;
     }
     const item =
@@ -29,7 +30,10 @@ export class Inspector {
         : graph.edges.find((edge) => edge.id === target.id);
     if (!item) return this.render(null, graph);
 
-    this.targetKey = targetKey(target);
+    const nextTargetKey = targetKey(target);
+    const targetChanged = this.targetKey !== nextTargetKey;
+    this.targetKey = nextTargetKey;
+    if (targetChanged) this.renderSourcePreviewLoading(target);
     this.emptyElement.hidden = true;
     this.contentElement.hidden = false;
     this.contentElement.className = "inspect-content";
@@ -48,43 +52,43 @@ export class Inspector {
 
   renderSourcePreview(target, preview) {
     if (this.targetKey !== targetKey(target)) return;
-    const body = this.contentElement.querySelector("[data-source-preview-body]");
-    if (!body) return;
-
-    this.sourcePreviewView.render(body, preview, {
+    this.sourcePreviewView.render(this.sourceBodyElement, preview, {
       onContextChange: (lines) => this.callbacks.onPreviewContextChange?.(lines),
       onNotice: (message, error) => this.callbacks.onPreviewNotice?.(message, error),
-      onToggleExpand: () => this.callbacks.onPreviewExpand?.(),
-      expanded: this.previewExpanded,
     });
   }
 
-  setPreviewExpanded(expanded) {
-    this.previewExpanded = expanded;
-    this.contentElement.closest(".inspector")?.classList.toggle("preview-expanded", expanded);
-    const button = this.contentElement.querySelector("[data-preview-expand]");
-    button?.setAttribute("aria-pressed", String(expanded));
-    if (button) button.textContent = expanded ? "收起" : "放大";
-  }
-
   renderSourcePreviewLoading(target) {
-    if (this.targetKey !== targetKey(target)) return;
-    const body = this.contentElement.querySelector("[data-source-preview-body]");
-    if (!body) return;
+    if (this.targetKey && this.targetKey !== targetKey(target)) return;
     const loading = document.createElement("span");
     loading.className = "source-preview-loading";
     loading.textContent = "正在读取受限源码范围…";
-    body.replaceChildren(loading);
+    this.sourceBodyElement.replaceChildren(loading);
   }
 
   renderSourcePreviewError(target, message) {
     if (this.targetKey !== targetKey(target)) return;
-    const body = this.contentElement.querySelector("[data-source-preview-body]");
-    if (!body) return;
     const notice = document.createElement("div");
     notice.className = "source-preview-error";
     notice.textContent = message;
-    body.replaceChildren(notice);
+    this.sourceBodyElement.replaceChildren(notice);
+  }
+
+  renderSourceUnavailable(message = "当前目标没有精确源码位置") {
+    this.renderSourcePlaceholder(message, "仍可在“详情”中查看调用证据与不可跳转原因。");
+  }
+
+  renderSourcePlaceholder(title, description) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "source-workbench-empty";
+    const eyebrow = document.createElement("span");
+    eyebrow.textContent = "READ ONLY";
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    const copy = document.createElement("p");
+    copy.textContent = description;
+    placeholder.append(eyebrow, heading, copy);
+    this.sourceBodyElement.replaceChildren(placeholder);
   }
 }
 function nodeTemplate(node) {
@@ -105,7 +109,6 @@ function nodeTemplate(node) {
       <h3>OWNERSHIP</h3>
       <p>${escapeHtml(node.crate || "—")}<br>${escapeHtml(node.module || "—")}</p>
     </section>
-    ${sourcePreviewTemplate()}
     <div class="inspect-actions">
       <button class="primary-action" data-open>↗ 在编辑器打开</button>
       <button class="secondary-action" data-collapse title="折叠或展开下游">折叠</button>
@@ -127,7 +130,6 @@ function edgeTemplate(edge) {
         <button class="primary-action" data-open>↗ 打开调用位置</button>
       </div>`
     : "";
-  const sourcePreview = callSite.available ? sourcePreviewTemplate() : "";
   return `
     <span class="inspect-type">EDGE / ${escapeHtml(edge.kind).toUpperCase()}</span>
     <h2>${escapeHtml(edge.label || "调用关系")}</h2>
@@ -148,18 +150,7 @@ function edgeTemplate(edge) {
         <span>${percent}%</span>
       </div>
     </section>
-    ${sourcePreview}
     ${openAction}`;
-}
-
-function sourcePreviewTemplate() {
-  return `
-    <section class="inspect-section source-preview">
-      <h3>SOURCE WORKBENCH · 只读安全预览</h3>
-      <div class="source-preview-body" data-source-preview-body>
-        <span class="source-preview-loading">正在读取源码上下文…</span>
-      </div>
-    </section>`;
 }
 
 function targetKey(target) {

@@ -1,3 +1,4 @@
+import os
 import shutil
 import socket
 import subprocess
@@ -28,21 +29,41 @@ def wait_for_port(port: int, expected_open: bool, timeout: float = 15) -> None:
     raise RuntimeError(f"端口 {port} 未在超时前{state}")
 
 
+def find_free_port() -> int:
+    with socket.socket() as candidate:
+        candidate.bind(("127.0.0.1", 0))
+        return candidate.getsockname()[1]
+
+
 def main() -> int:
+    npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    if (ROOT / "node_modules" / "monaco-editor").is_dir():
+        subprocess.run([npm, "run", "build:frontend"], cwd=ROOT, check=True)
     subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
     shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
+    port = find_free_port()
     server = subprocess.Popen(
-        [str(SERVER), "serve", "--layouts", str(TEMP_LAYOUTS)],
+        [
+            str(SERVER),
+            "serve",
+            "--layouts",
+            str(TEMP_LAYOUTS),
+            "--port",
+            str(port),
+        ],
         cwd=ROOT,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     try:
-        wait_for_port(4317, True)
+        wait_for_port(port, True)
+        environment = os.environ.copy()
+        environment["CALLGRAPH_TEST_URL"] = f"http://127.0.0.1:{port}"
         result = subprocess.run(
             [sys.executable, str(ROOT / "tests" / "e2e_visualizer.py")],
             cwd=ROOT,
+            env=environment,
             check=False,
         )
         return result.returncode
@@ -53,7 +74,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=5)
-        wait_for_port(4317, False)
+        wait_for_port(port, False)
         shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
 
 

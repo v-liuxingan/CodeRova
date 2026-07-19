@@ -1,0 +1,98 @@
+# 前后端智能体开发边界
+
+## 目的
+
+当前项目继续保持单仓库和单一交付物，但把工作划分为两个可独立迭代的实现域：
+
+```text
+Rust backend ── stable HTTP / JSON contracts ── browser frontend
+      │                                             │
+      └── project root / source / persistence       └── graph / workbench / editor
+```
+
+现阶段不移动目录，避免一次纯结构迁移同时影响 Cargo、静态资源路由、测试和 Git 历史。
+根目录与子目录的 `AGENTS.md` 已把文件所有权写成机器可读的工作约束。后续若物理迁移为
+`backend/` 与 `frontend/`，必须保持本文件中的接口和安全不变量。
+
+## 文件所有权
+
+| 领域 | 后端智能体 | 前端智能体 | 共享/集成 |
+| --- | --- | --- | --- |
+| 主要目录 | `src/**`, `Cargo.*` | `public/**`, `frontend/**`, `package*.json`, `scripts/build_frontend.mjs` | `schema/**`, `graphs/**`, `docs/**`, `tests/**` |
+| 数据与状态 | 图读取、项目根目录、布局存储、源码预览 | 图状态、导航游标、工作台状态、主题 | JSON Schema、示例图 |
+| 可替换实现 | Store、Catalog、Previewer、LinkBuilder | Layout、Renderer、SourceCodeSurface、Theme | HTTP/JSON 契约 |
+| 安全责任 | 路径边界、请求校验、读取上限、响应头 | 文本渲染、点击策略、iframe 隔离 | 跨边界 E2E |
+
+共享文件不是任一智能体的附带修改区。涉及共享契约时，应先形成一个小型契约提交，再让
+前后端实现分别依赖它；仅调整内部实现时，不应修改对方的主要目录。
+
+## 当前 HTTP 契约
+
+| 方法与路径 | 请求 | 成功响应 | 所有者 |
+| --- | --- | --- | --- |
+| `GET /api/health` | 无 | 服务状态与已解析项目 | 后端 |
+| `GET /api/graphs` | 无 | 调用图摘要数组 | 后端模型，前端消费 |
+| `GET /api/graphs/{slug}` | 路径 slug | `CallGraph` | `schema/callgraph.schema.json` |
+| `GET /api/graphs/{slug}/layout` | 路径 slug | `GraphLayout` | `schema/layout.schema.json` |
+| `PUT /api/graphs/{slug}/layout` | `GraphLayout` | 保存后的 `GraphLayout` | 共享 |
+| `GET /api/graphs/{slug}/validation` | 路径 slug | `ValidationReport` | 后端 |
+| `POST /api/open` | `{ graph, targetType, id }` | `{ uri, path, line, column }` | 共享 |
+| `POST /api/preview` | `{ graph, targetType, id, contextLines? }` | `SourcePreview` | 共享 |
+
+浏览器访问统一封装在 `public/js/api.js`。Rust 序列化模型位于 `src/model.rs`，图、项目和
+布局的持久化契约分别以 `schema/*.schema.json` 为准。API 字段统一使用 `camelCase`。
+
+目前没有把 API 伪装成任意文件服务：`/api/open` 与 `/api/preview` 都只接受图目标，
+实际路径由后端从图和项目目录配置中解析。这个不变量不能由前端便利性需求绕过。
+
+## 前端内部边界
+
+```text
+CallgraphApi
+    ├── GraphState / TraceNavigator
+    ├── Layout adapter ── LayeredLayout
+    ├── RendererRegistry ── SvgRenderer
+    ├── ThemeRegistry
+    └── SourcePreviewController
+              └── SourcePreviewView
+                       └── SourceCodeSurfaceRegistry
+                              ├── Monaco iframe
+                              └── safe DOM fallback
+```
+
+图形实现、布局算法和代码预览实现互不拥有对方状态。新增 G6、Canvas、WebGL、Tree-sitter
+或 LSP 时，应注册新实现或新增适配器，不得把依赖写入 `GraphState`、`TraceNavigator`
+或基础文件预览器。
+
+## 后端内部边界
+
+```text
+HTTP / CLI
+    ├── GraphStore
+    ├── LayoutStore
+    ├── ProjectCatalog
+    ├── SourcePreviewer
+    ├── SourceLinkBuilder
+    └── validation
+```
+
+HTTP 层负责组合这些接口，不负责分析特定语言。语言分析能力以后应作为新的显式接口接入，
+并允许基础源码预览在分析器未安装、超时或失败时继续工作。
+
+## 并行迭代流程
+
+1. 两个智能体分别使用独立 Git worktree。
+2. 非契约功能只修改各自主要目录和对应测试。
+3. 契约变化先更新本文件、模型或 Schema，并增加失败用例。
+4. 后端实现并通过 Rust 门禁；前端实现可先用固定 JSON/路由 Mock 开发。
+5. 合并后运行真实 Rust 服务上的 Playwright E2E，而不是只验证 Mock。
+6. 运行四份 Codex 示例图校验，防止通用化改动破坏真实数据。
+
+## 完成定义
+
+- 没有越过角色文件所有权进行顺手重构。
+- 接口变化有契约说明、后端校验和前端消费测试。
+- 前端可在后端失败时显示错误，代码面可回退到 DOM 实现。
+- 后端不依赖浏览器实现、Monaco、SVG 或特定语言分析器。
+- 本地构建不依赖 CDN，不提交用户运行时布局。
+- 组合应用通过 Rust 测试、Clippy、前端构建、调用图校验和 Playwright E2E。

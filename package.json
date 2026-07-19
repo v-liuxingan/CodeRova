@@ -1,0 +1,14 @@
+{
+  "name": "callgraph-visualizer-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:frontend": "node scripts/build_frontend.mjs"
+  },
+  "dependencies": {
+    "monaco-editor": "0.51.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

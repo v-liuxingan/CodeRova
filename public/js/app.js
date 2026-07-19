@@ -1,7 +1,9 @@
 import { CallgraphApi } from "./api.js";
+import { isSourceTargetAvailable } from "./click-navigation-policy.js";
 import { ClickNavigationPolicy } from "./click-navigation-policy.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
+import { InspectorWorkbenchController } from "./inspector-workbench-controller.js";
 import { LayeredLayout } from "./layouts/layered-layout.js";
 import { LayoutPersistenceController } from "./layout-persistence-controller.js";
 import { RendererRegistry } from "./renderer-registry.js";
@@ -47,17 +49,31 @@ const renderer = rendererRegistry.create("svg", {
 const inspector = new Inspector(
   document.querySelector("#inspector-empty"),
   document.querySelector("#inspector-content"),
+  document.querySelector("#source-preview-body"),
 );
 const clickNavigation = new ClickNavigationPolicy();
 const sourcePreview = new SourcePreviewController(api, inspector);
-const inspectorPanel = new ResizablePanelController(
+let inspectorWorkbench = null;
+const resizableInspector = new ResizablePanelController(
   document.documentElement,
   document.querySelector("#inspector-resizer"),
   {
-    onManualResize: () => inspector.setPreviewExpanded(false),
+    onManualResize: () => inspectorWorkbench?.handleManualResize(),
     onResize: () => renderer.fit(),
   },
 );
+inspectorWorkbench = new InspectorWorkbenchController({
+  root: document.documentElement,
+  panel: document.querySelector(".inspector"),
+  resizablePanel: resizableInspector,
+  detailsTab: document.querySelector("#inspector-details-tab"),
+  sourceTab: document.querySelector("#inspector-source-tab"),
+  detailsPane: document.querySelector("#inspector-details-pane"),
+  sourcePane: document.querySelector("#inspector-source-pane"),
+  focusButton: document.querySelector("#inspector-focus"),
+  collapseButton: document.querySelector("#inspector-collapse"),
+  onLayoutChange: () => renderer.fit(),
+});
 const layoutPersistence = new LayoutPersistenceController(api, {
   onStatus: (message) => setStatus(message),
   onError: (message) => {
@@ -88,15 +104,9 @@ inspector.setCallbacks({
   onCollapse: (nodeId) => state?.toggleCollapse(nodeId),
   onPreviewContextChange: (lines) => sourcePreview.setContextLines(lines),
   onPreviewNotice: (message, error) => toast(message, error),
-  onPreviewExpand: () => {
-    const expanded = inspectorPanel.toggleExpanded();
-    inspector.setPreviewExpanded(expanded);
-    requestAnimationFrame(() => renderer.fit());
-    return expanded;
-  },
 });
 
-inspectorPanel.initialize();
+inspectorWorkbench.initialize();
 bindControls();
 bootstrap().catch(showFatal);
 
@@ -179,6 +189,9 @@ function render(currentState, reason) {
   const visibleGraph = currentState.getVisibleGraph();
   renderer.render(visibleGraph, currentState);
   inspector.render(currentState.selected, currentState.graph);
+  inspectorWorkbench.setSourceAvailable(
+    isSourceTargetAvailable(currentState.graph, currentState.selected),
+  );
   void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
   elements.visibleCount.textContent =
     `${visibleGraph.nodes.length} / ${currentState.graph.nodes.length} 节点`;

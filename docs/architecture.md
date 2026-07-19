@@ -20,6 +20,8 @@ UI controller
        ├── Renderer ───────── SvgRenderer
        ├── ThemeRegistry ───── Halo / Aether / Signal
        ├── SourcePreviewController
+       ├── SourceCodeSurfaceRegistry ─ Monaco / DOM fallback
+       ├── InspectorWorkbenchController
        ├── LayoutPersistenceController
        ├── ResizablePanelController
        └── CallgraphApi
@@ -103,16 +105,24 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 
 连续步进默认通过 `CallgraphApi` 获取网页内源码上下文，不触发外部协议，因此浏览器持续
 持有键盘焦点。控制器负责请求取消、有限 LRU 缓存、异步竞态检查和相邻节点/调用边预取。
-`Inspector` 只负责目标详情，将源码区域委托给独立的 `SourcePreviewView`。
+`Inspector` 把同一目标适配为详情内容和源码内容，源码 DOM 渲染继续委托给独立的
+`SourcePreviewView`。
 
-`SourcePreviewView` 提供上下文范围切换、目标范围高亮、本地查找、位置复制和裁剪提示；
-`SyntaxHighlighterRegistry` 以安全 DOM 文本节点实现可选的轻量语言着色，并始终提供纯文本
-回退。基础预览不依赖任何语言分析器，未来 LSP、Tree-sitter 或 SCIP 必须作为可替换适配器接入。
-切换到 IDE 仍由检查器中的显式按钮完成。
+`SourcePreviewView` 提供上下文范围切换、目标范围高亮、本地查找、位置复制和裁剪提示，
+但不持有具体编辑器。`SourceCodeSurfaceRegistry` 默认创建 `MonacoSourceCodeSurface`，并在
+装载失败时切换 `DomSourceCodeSurface`。前者通过隔离 iframe 使用本地 Monaco 与 Worker，
+提供真实行号、折叠、换行和字体缩放；后者通过 `SyntaxHighlighterRegistry` 和安全文本节点
+提供无编辑器依赖的基础能力。基础预览不依赖任何语言分析器，未来 LSP、Tree-sitter 或 SCIP
+必须作为可替换适配器接入。切换到 IDE 仍由详情视图中的显式按钮完成。
 
 `ResizablePanelController` 用固定宽度档位调整检查器，避免为了动态内联样式放宽 CSP；
-拖动分隔条、左右方向键和双击分别对应调宽、键盘调宽和复位。预览专注模式会临时扩大侧栏、
-隐藏非源码详情并让代码区占满剩余高度。
+拖动分隔条、左右方向键和双击分别对应调宽、键盘调宽和复位。
+
+`InspectorWorkbenchController` 只管理“详情 / 源码”视图偏好、源码可用性、宽屏与整栏折叠，
+并组合 `ResizablePanelController`；它不读取调用图、不请求源码，也不渲染代码。源码视图
+默认占满侧栏剩余高度，宽屏临时扩大侧栏，折叠将侧栏收为 44px 并把空间归还调用图。
+因此未来可以替换源码视图、尺寸策略或整个工作台外壳，而不修改 `SourcePreviewController`
+和调用链导航。
 
 ### `ClickNavigationPolicy`
 

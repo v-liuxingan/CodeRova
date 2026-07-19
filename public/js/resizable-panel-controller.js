@@ -1,12 +1,16 @@
-const WIDTHS = [320, 360, 400, 440, 480, 520, 560, 600, 640, 680, 720, 760, 800];
-const STORAGE_KEY = "callgraph_inspector_width_v1";
+const WIDTHS = [
+  320, 360, 400, 440, 480, 520, 560, 600, 640, 680, 720, 760, 800,
+  840, 880, 920, 960,
+];
+const STORAGE_KEY = "callgraph_inspector_width_v2";
+const DEFAULT_WIDTH = 520;
 
 export class ResizablePanelController {
   constructor(root, handle, callbacks = {}) {
     this.root = root;
     this.handle = handle;
     this.callbacks = callbacks;
-    this.width = 440;
+    this.width = DEFAULT_WIDTH;
     this.widthBeforeExpand = this.width;
     this.expanded = false;
     this.drag = null;
@@ -59,7 +63,7 @@ export class ResizablePanelController {
     this.handle.addEventListener("dblclick", () => {
       this.expanded = false;
       this.callbacks.onManualResize?.();
-      this.apply(440);
+      this.apply(DEFAULT_WIDTH);
     });
     this.handle.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
@@ -68,7 +72,7 @@ export class ResizablePanelController {
       this.callbacks.onManualResize?.();
       const next =
         event.key === "Home"
-          ? 440
+          ? DEFAULT_WIDTH
           : this.width + (event.key === "ArrowLeft" ? 40 : -40);
       this.apply(next);
     });

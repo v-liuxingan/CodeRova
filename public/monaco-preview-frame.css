@@ -1,0 +1,34 @@
+:root {
+  color-scheme: light;
+  --preview-accent: #2563d9;
+}
+
+:root[data-theme="aether"] {
+  color-scheme: dark;
+  --preview-accent: #74a9ff;
+}
+
+:root[data-theme="signal"] {
+  color-scheme: dark;
+  --preview-accent: #c8f04a;
+}
+
+html,
+body,
+#monaco-root,
+.monaco-source-editor {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.monaco-source-focus {
+  background: color-mix(in srgb, var(--preview-accent) 12%, transparent);
+  box-shadow: inset 3px 0 var(--preview-accent);
+}
+
+.monaco-source-focus-gutter {
+  border-left: 3px solid var(--preview-accent);
+  margin-left: 3px;
+}

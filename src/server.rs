@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Request, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Serialize;
@@ -109,14 +110,7 @@ pub async fn serve(
         .route("/api/open", post(build_source_link))
         .route("/api/preview", post(preview_source))
         .fallback_service(static_files)
-        .layer(SetResponseHeaderLayer::overriding(
-            HeaderName::from_static("content-security-policy"),
-            HeaderValue::from_static(
-                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
-                 connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; \
-                 form-action 'none'",
-            ),
-        ))
+        .layer(axum::middleware::from_fn(security_headers))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
@@ -124,10 +118,6 @@ pub async fn serve(
         .layer(SetResponseHeaderLayer::overriding(
             header::REFERRER_POLICY,
             HeaderValue::from_static("no-referrer"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            header::X_FRAME_OPTIONS,
-            HeaderValue::from_static("DENY"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("permissions-policy"),
@@ -148,6 +138,37 @@ pub async fn serve(
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|error| format!("服务异常退出：{error}"))
+}
+
+async fn security_headers(request: Request, next: Next) -> Response {
+    let isolated_monaco_frame = request.uri().path() == "/monaco-preview.html";
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    let (content_security_policy, frame_options) = if isolated_monaco_frame {
+        (
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+             worker-src 'self'; font-src 'self' data:; img-src 'self' data:; \
+             connect-src 'none'; object-src 'none'; base-uri 'none'; \
+             frame-ancestors 'self'; form-action 'none'",
+            "SAMEORIGIN",
+        )
+    } else {
+        (
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
+             connect-src 'self'; worker-src 'self'; frame-src 'self'; object-src 'none'; \
+             base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+            "DENY",
+        )
+    };
+    headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(content_security_policy),
+    );
+    headers.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static(frame_options),
+    );
+    response
 }
 
 async fn shutdown_signal() {

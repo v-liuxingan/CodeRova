@@ -16,7 +16,10 @@ export class SourcePreviewController {
     const version = ++this.requestVersion;
     this.abortController?.abort();
     this.abortController = null;
-    if (!graphSlug || !isSourceTargetAvailable(graph, target)) return;
+    if (!graphSlug || !isSourceTargetAvailable(graph, target)) {
+      this.inspector.renderSourceUnavailable();
+      return;
+    }
 
     const key = this.cacheKey(graphSlug, target);
     const cached = this.cache.get(key);

@@ -16,9 +16,12 @@
   使用符号面板、定义/引用卡片和前后结果导航；本项目先吸收就地查找与稳定位置展示。
 - [Visual Studio Peek Definition](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-view-and-edit-code-by-using-peek-definition-alt-plus-f12)
   强调保留原阅读位置，并允许在多个结果间移动；这与调用链步进保持浏览器焦点的目标一致。
-- [Monaco Editor API](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.ICodeEditor.html)
-  适合完整编辑器能力，但模型、worker、焦点和生命周期管理更重。当前只读预览不引入它，
-  后续若需要大文件虚拟滚动，可作为独立 `SourcePreviewView` 实现接入。
+- [Monaco Editor](https://github.com/microsoft/monaco-editor) 提供成熟的虚拟滚动、真实行号、
+  折叠、查找与键盘交互。当前把固定版本的必要模块构建为本地只读代码面，不依赖 CDN。
+- [AntV G6 Dagre 示例](https://g6.antv.antgroup.com/examples/layout/dagre/#antv-dagre-combo)
+  使用独立、全高的右侧代码面板，让画布与代码保持并列。进一步检查其站点主题实现后确认
+  代码面基于 `@monaco-editor/react`；本项目吸收这条编辑器能力路线，但不用 React、不加载
+  AntV 的远程 Monaco loader，也不搬运执行、AI、StackBlitz 或 Riddle 集成。
 
 ## 当前模块边界
 
@@ -37,14 +40,32 @@ SourcePreviewer trait ── FileSourcePreviewer
 SourcePreviewController ── cancellation / LRU cache / neighbor prefetch
              │
              ▼
-SourcePreviewView ── safe DOM / find / range controls
+SourcePreviewView ── find / range controls / surface lifecycle
              │
              ▼
-SyntaxHighlighterRegistry ── lightweight language adapters / plain fallback
+SourceCodeSurfaceRegistry
+       ├── MonacoSourceCodeSurface ── isolated iframe / local worker
+       └── DomSourceCodeSurface ───── safe fallback / SyntaxHighlighterRegistry
 ```
 
-`SourcePreviewer` 不依赖 Rust、LSP 或语法树。当前语言识别只根据扩展名提供展示元数据；
-轻量着色器注册表支持 Rust、JavaScript、TypeScript、Python 和 Go，其他语言安全回退到纯文本。
+页面布局也保持独立：
+
+```text
+Inspector ── target details / preview render adapter
+     │
+     └── InspectorWorkbenchController ── details/source tabs
+                         │                focus / collapse
+                         └── ResizablePanelController ── width policy
+```
+
+源码不再嵌套在详情长页面中，而是参考图可视化示例的右侧代码面板，作为一级全高工作台。
+默认宽度为 520px；可以拖动分隔条、用键盘调整宽度、扩展到窗口允许的最大宽度，或折叠为
+44px 窄条。详情与源码内容保持挂载边界独立，切换视图不会触发外部编辑器。
+
+`SourcePreviewer` 不依赖 Rust、LSP 或语法树。当前语言识别只根据扩展名提供展示元数据。
+默认 `MonacoSourceCodeSurface` 支持 Rust、JavaScript、TypeScript、Python 和 Go 的基础着色；
+未知语言显示为纯文本。Monaco 装载失败时，注册表自动切换 `DomSourceCodeSurface`，后者通过
+轻量着色器和文本节点渲染，基础预览不会随编辑器依赖失效。
 
 未来的 Tree-sitter、LSP 或 SCIP 支持应实现新的语义信息接口，以进程外、按项目显式配置的方式
 运行。基础文件预览在这些能力缺失或失败时仍必须可用。
@@ -56,6 +77,8 @@ SyntaxHighlighterRegistry ── lightweight language adapters / plain fallback
 - 默认文件上限 4 MiB，上下文最多 40 行，响应最多 240 行，单行最多 4000 个字符。
 - 拒绝包含 NUL 的疑似二进制文件和非 UTF-8 文本。
 - 源码始终通过 `textContent` / 文本节点写入 DOM；着色器不产生来源于源码的 HTML。
-- HTTP 启用 CSP、`nosniff`、禁止嵌入、无 referrer、敏感能力禁用和 `no-store`。
+- Monaco、语言模块和 Worker 都从固定版本的本地构建产物加载，不连接 CDN。
+- Monaco 运行在独立同源 iframe。主应用 CSP 继续禁止内联样式；只有预览文档允许 Monaco
+  布局所需的内联样式，并禁止外部连接、表单、对象和跨站嵌入。
+- HTTP 启用 CSP、`nosniff`、嵌入限制、无 referrer、敏感能力禁用和 `no-store`。
 - 连续步进与预览不会执行 shell、编辑器或语言分析器；外部编辑器仍需显式操作。
-
