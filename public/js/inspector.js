@@ -1,4 +1,5 @@
 import { resolveEdgeCallSite } from "./call-site.js";
+import { SourcePreviewView } from "./source-preview-view.js";
 
 export class Inspector {
   constructor(emptyElement, contentElement) {
@@ -6,6 +7,7 @@ export class Inspector {
     this.contentElement = contentElement;
     this.callbacks = {};
     this.targetKey = "";
+    this.sourcePreviewView = new SourcePreviewView();
   }
 
   setCallbacks(callbacks) {
@@ -48,22 +50,20 @@ export class Inspector {
     const body = this.contentElement.querySelector("[data-source-preview-body]");
     if (!body) return;
 
-    const meta = document.createElement("div");
-    meta.className = "source-preview-meta";
-    meta.textContent = `${preview.path}:${preview.focusLine}`;
-    const code = document.createElement("div");
-    code.className = "source-preview-code";
-    for (const line of preview.lines) {
-      const row = document.createElement("div");
-      row.className = `source-preview-line${line.focus ? " focus" : ""}`;
-      const number = document.createElement("span");
-      number.textContent = line.number;
-      const content = document.createElement("code");
-      content.textContent = line.text || " ";
-      row.append(number, content);
-      code.append(row);
-    }
-    body.replaceChildren(meta, code);
+    this.sourcePreviewView.render(body, preview, {
+      onContextChange: (lines) => this.callbacks.onPreviewContextChange?.(lines),
+      onNotice: (message, error) => this.callbacks.onPreviewNotice?.(message, error),
+    });
+  }
+
+  renderSourcePreviewLoading(target) {
+    if (this.targetKey !== targetKey(target)) return;
+    const body = this.contentElement.querySelector("[data-source-preview-body]");
+    if (!body) return;
+    const loading = document.createElement("span");
+    loading.className = "source-preview-loading";
+    loading.textContent = "正在读取受限源码范围…";
+    body.replaceChildren(loading);
   }
 
   renderSourcePreviewError(target, message) {
@@ -133,7 +133,7 @@ function edgeTemplate(edge) {
     <section class="inspect-section">
       <h3>CONFIDENCE</h3>
       <div class="confidence">
-        <div class="confidence-track"><i style="width:${percent}%"></i></div>
+        <progress class="confidence-track" max="100" value="${percent}">${percent}%</progress>
         <span>${percent}%</span>
       </div>
     </section>
@@ -144,7 +144,7 @@ function edgeTemplate(edge) {
 function sourcePreviewTemplate() {
   return `
     <section class="inspect-section source-preview">
-      <h3>INLINE SOURCE · ← / → 保持网页焦点</h3>
+      <h3>SOURCE WORKBENCH · 只读安全预览</h3>
       <div class="source-preview-body" data-source-preview-body>
         <span class="source-preview-loading">正在读取源码上下文…</span>
       </div>

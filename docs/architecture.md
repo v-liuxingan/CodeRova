@@ -55,8 +55,10 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 ### `SourcePreviewer`
 
 负责为已经过项目根目录校验的源码位置读取有限上下文。默认 `FileSourcePreviewer`
-限制文件大小为 4 MiB，并只返回目标行前后各 6 行。HTTP 预览接口不接受前端文件路径，
-与外部编辑器 URI 共用调用图目标解析和项目根目录边界。
+返回节点的 `line..endLine` 定义范围或边的单行调用点，并附带语言、总行数、文件大小和
+裁剪状态。文件、上下文、响应行数与单行长度都有独立安全预算；疑似二进制文件和非 UTF-8
+内容会被拒绝。HTTP 预览接口不接受前端文件路径，与外部编辑器 URI 共用调用图目标解析和
+项目根目录边界。
 
 ### `validation`
 
@@ -85,8 +87,13 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 ### `SourcePreviewController`
 
 连续步进默认通过 `CallgraphApi` 获取网页内源码上下文，不触发外部协议，因此浏览器持续
-持有键盘焦点。控制器负责结果缓存与异步请求版本检查；`Inspector` 只负责安全地用
-`textContent` 渲染源码。切换到 IDE 仍由检查器中的显式按钮完成。
+持有键盘焦点。控制器负责请求取消、有限 LRU 缓存、异步竞态检查和相邻节点/调用边预取。
+`Inspector` 只负责目标详情，将源码区域委托给独立的 `SourcePreviewView`。
+
+`SourcePreviewView` 提供上下文范围切换、目标范围高亮、本地查找、位置复制和裁剪提示；
+`SyntaxHighlighterRegistry` 以安全 DOM 文本节点实现可选的轻量语言着色，并始终提供纯文本
+回退。基础预览不依赖任何语言分析器，未来 LSP、Tree-sitter 或 SCIP 必须作为可替换适配器接入。
+切换到 IDE 仍由检查器中的显式按钮完成。
 
 ### `ClickNavigationPolicy`
 

@@ -31,11 +31,12 @@ export class CallgraphApi {
     });
   }
 
-  previewSource(graph, targetType, id) {
+  previewSource(graph, targetType, id, contextLines, signal) {
     return request("/api/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ graph, targetType, id }),
+      body: JSON.stringify({ graph, targetType, id, contextLines }),
+      signal,
     });
   }
 }

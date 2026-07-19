@@ -65,6 +65,8 @@ inspector.setCallbacks({
   onOpen: openTarget,
   onHide: (nodeId) => state?.hideNode(nodeId),
   onCollapse: (nodeId) => state?.toggleCollapse(nodeId),
+  onPreviewContextChange: (lines) => sourcePreview.setContextLines(lines),
+  onPreviewNotice: (message, error) => toast(message, error),
 });
 
 bindControls();
@@ -308,6 +310,18 @@ function renderTraceControls() {
     ? `调用位置：${snapshot.callSite.compactLabel}`
     : snapshot.callSite?.note || "当前节点没有下游调用";
   elements.traceCallSite.dataset.traceEdgeId = snapshot.callEdge?.id || "";
+  if (callAvailable) {
+    void sourcePreview.prefetch(activeSlug, activeGraph, {
+      type: "edge",
+      id: snapshot.callEdge.id,
+    });
+  }
+  if (snapshot.nextNode) {
+    void sourcePreview.prefetch(activeSlug, activeGraph, {
+      type: "node",
+      id: snapshot.nextNode.id,
+    });
+  }
 }
 
 function renderTraceBranches(snapshot) {

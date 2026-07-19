@@ -39,6 +39,13 @@ with sync_playwright() as playwright:
     page.wait_for_load_state("networkidle")
     page.wait_for_selector(".graph-option")
 
+    document_response = page.request.get("http://127.0.0.1:4317")
+    assert "default-src 'self'" in document_response.headers["content-security-policy"]
+    assert document_response.headers["x-content-type-options"] == "nosniff"
+    assert document_response.headers["referrer-policy"] == "no-referrer"
+    assert document_response.headers["x-frame-options"] == "DENY"
+    assert "camera=()" in document_response.headers["permissions-policy"]
+    assert document_response.headers["cache-control"] == "no-store"
     assert page.locator("html").get_attribute("data-theme") == "halo"
     assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "false"
     assert page.locator("#instant-open-toggle").inner_text() == "点击跳转：关"
@@ -106,8 +113,53 @@ with sync_playwright() as playwright:
             )
             preview = preview_response.json()
             assert preview["lines"]
-            assert sum(line["focus"] for line in preview["lines"]) == 1
+            assert sum(line["focus"] for line in preview["lines"]) >= 1
             assert preview["startLine"] <= preview["focusLine"] <= preview["endLine"]
+            assert preview["focusLine"] <= preview["focusEndLine"]
+            assert preview["endLine"] <= preview["totalLines"]
+            assert preview["fileSizeBytes"] > 0
+            assert preview["contextLines"] == 12
+            assert preview["language"]
+
+    expanded_preview = page.request.post(
+        "http://127.0.0.1:4317/api/preview",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "node",
+            "id": "cli.main",
+            "contextLines": 24,
+        },
+    )
+    assert expanded_preview.ok
+    expanded_preview_body = expanded_preview.json()
+    assert expanded_preview_body["focusLine"] == 956
+    assert expanded_preview_body["focusEndLine"] == 962
+    assert expanded_preview_body["contextLines"] == 24
+    assert sum(line["focus"] for line in expanded_preview_body["lines"]) == 7
+    assert expanded_preview_body["language"] == "rust"
+
+    capped_preview = page.request.post(
+        "http://127.0.0.1:4317/api/preview",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "node",
+            "id": "cli.main",
+            "contextLines": 65535,
+        },
+    )
+    assert capped_preview.ok
+    assert capped_preview.json()["contextLines"] == 40
+
+    injected_path = page.request.post(
+        "http://127.0.0.1:4317/api/preview",
+        data={
+            "graph": "tui-authorization",
+            "targetType": "node",
+            "id": "cli.main",
+            "path": "../../secret.txt",
+        },
+    )
+    assert injected_path.status == 422
 
     expected_graphs = {
         "Codex shell tool approval and sandbox execution": (17, 33),
@@ -169,6 +221,25 @@ with sync_playwright() as playwright:
     assert page.locator(
         '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
     ).text_content() == "lib.rs:462"
+    page.wait_for_selector(".source-workbench")
+    assert "RUST · 目标 956–962" in page.locator(".source-preview-stats").inner_text()
+    assert page.locator(".source-preview-line.focus").count() == 7
+    assert page.locator(".source-density button").count() == 3
+    assert page.locator(".source-density button.active").inner_text() == "标准"
+    page.locator(".source-find input").fill("async")
+    assert page.locator(".source-preview-line.search-match").count() >= 1
+    assert page.locator(".source-find span").inner_text() != "0/0"
+    page.locator(".source-find input").fill("")
+
+    page.locator(".source-density button", has_text="展开").click()
+    page.wait_for_function(
+        "() => document.querySelector('.source-density button.active')?.textContent === '展开'"
+    )
+    assert page.locator(".source-preview-line").count() > 31
+    page.locator(".source-density button", has_text="标准").click()
+    page.wait_for_function(
+        "() => document.querySelector('.source-density button.active')?.textContent === '标准'"
+    )
     source_link = page.request.post(
         "http://127.0.0.1:4317/api/open",
         data={
@@ -224,7 +295,8 @@ with sync_playwright() as playwright:
         "data-current-position"
     ) == "edge"
     assert "异步入口" in page.locator("#inspector-content h2").inner_text()
-    assert "main.rs:959" in page.locator(".source-preview-meta").inner_text()
+    assert "main.rs" in page.locator(".source-preview-path").inner_text()
+    assert "目标 959" in page.locator(".source-preview-stats").inner_text()
     assert page.locator(".source-preview-line.focus").count() == 1
 
     page.locator("#trace-next").click()

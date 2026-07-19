@@ -123,6 +123,16 @@ pub struct OpenRequest {
     pub id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewRequest {
+    pub graph: String,
+    pub target_type: String,
+    pub id: String,
+    #[serde(default)]
+    pub context_lines: Option<u16>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenResponse {
@@ -136,9 +146,17 @@ pub struct OpenResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SourcePreview {
     pub path: String,
+    pub language: String,
     pub focus_line: u32,
+    pub focus_end_line: u32,
     pub start_line: u32,
     pub end_line: u32,
+    pub total_lines: u32,
+    pub file_size_bytes: u64,
+    pub context_lines: u16,
+    pub truncated_before: bool,
+    pub truncated_after: bool,
+    pub focus_range_truncated: bool,
     pub lines: Vec<SourcePreviewLine>,
 }
 
@@ -148,4 +166,5 @@ pub struct SourcePreviewLine {
     pub number: u32,
     pub text: String,
     pub focus: bool,
+    pub truncated: bool,
 }

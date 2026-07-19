@@ -5,20 +5,22 @@ use std::sync::Arc;
 use axum::Json;
 use axum::Router;
 use axum::extract::{Path as AxumPath, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Serialize;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::graph_store::{FileGraphStore, GraphStore};
 use crate::model::{
-    CallGraph, GraphSummary, OpenRequest, OpenResponse, SourcePreview, ValidationReport,
+    CallGraph, GraphSummary, OpenRequest, OpenResponse, PreviewRequest, SourcePreview,
+    ValidationReport,
 };
 use crate::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
 use crate::project_catalog::{FileProjectCatalog, ProjectCatalog, ResolvedProject};
-use crate::source_preview::{FileSourcePreviewer, SourcePreviewer};
+use crate::source_preview::{DEFAULT_CONTEXT_LINES, FileSourcePreviewer, SourcePreviewer};
 use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
@@ -97,6 +99,34 @@ pub async fn serve(
         .route("/api/open", post(build_source_link))
         .route("/api/preview", post(preview_source))
         .fallback_service(static_files)
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
+                 connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; \
+                 form-action 'none'",
+            ),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -169,68 +199,90 @@ async fn build_source_link(
     Json(request): Json<OpenRequest>,
 ) -> Result<Json<OpenResponse>, AppError> {
     let graph = read_graph(&state, &request.graph)?;
-    let (file, line) = resolve_target_location(&graph, &request)?;
+    let location = resolve_target_location(&graph, &request.target_type, &request.id)?;
     let project_root = state
         .project_catalog
         .resolve_root(&graph.project_id)
         .map_err(AppError::BadRequest)?;
-    let path = resolve_source_path(&project_root, file).map_err(AppError::BadRequest)?;
+    let path = resolve_source_path(&project_root, location.file).map_err(AppError::BadRequest)?;
     let column = 1;
     let uri = state
         .source_link_builder
-        .build(&path, line, column)
+        .build(&path, location.start_line, column)
         .map_err(AppError::Internal)?;
     Ok(Json(OpenResponse {
         uri,
         path: path.display().to_string(),
-        line,
+        line: location.start_line,
         column,
     }))
 }
 
 async fn preview_source(
     State(state): State<AppState>,
-    Json(request): Json<OpenRequest>,
+    Json(request): Json<PreviewRequest>,
 ) -> Result<Json<SourcePreview>, AppError> {
     let graph = read_graph(&state, &request.graph)?;
-    let (file, line) = resolve_target_location(&graph, &request)?;
+    let location = resolve_target_location(&graph, &request.target_type, &request.id)?;
     let project_root = state
         .project_catalog
         .resolve_root(&graph.project_id)
         .map_err(AppError::BadRequest)?;
-    let path = resolve_source_path(&project_root, file).map_err(AppError::BadRequest)?;
+    let path = resolve_source_path(&project_root, location.file).map_err(AppError::BadRequest)?;
     let mut preview = state
         .source_previewer
-        .preview(&path, line)
+        .preview(
+            &path,
+            location.start_line,
+            location.end_line,
+            request.context_lines.unwrap_or(DEFAULT_CONTEXT_LINES),
+        )
         .map_err(AppError::BadRequest)?;
-    preview.path = file.to_owned();
+    preview.path = location.file.to_owned();
     Ok(Json(preview))
+}
+
+struct TargetLocation<'a> {
+    file: &'a str,
+    start_line: u32,
+    end_line: u32,
 }
 
 fn resolve_target_location<'a>(
     graph: &'a CallGraph,
-    request: &OpenRequest,
-) -> Result<(&'a str, u32), AppError> {
-    match request.target_type.as_str() {
+    target_type: &str,
+    id: &str,
+) -> Result<TargetLocation<'a>, AppError> {
+    match target_type {
         "node" => graph
             .nodes
             .iter()
-            .find(|node| node.id == request.id)
-            .map(|node| (node.file.as_str(), node.line))
-            .ok_or_else(|| AppError::NotFound(format!("节点不存在：{}", request.id))),
+            .find(|node| node.id == id)
+            .map(|node| TargetLocation {
+                file: node.file.as_str(),
+                start_line: node.line,
+                end_line: node.end_line.unwrap_or(node.line),
+            })
+            .ok_or_else(|| AppError::NotFound(format!("节点不存在：{id}"))),
         "edge" => {
             let edge = graph
                 .edges
                 .iter()
-                .find(|edge| edge.id == request.id)
-                .ok_or_else(|| AppError::NotFound(format!("连线不存在：{}", request.id)))?;
-            edge.exact_call_site().ok_or_else(|| {
-                AppError::BadRequest(format!(
-                    "连线 {} 没有可跳转的精确调用位置：{}",
-                    request.id,
-                    edge.call_site_note.trim()
-                ))
-            })
+                .find(|edge| edge.id == id)
+                .ok_or_else(|| AppError::NotFound(format!("连线不存在：{id}")))?;
+            edge.exact_call_site()
+                .map(|(file, line)| TargetLocation {
+                    file,
+                    start_line: line,
+                    end_line: line,
+                })
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "连线 {} 没有可跳转的精确调用位置：{}",
+                        id,
+                        edge.call_site_note.trim()
+                    ))
+                })
         }
         _ => Err(AppError::BadRequest(
             "targetType 必须是 node 或 edge".to_owned(),

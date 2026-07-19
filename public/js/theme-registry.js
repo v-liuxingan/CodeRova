@@ -25,7 +25,6 @@ export class ThemeRegistry {
     if (!theme) throw new Error(`未注册主题：${id}`);
     this.activeId = id;
     this.root.dataset.theme = id;
-    this.root.style.colorScheme = theme.colorScheme;
     if (persist) localStorage.setItem(STORAGE_KEY, id);
     for (const listener of this.listeners) listener(theme);
   }

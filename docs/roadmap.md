@@ -169,6 +169,9 @@ main
 - [x] 实现节点展开/折叠、隐藏、聚焦和类型筛选状态。
 - [x] 实现 Rust CLI 与 `SourceLinkBuilder` VSCode URI 生成器。
 - [x] 实现只监听 localhost 的本地 HTTP 桥接服务。
+- [x] 实现语言无关的只读源码工作台、定义范围预览、查找、缓存与相邻目标预取。
+- [x] 为源码读取和页面传输增加路径、文件、响应、DOM 与浏览器安全边界。
+- [ ] 以可选适配器接入 Tree-sitter、LSP 或 SCIP 的符号定义/引用能力。
 - [ ] 将调用链文件与 `codex-source-architecture` 学习项目关联。
 
 ## 9. 设计原则
