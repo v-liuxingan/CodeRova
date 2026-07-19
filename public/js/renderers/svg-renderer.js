@@ -1,4 +1,5 @@
 import { resolveEdgeCallSite } from "../call-site.js";
+import { placeEdgeLabels } from "./edge-label-placer.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const markerColorVariables = {
@@ -29,6 +30,7 @@ export class SvgRenderer {
   }
 
   render(graph, state) {
+    this.orientation = state.orientation;
     this.svg.replaceChildren();
     this.installDefinitions();
     this.viewport = svgElement("g", { class: "graph-viewport" });
@@ -45,6 +47,7 @@ export class SvgRenderer {
       state.getNodePositions?.() || {},
     );
     for (const entry of this.lastLayout.edges) this.drawEdge(entry, state);
+    this.layoutEdgeLabels(state.orientation);
     for (const entry of this.lastLayout.nodes.values()) this.drawNode(entry, state, graph.edges);
     this.applyTransform();
   }
@@ -245,17 +248,16 @@ export class SvgRenderer {
     const geometry = edgeGeometry(view.entry, view.orientation);
     view.hitTarget.setAttribute("d", geometry.pathData);
     view.path.setAttribute("d", geometry.pathData);
-    const position =
-      view.orientation === "vertical"
-        ? {
-            x: geometry.midpoint.x + view.labelWidth / 2 + 14,
-            y: geometry.midpoint.y,
-          }
-        : {
-            x: geometry.midpoint.x,
-            y: geometry.midpoint.y - view.labelHeight / 2 - 13,
-          };
-    view.labelGroup.setAttribute("transform", `translate(${position.x} ${position.y})`);
+    view.geometry = geometry;
+  }
+
+  layoutEdgeLabels(orientation) {
+    const positions = placeEdgeLabels(this.edgeViews.values(), orientation);
+    for (const [edgeId, position] of positions) {
+      this.edgeViews
+        .get(edgeId)
+        ?.labelGroup.setAttribute("transform", `translate(${position.x} ${position.y})`);
+    }
   }
 
   beginNodeDrag(event, entry, group) {
@@ -374,6 +376,7 @@ export class SvgRenderer {
             this.updateEdgeView(view);
           }
         }
+        this.layoutEdgeLabels(this.orientation);
         return;
       }
       if (!drag) return;
@@ -414,6 +417,7 @@ export class SvgRenderer {
               this.updateEdgeView(view);
             }
           }
+          this.layoutEdgeLabels(this.orientation);
         }
         return;
       }

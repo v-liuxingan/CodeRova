@@ -1,11 +1,16 @@
 import { isSourceTargetAvailable } from "./click-navigation-policy.js";
 
+const PREVIEW_SCOPES = ["target", "file"];
+const MAX_CACHE_ENTRIES = 120;
+const MAX_FILE_CACHE_ENTRIES = 6;
+
 export class SourcePreviewController {
   constructor(api, inspector) {
     this.api = api;
     this.inspector = inspector;
     this.cache = new Map();
     this.contextLines = 12;
+    this.scope = "target";
     this.current = null;
     this.abortController = null;
     this.requestVersion = 0;
@@ -36,6 +41,7 @@ export class SourcePreviewController {
         target.type,
         target.id,
         this.contextLines,
+        this.scope,
         abortController.signal,
       );
       this.remember(key, preview);
@@ -58,8 +64,21 @@ export class SourcePreviewController {
     void this.show(current.graphSlug, current.graph, current.target);
   }
 
+  setScope(scope) {
+    if (this.scope === scope || !PREVIEW_SCOPES.includes(scope)) return;
+    this.scope = scope;
+    const current = this.current;
+    if (!current?.target) return;
+    this.inspector.renderSourcePreviewLoading(current.target);
+    void this.show(current.graphSlug, current.graph, current.target);
+  }
+
   async prefetch(graphSlug, graph, target) {
-    if (!graphSlug || !isSourceTargetAvailable(graph, target)) return;
+    if (
+      this.scope !== "target"
+      || !graphSlug
+      || !isSourceTargetAvailable(graph, target)
+    ) return;
     const key = this.cacheKey(graphSlug, target);
     if (this.cache.has(key)) return;
     try {
@@ -68,6 +87,7 @@ export class SourcePreviewController {
         target.type,
         target.id,
         this.contextLines,
+        this.scope,
       );
       this.remember(key, preview);
     } catch {
@@ -76,13 +96,23 @@ export class SourcePreviewController {
   }
 
   cacheKey(graphSlug, target) {
-    return `${graphSlug}:${target.type}:${target.id}:${this.contextLines}`;
+    const context = this.scope === "file" ? "-" : this.contextLines;
+    return `${graphSlug}:${target.type}:${target.id}:${this.scope}:${context}`;
   }
 
   remember(key, preview) {
     this.cache.delete(key);
     this.cache.set(key, preview);
-    if (this.cache.size > 120) {
+    while (
+      [...this.cache.values()].filter((candidate) => candidate.scope === "file").length
+      > MAX_FILE_CACHE_ENTRIES
+    ) {
+      const oldestFileKey = [...this.cache]
+        .find(([, candidate]) => candidate.scope === "file")?.[0];
+      if (!oldestFileKey) break;
+      this.cache.delete(oldestFileKey);
+    }
+    if (this.cache.size > MAX_CACHE_ENTRIES) {
       this.cache.delete(this.cache.keys().next().value);
     }
   }

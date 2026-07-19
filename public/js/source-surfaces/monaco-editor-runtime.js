@@ -27,6 +27,7 @@ export class MonacoEditorRuntime {
     container.dataset.startLine = String(preview.startLine);
     container.dataset.focusLine = String(preview.focusLine);
     container.dataset.focusEndLine = String(preview.focusEndLine);
+    container.dataset.previewScope = preview.scope;
     container.dataset.readOnly = "true";
     const editorElement = document.createElement("div");
     editorElement.className = "monaco-source-editor";

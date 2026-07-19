@@ -1,9 +1,12 @@
 const WIDTHS = [
   320, 360, 400, 440, 480, 520, 560, 600, 640, 680, 720, 760, 800,
-  840, 880, 920, 960,
+  840, 880, 920, 960, 1040, 1120, 1200, 1280, 1360, 1440, 1520, 1600,
+  1680, 1760, 1840, 1920, 2080, 2240, 2400, 2560, 2720, 2880,
 ];
 const STORAGE_KEY = "callgraph_inspector_width_v2";
 const DEFAULT_WIDTH = 520;
+const MIN_CANVAS_WIDTH = 280;
+const MAX_VIEWPORT_RATIO = 0.72;
 
 export class ResizablePanelController {
   constructor(root, handle, callbacks = {}) {
@@ -96,6 +99,12 @@ export class ResizablePanelController {
 
   maximumWidth() {
     const rail = Number.parseFloat(getComputedStyle(this.root).getPropertyValue("--rail")) || 0;
-    return Math.max(320, window.innerWidth - rail - 460);
+    return Math.max(
+      320,
+      Math.min(
+        window.innerWidth * MAX_VIEWPORT_RATIO,
+        window.innerWidth - rail - MIN_CANVAS_WIDTH,
+      ),
+    );
   }
 }

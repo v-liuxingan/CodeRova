@@ -88,6 +88,9 @@ pub async fn serve(
     layouts_dir: PathBuf,
     projects_config: PathBuf,
 ) -> Result<(), String> {
+    if !address.ip().is_loopback() {
+        return Err("出于本地源码安全考虑，服务只能监听 loopback 地址".to_owned());
+    }
     let project_catalog = FileProjectCatalog::from_file(&projects_config)?;
     let state = AppState::new(
         Arc::new(FileGraphStore::new(graphs_dir)),
@@ -375,6 +378,7 @@ async fn preview_source(
             location.start_line,
             location.end_line,
             request.context_lines.unwrap_or(DEFAULT_CONTEXT_LINES),
+            request.scope,
         )
         .map_err(AppError::BadRequest)?;
     preview.path = location.file.to_owned();
@@ -439,4 +443,24 @@ fn read_graph(state: &AppState, slug: &str) -> Result<CallGraph, AppError> {
             AppError::Internal(error)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_non_loopback_http_bind_address() {
+        let error = serve(
+            SocketAddr::from(([0, 0, 0, 0], 4317)),
+            PathBuf::from("public"),
+            PathBuf::from("graphs"),
+            PathBuf::from("layouts"),
+            PathBuf::from("callgraph.projects.json"),
+        )
+        .await
+        .expect_err("non-loopback address must be rejected");
+
+        assert_eq!(error, "出于本地源码安全考虑，服务只能监听 loopback 地址");
+    }
 }

@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::Path;
 
-use crate::model::{SourcePreview, SourcePreviewLine};
+use crate::model::{PreviewScope, SourcePreview, SourcePreviewLine};
 
 pub const DEFAULT_CONTEXT_LINES: u16 = 12;
 pub const MAX_CONTEXT_LINES: u16 = 40;
 const DEFAULT_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_RETURNED_LINES: usize = 240;
+const MAX_FULL_FILE_LINES: usize = 50_000;
 const MAX_LINE_CHARS: usize = 4_000;
 
 pub trait SourcePreviewer: Send + Sync {
@@ -16,6 +17,7 @@ pub trait SourcePreviewer: Send + Sync {
         focus_line: u32,
         focus_end_line: u32,
         context_lines: u16,
+        scope: PreviewScope,
     ) -> Result<SourcePreview, String>;
 }
 
@@ -39,6 +41,7 @@ impl SourcePreviewer for FileSourcePreviewer {
         focus_line: u32,
         focus_end_line: u32,
         context_lines: u16,
+        scope: PreviewScope,
     ) -> Result<SourcePreview, String> {
         if focus_line == 0 || focus_end_line < focus_line {
             return Err("源码预览范围无效".to_owned());
@@ -79,13 +82,31 @@ impl SourcePreviewer for FileSourcePreviewer {
         let actual_focus_end = requested_focus_end
             .min(source_lines.len())
             .max(focus_index + 1);
-        let desired_start = focus_index.saturating_sub(context);
-        let desired_end = actual_focus_end
-            .saturating_add(context)
-            .min(source_lines.len());
-        let start_index = desired_start;
-        let end_index = desired_end.min(start_index.saturating_add(MAX_RETURNED_LINES));
-        let focus_range_truncated = end_index < actual_focus_end;
+        let (start_index, end_index, context_lines, focus_range_truncated) = match scope {
+            PreviewScope::Target => {
+                let desired_start = focus_index.saturating_sub(context);
+                let desired_end = actual_focus_end
+                    .saturating_add(context)
+                    .min(source_lines.len());
+                let end_index = desired_end.min(desired_start.saturating_add(MAX_RETURNED_LINES));
+                (
+                    desired_start,
+                    end_index,
+                    context_lines,
+                    end_index < actual_focus_end,
+                )
+            }
+            PreviewScope::File => {
+                if source_lines.len() > MAX_FULL_FILE_LINES {
+                    return Err(format!(
+                        "源码文件行数过多，无法整文件预览：{}（上限 {} 行）",
+                        path.display(),
+                        MAX_FULL_FILE_LINES
+                    ));
+                }
+                (0, source_lines.len(), 0, false)
+            }
+        };
         let lines = source_lines[start_index..end_index]
             .iter()
             .enumerate()
@@ -105,6 +126,7 @@ impl SourcePreviewer for FileSourcePreviewer {
 
         Ok(SourcePreview {
             path: path.display().to_string(),
+            scope,
             language: language_for_path(path).to_owned(),
             focus_line,
             focus_end_line: u32::try_from(actual_focus_end).unwrap_or(u32::MAX),
@@ -151,6 +173,7 @@ fn language_for_path(path: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::PreviewScope;
 
     #[test]
     fn returns_bounded_context_and_marks_focus_line() {
@@ -163,7 +186,9 @@ mod tests {
         fs::write(&path, content).expect("source");
 
         let previewer = FileSourcePreviewer { max_bytes: 1024 };
-        let preview = previewer.preview(&path, 10, 10, 2).expect("preview");
+        let preview = previewer
+            .preview(&path, 10, 10, 2, PreviewScope::Target)
+            .expect("preview");
 
         assert_eq!(preview.start_line, 8);
         assert_eq!(preview.end_line, 12);
@@ -185,7 +210,7 @@ mod tests {
         fs::write(&path, "one\n").expect("source");
 
         let error = FileSourcePreviewer::default()
-            .preview(&path, 2, 2, DEFAULT_CONTEXT_LINES)
+            .preview(&path, 2, 2, DEFAULT_CONTEXT_LINES, PreviewScope::Target)
             .expect_err("out of range");
         assert!(error.contains("超出文件范围"));
     }
@@ -201,7 +226,7 @@ mod tests {
         fs::write(&path, content).expect("source");
 
         let preview = FileSourcePreviewer::default()
-            .preview(&path, 20, 350, u16::MAX)
+            .preview(&path, 20, 350, u16::MAX, PreviewScope::Target)
             .expect("preview");
 
         assert_eq!(preview.context_lines, MAX_CONTEXT_LINES);
@@ -217,9 +242,36 @@ mod tests {
         fs::write(&path, b"hello\0world").expect("source");
 
         let error = FileSourcePreviewer::default()
-            .preview(&path, 1, 1, DEFAULT_CONTEXT_LINES)
+            .preview(&path, 1, 1, DEFAULT_CONTEXT_LINES, PreviewScope::Target)
             .expect_err("binary");
 
         assert!(error.contains("二进制"));
+    }
+
+    #[test]
+    fn returns_the_complete_file_on_explicit_file_scope() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("sample.rs");
+        let content = (1..=500)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, content).expect("source");
+
+        let preview = FileSourcePreviewer::default()
+            .preview(&path, 250, 250, DEFAULT_CONTEXT_LINES, PreviewScope::File)
+            .expect("full file preview");
+
+        assert_eq!(preview.scope, PreviewScope::File);
+        assert_eq!(preview.start_line, 1);
+        assert_eq!(preview.end_line, 500);
+        assert_eq!(preview.lines.len(), 500);
+        assert_eq!(preview.context_lines, 0);
+        assert!(!preview.truncated_before);
+        assert!(!preview.truncated_after);
+        assert_eq!(
+            preview.lines.iter().find(|line| line.focus).unwrap().text,
+            "line 250"
+        );
     }
 }

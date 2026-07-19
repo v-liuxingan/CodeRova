@@ -38,7 +38,7 @@ export class Inspector {
     this.contentElement.hidden = false;
     this.contentElement.className = "inspect-content";
     this.contentElement.innerHTML =
-      target.type === "node" ? nodeTemplate(item) : edgeTemplate(item);
+      target.type === "node" ? nodeTemplate(item) : edgeTemplate(item, graph);
     this.contentElement.querySelector("[data-open]")?.addEventListener("click", () => {
       this.callbacks.onOpen?.(target);
     });
@@ -54,6 +54,7 @@ export class Inspector {
     if (this.targetKey !== targetKey(target)) return;
     this.sourcePreviewView.render(this.sourceBodyElement, preview, {
       onContextChange: (lines) => this.callbacks.onPreviewContextChange?.(lines),
+      onScopeChange: (scope) => this.callbacks.onPreviewScopeChange?.(scope),
       onNotice: (message, error) => this.callbacks.onPreviewNotice?.(message, error),
     });
   }
@@ -75,7 +76,7 @@ export class Inspector {
   }
 
   renderSourceUnavailable(message = "当前目标没有精确源码位置") {
-    this.renderSourcePlaceholder(message, "仍可在“详情”中查看调用证据与不可跳转原因。");
+    this.renderSourcePlaceholder(message, "语义摘要仍会保留调用证据与不可跳转原因。");
   }
 
   renderSourcePlaceholder(title, description) {
@@ -93,22 +94,18 @@ export class Inspector {
 }
 function nodeTemplate(node) {
   return `
-    <span class="inspect-type">NODE / ${escapeHtml(node.kind).toUpperCase()}</span>
-    <h2>${escapeHtml(node.label)}</h2>
-    <div class="inspect-id">${escapeHtml(node.id)}</div>
-    <div class="inspect-role">${escapeHtml(node.role)}</div>
-    <section class="inspect-section">
-      <h3>RESPONSIBILITY</h3>
-      <p>${escapeHtml(node.description || "暂无补充说明")}</p>
-    </section>
-    <section class="inspect-section">
-      <h3>SOURCE LOCATION</h3>
-      <div class="source-card">${escapeHtml(node.file)}:${node.line}${node.endLine ? `–${node.endLine}` : ""}</div>
-    </section>
-    <section class="inspect-section">
-      <h3>OWNERSHIP</h3>
-      <p>${escapeHtml(node.crate || "—")}<br>${escapeHtml(node.module || "—")}</p>
-    </section>
+    <div class="inspect-heading">
+      <div>
+        <span class="inspect-type">NODE / ${escapeHtml(node.kind).toUpperCase()}</span>
+        <h2>${escapeHtml(node.label)}</h2>
+      </div>
+      <div class="inspect-id">${escapeHtml(node.id)}</div>
+    </div>
+    <div class="inspect-role"><strong>${escapeHtml(node.role || "暂无职责")}</strong>${escapeHtml(node.description || "暂无描述")}</div>
+    <div class="inspect-facts" aria-label="节点事实">
+      <span><b>SOURCE</b>${escapeHtml(node.file)}:${node.line}${node.endLine ? `–${node.endLine}` : ""}</span>
+      <span><b>OWNER</b>${escapeHtml(node.crate || "—")} / ${escapeHtml(node.module || "—")}</span>
+    </div>
     <div class="inspect-actions">
       <button class="primary-action" data-open>↗ 在编辑器打开</button>
       <button class="secondary-action" data-collapse title="折叠或展开下游">折叠</button>
@@ -116,11 +113,13 @@ function nodeTemplate(node) {
     </div>`;
 }
 
-function edgeTemplate(edge) {
+function edgeTemplate(edge, graph) {
   const percent = Math.round(edge.confidence * 100);
   const callSite = resolveEdgeCallSite(edge);
+  const from = graph.nodes.find((node) => node.id === edge.from);
+  const to = graph.nodes.find((node) => node.id === edge.to);
   const callSiteContent = callSite.available
-    ? `<div class="source-card">${escapeHtml(callSite.file)}:${callSite.line}</div>`
+    ? `<span><b>CALL SITE</b>${escapeHtml(callSite.file)}:${callSite.line}</span>`
     : `<div class="callsite-notice">
         <strong>${escapeHtml(callSite.shortLabel)}</strong>
         <span>${escapeHtml(callSite.note)}</span>
@@ -131,25 +130,27 @@ function edgeTemplate(edge) {
       </div>`
     : "";
   return `
-    <span class="inspect-type">EDGE / ${escapeHtml(edge.kind).toUpperCase()}</span>
-    <h2>${escapeHtml(edge.label || "调用关系")}</h2>
-    <div class="inspect-id">${escapeHtml(edge.from)} → ${escapeHtml(edge.to)}</div>
-    <div class="inspect-role">${escapeHtml(edge.description || "调用边")}</div>
-    <section class="inspect-section">
-      <h3>CALL SITE</h3>
-      ${callSiteContent}
-    </section>
-    <section class="inspect-section">
-      <h3>EVIDENCE</h3>
-      <p>${escapeHtml(edge.evidence || "未记录证据")}</p>
-    </section>
-    <section class="inspect-section">
-      <h3>CONFIDENCE</h3>
-      <div class="confidence">
-        <progress class="confidence-track" max="100" value="${percent}">${percent}%</progress>
-        <span>${percent}%</span>
+    <div class="inspect-heading">
+      <div>
+        <span class="inspect-type">EDGE / ${escapeHtml(edge.kind).toUpperCase()}</span>
+        <h2>${escapeHtml(edge.label || "调用关系")}</h2>
       </div>
-    </section>
+      <div class="inspect-confidence">${percent}% CONFIDENCE</div>
+    </div>
+    <div class="inspect-route">
+      <span>${escapeHtml(from?.label || edge.from)}</span>
+      <i aria-hidden="true">→</i>
+      <span>${escapeHtml(to?.label || edge.to)}</span>
+    </div>
+    <div class="inspect-role">${escapeHtml(edge.description || "暂无描述")}</div>
+    <div class="inspect-facts" aria-label="调用关系事实">
+      ${callSiteContent}
+      <span><b>RELATION</b>${escapeHtml(edge.kind)}</span>
+    </div>
+    <details class="inspect-evidence">
+      <summary>查看调用证据</summary>
+      <p>${escapeHtml(edge.evidence || "未记录证据")}</p>
+    </details>
     ${openAction}`;
 }
 

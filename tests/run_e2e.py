@@ -9,7 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMP_LAYOUTS = ROOT / "tests" / ".tmp-layouts"
-SERVER = ROOT / "target" / "debug" / (
+TARGET_DIR = Path(
+    os.environ.get("CALLGRAPH_E2E_TARGET_DIR", ROOT / "target" / "frontend-e2e")
+)
+SERVER = TARGET_DIR / "debug" / (
     "callgraph-visualizer.exe" if sys.platform == "win32" else "callgraph-visualizer"
 )
 
@@ -39,7 +42,11 @@ def main() -> int:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
     if (ROOT / "node_modules" / "monaco-editor").is_dir():
         subprocess.run([npm, "run", "build:frontend"], cwd=ROOT, check=True)
-    subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
+    subprocess.run(
+        ["cargo", "build", "--quiet", "--target-dir", str(TARGET_DIR)],
+        cwd=ROOT,
+        check=True,
+    )
     shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
     port = find_free_port()
     server = subprocess.Popen(

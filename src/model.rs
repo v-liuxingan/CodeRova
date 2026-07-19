@@ -131,6 +131,16 @@ pub struct PreviewRequest {
     pub id: String,
     #[serde(default)]
     pub context_lines: Option<u16>,
+    #[serde(default)]
+    pub scope: PreviewScope,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewScope {
+    #[default]
+    Target,
+    File,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +156,7 @@ pub struct OpenResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SourcePreview {
     pub path: String,
+    pub scope: PreviewScope,
     pub language: String,
     pub focus_line: u32,
     pub focus_end_line: u32,
@@ -167,4 +178,24 @@ pub struct SourcePreviewLine {
     pub text: String,
     pub focus: bool,
     pub truncated: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_scope_defaults_to_target_and_rejects_unknown_values() {
+        let request: PreviewRequest = serde_json::from_str(
+            r#"{"graph":"demo","targetType":"node","id":"node.a","contextLines":12}"#,
+        )
+        .expect("legacy request");
+        assert_eq!(request.scope, PreviewScope::Target);
+
+        let error = serde_json::from_str::<PreviewRequest>(
+            r#"{"graph":"demo","targetType":"node","id":"node.a","scope":"workspace"}"#,
+        )
+        .expect_err("unknown scope");
+        assert!(error.to_string().contains("unknown variant"));
+    }
 }

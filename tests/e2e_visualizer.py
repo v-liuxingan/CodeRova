@@ -242,6 +242,39 @@ with sync_playwright() as playwright:
             )
             assert page.locator("#trace-branch").input_value() == "shell.output-to-build"
             page.locator("#trace-branch").select_option("shell.output-to-runtime")
+            branch_labels = page.evaluate(
+                """() => {
+                    const runtime = document.querySelector(
+                        '[data-edge-group-id="shell.output-to-runtime"].graph-edge-label-group'
+                    ).getBoundingClientRect();
+                    const build = document.querySelector(
+                        '[data-edge-group-id="shell.output-to-build"].graph-edge-label-group'
+                    ).getBoundingClientRect();
+                    const source = document.querySelector(
+                        '[data-node-id="stream.handle-output-item"]'
+                    ).getBoundingClientRect();
+                    return {
+                        overlap: !(
+                            runtime.right <= build.left
+                            || runtime.left >= build.right
+                            || runtime.bottom <= build.top
+                            || runtime.top >= build.bottom
+                        ),
+                        runtimeCenter: runtime.left + runtime.width / 2,
+                        buildCenter: build.left + build.width / 2,
+                        sourceCenter: source.left + source.width / 2,
+                    };
+                }"""
+            )
+            assert not branch_labels["overlap"], branch_labels
+            assert (
+                branch_labels["runtimeCenter"]
+                < branch_labels["sourceCenter"]
+                < branch_labels["buildCenter"]
+            ), branch_labels
+            page.locator(".canvas-wrap").screenshot(
+                path=str(ARTIFACTS / "edge-label-branches.png")
+            )
 
     page.wait_for_selector('[data-node-id="cli.main"]')
 
@@ -259,9 +292,23 @@ with sync_playwright() as playwright:
     ).text_content() == "lib.rs:462"
     page.wait_for_selector(".source-workbench")
     page.wait_for_selector('.source-editor-host[data-source-surface="monaco"]')
-    assert page.locator("#inspector-source-tab").get_attribute("aria-selected") == "true"
+    assert page.locator("#inspector-details-tab").count() == 0
+    assert page.locator("#inspector-source-tab").count() == 0
+    assert page.locator("#inspector-summary").is_visible()
     assert page.locator("#inspector-source-pane").is_visible()
-    assert not page.locator("#inspector-details-pane").is_visible()
+    assert "CLI 进程入口" in page.locator("#inspector-content").inner_text()
+    assert "arg0 分发器进入异步 cli_main" in page.locator(
+        "#inspector-content"
+    ).inner_text()
+    assert "从 Codex CLI 启动到模型请求鉴权" in page.locator(
+        "#graph-overview-description"
+    ).inner_text()
+    assert page.locator("#graph-overview-start").inner_text() == "main"
+    assert page.locator(
+        "#graph-overview-end"
+    ).inner_text() == "ConfiguredModelProvider::auth 等 2 个"
+    assert page.locator("#graph-overview-scale").inner_text() == "19 节点 · 19 关系"
+    assert page.locator("#trace-next strong").inner_text() == "cli_main"
     assert "RUST · 目标 956–962" in page.locator(".source-preview-stats").inner_text()
     assert page.locator(".source-engine-badge").inner_text() == "MONACO · READ ONLY"
     assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "956"
@@ -272,8 +319,29 @@ with sync_playwright() as playwright:
     assert monaco_frame.locator(".monaco-editor").count() == 1
     assert monaco_frame.locator(".monaco-source-focus").count() >= 1
     assert "956" in monaco_frame.locator(".line-numbers").all_text_contents()
+    assert "/assets/cursors/canvas-pointer.svg" in page.locator(
+        "#graph-canvas"
+    ).evaluate("element => getComputedStyle(element.parentElement).cursor")
     assert page.locator(".source-density button").count() == 3
     assert page.locator(".source-density button.active").inner_text() == "标准"
+    assert page.locator(".source-scope button.active").inner_text() == "目标范围"
+    page.locator(".source-scope button", has_text="完整文件").click()
+    page.wait_for_function(
+        """() =>
+            document.querySelector('.source-scope button.active')?.textContent === '完整文件'
+            && document.querySelector('.source-editor-host')?.dataset.previewScope === 'file'
+            && document.querySelector('.source-editor-host')?.dataset.startLine === '1'
+            && document.querySelector('.source-editor-host')?.getAttribute('aria-busy') === 'false'"""
+    )
+    assert "完整文件" in page.locator(".source-preview-stats").inner_text()
+    assert not page.locator(".source-density").is_visible()
+    page.locator(".source-scope button", has_text="目标范围").click()
+    page.wait_for_function(
+        """() =>
+            document.querySelector('.source-scope button.active')?.textContent === '目标范围'
+            && document.querySelector('.source-editor-host')?.dataset.previewScope === 'target'
+            && document.querySelector('.source-editor-host')?.getAttribute('aria-busy') === 'false'"""
+    )
     page.locator(".source-find input").fill("async")
     page.wait_for_function(
         "() => document.querySelector('.source-find span')?.textContent !== '0/0'"
@@ -299,19 +367,38 @@ with sync_playwright() as playwright:
     resizer.focus()
     page.keyboard.press("ArrowRight")
     assert "inspector-width-560" in (page.locator("html").get_attribute("class") or "")
+    resizer_box = resizer.bounding_box()
+    page.mouse.move(
+        resizer_box["x"] + resizer_box["width"] / 2,
+        resizer_box["y"] + 120,
+    )
+    page.mouse.down()
+    page.mouse.move(0, resizer_box["y"] + 120, steps=8)
+    page.mouse.up()
+    assert page.locator(".inspector").bounding_box()["width"] > 1440 / 2
+    assert page.locator("#graph-canvas").bounding_box()["width"] >= 280
+    wide_canvas_box = page.locator("#graph-canvas").bounding_box()
+    wide_inspector_box = page.locator(".inspector").bounding_box()
+    assert (
+        wide_canvas_box["x"] + wide_canvas_box["width"]
+        <= wide_inspector_box["x"] + 1
+    ), (wide_canvas_box, wide_inspector_box)
     resizer.dblclick()
     assert "inspector-width-520" in (page.locator("html").get_attribute("class") or "")
 
-    page.locator("#inspector-details-tab").click()
-    assert page.locator("#inspector-details-pane").is_visible()
     assert "main" in page.locator("#inspector-content h2").inner_text()
-    page.locator("#inspector-details-tab").press("ArrowRight")
     assert page.locator("#inspector-source-pane").is_visible()
     preview_height = page.locator(".source-editor-host").bounding_box()["height"]
-    assert preview_height > 600
+    assert preview_height > 430
     page.locator("#inspector-focus").click()
     assert "workbench-focused" in (page.locator(".inspector").get_attribute("class") or "")
-    assert "inspector-width-720" in (page.locator("html").get_attribute("class") or "")
+    assert page.locator(".inspector").bounding_box()["width"] > 1440 / 2
+    focused_canvas_box = page.locator("#graph-canvas").bounding_box()
+    focused_inspector_box = page.locator(".inspector").bounding_box()
+    assert (
+        focused_canvas_box["x"] + focused_canvas_box["width"]
+        <= focused_inspector_box["x"] + 1
+    ), (focused_canvas_box, focused_inspector_box)
     assert page.locator("#inspector-focus").inner_text() == "还原"
     assert page.locator(".source-editor-host").get_attribute("data-source-surface") == "monaco"
     assert page.locator(".source-preview-body").evaluate("element => element.scrollLeft") == 0
@@ -336,6 +423,19 @@ with sync_playwright() as playwright:
     )
     assert page.locator(".source-editor-host").get_attribute("data-start-line") == "932"
     monaco_frame.locator(".codicon-folding-expanded").first.wait_for()
+    codicon_status = monaco_frame.locator(".codicon-folding-expanded").first.evaluate(
+        """async folding => {
+            await document.fonts.ready;
+            return {
+                loaded: document.fonts.check('16px codicon'),
+                beforeFont: getComputedStyle(folding, '::before').fontFamily,
+                beforeContent: getComputedStyle(folding, '::before').content,
+            };
+        }"""
+    )
+    assert codicon_status["loaded"] and "codicon" in codicon_status["beforeFont"], (
+        codicon_status
+    )
     page.locator('[data-editor-action="foldAll"]').click()
     monaco_frame.locator(".codicon-folding-collapsed").first.wait_for()
     page.locator('[data-editor-action="unfoldAll"]').click()
@@ -456,6 +556,7 @@ with sync_playwright() as playwright:
     assert page.locator("#trace-next").get_attribute(
         "data-trace-node-id"
     ) == "cli.cli-main"
+    assert page.locator("#trace-next strong").inner_text() == "cli_main"
 
     trace_open_requests = []
     page.on(
@@ -478,9 +579,14 @@ with sync_playwright() as playwright:
     assert page.locator(".source-stepper").get_attribute(
         "data-current-node"
     ) == "cli.cli-main"
+    assert page.locator("#trace-previous strong").inner_text() == "main"
+    assert page.locator("#trace-next strong").inner_text() == "run_interactive_tui"
     assert page.locator("#trace-callsite").get_attribute(
         "data-trace-edge-id"
     ) == "edge.cli-main-interactive"
+    assert "从 Codex CLI 启动到模型请求鉴权" in page.locator(
+        "#graph-overview-description"
+    ).inner_text()
 
     page.locator("#trace-previous").click()
     assert page.locator(".source-stepper").get_attribute(
@@ -536,8 +642,11 @@ with sync_playwright() as playwright:
         "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
     )
     assert "已省略中间节点" in page.locator("#inspector-content").inner_text()
-    assert page.locator("#inspector-details-pane").is_visible()
-    assert page.locator("#inspector-source-tab").is_disabled()
+    assert page.locator("#inspector-summary").is_visible()
+    assert page.locator("#inspector-source-pane").is_visible()
+    assert "当前目标没有精确源码位置" in page.locator(
+        ".source-workbench-empty"
+    ).inner_text()
     assert page.locator("#inspector-content [data-open]").count() == 0
     assert page.locator("#trace-callsite").is_disabled()
     assert "省略了多个中间节点" in (
@@ -607,10 +716,35 @@ with sync_playwright() as playwright:
     page.mouse.click(*drag_start)
     assert "selected" not in (selected_node.get_attribute("class") or "")
     selected_node.click()
-    page.locator("#fit-view").click()
     page.get_by_role("button", name="上游").click()
+    page.wait_for_timeout(100)
     upstream_count = page.locator(".graph-node").count()
     assert 1 < upstream_count < 19
+    assert page.locator(".graph-node").evaluate_all(
+        """nodes => {
+            const canvas = document.querySelector('#graph-canvas').getBoundingClientRect();
+            return nodes.every(node => {
+                const box = node.getBoundingClientRect();
+                return box.left >= canvas.left && box.right <= canvas.right
+                    && box.top >= canvas.top && box.bottom <= canvas.bottom;
+            });
+        }"""
+    )
+
+    page.get_by_role("button", name="下游").click()
+    page.wait_for_timeout(100)
+    downstream_count = page.locator(".graph-node").count()
+    assert 1 < downstream_count < 19
+    assert page.locator(".graph-node").evaluate_all(
+        """nodes => {
+            const canvas = document.querySelector('#graph-canvas').getBoundingClientRect();
+            return nodes.every(node => {
+                const box = node.getBoundingClientRect();
+                return box.left >= canvas.left && box.right <= canvas.right
+                    && box.top >= canvas.top && box.bottom <= canvas.bottom;
+            });
+        }"""
+    )
 
     page.get_by_role("button", name="全图").click()
     page.locator("#orientation").click()

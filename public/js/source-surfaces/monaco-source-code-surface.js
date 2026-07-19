@@ -23,6 +23,7 @@ export class MonacoSourceCodeSurface {
     container.dataset.startLine = String(preview.startLine);
     container.dataset.focusLine = String(preview.focusLine);
     container.dataset.focusEndLine = String(preview.focusEndLine);
+    container.dataset.previewScope = preview.scope;
     container.dataset.readOnly = "true";
 
     const frame = document.createElement("iframe");

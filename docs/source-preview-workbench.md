@@ -26,7 +26,7 @@
 ## 当前模块边界
 
 ```text
-PreviewRequest(graph, target, context)
+PreviewRequest(graph, target, context, scope)
              │
              ▼
 HTTP target resolver ── project root boundary
@@ -53,14 +53,15 @@ SourceCodeSurfaceRegistry
 ```text
 Inspector ── target details / preview render adapter
      │
-     └── InspectorWorkbenchController ── details/source tabs
+     └── InspectorWorkbenchController ── semantic summary + source evidence
                          │                focus / collapse
                          └── ResizablePanelController ── width policy
 ```
 
 源码不再嵌套在详情长页面中，而是参考图可视化示例的右侧代码面板，作为一级全高工作台。
 默认宽度为 520px；可以拖动分隔条、用键盘调整宽度、扩展到窗口允许的最大宽度，或折叠为
-44px 窄条。详情与源码内容保持挂载边界独立，切换视图不会触发外部编辑器。
+44px 窄条。当前目标的语义摘要固定在工作台顶部，源码证据占据剩余高度，两者保持独立
+挂载边界并随选择同步更新；仅显式点击打开操作才会触发外部编辑器。
 
 `SourcePreviewer` 不依赖 Rust、LSP 或语法树。当前语言识别只根据扩展名提供展示元数据。
 默认 `MonacoSourceCodeSurface` 支持 Rust、JavaScript、TypeScript、Python 和 Go 的基础着色；
@@ -72,9 +73,12 @@ Inspector ── target details / preview render adapter
 
 ## 安全预算
 
-- 请求只接受调用图 slug、目标类型、目标 ID 和受上限约束的上下文行数。
+- 请求只接受调用图 slug、目标类型、目标 ID、受上限约束的上下文行数和
+  `target` / `file` 预览范围。
 - 规范化后的真实文件必须位于配置的项目根目录下，可阻止 `..` 和符号链接逃逸。
-- 默认文件上限 4 MiB，上下文最多 40 行，响应最多 240 行，单行最多 4000 个字符。
+- 默认文件上限 4 MiB；`target` 上下文最多 40 行、响应最多 240 行；
+  `file` 仅由用户显式触发且不参与相邻目标预取，并设置独立整文件行数预算；
+  两种模式的单行都最多返回 4000 个字符。
 - 拒绝包含 NUL 的疑似二进制文件和非 UTF-8 文本。
 - 源码始终通过 `textContent` / 文本节点写入 DOM；着色器不产生来源于源码的 HTML。
 - Monaco、语言模块和 Worker 都从固定版本的本地构建产物加载，不连接 CDN。

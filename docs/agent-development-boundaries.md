@@ -37,10 +37,15 @@ Rust backend ── stable HTTP / JSON contracts ── browser frontend
 | `PUT /api/graphs/{slug}/layout` | `GraphLayout` | 保存后的 `GraphLayout` | 共享 |
 | `GET /api/graphs/{slug}/validation` | 路径 slug | `ValidationReport` | 后端 |
 | `POST /api/open` | `{ graph, targetType, id }` | `{ uri, path, line, column }` | 共享 |
-| `POST /api/preview` | `{ graph, targetType, id, contextLines? }` | `SourcePreview` | 共享 |
+| `POST /api/preview` | `{ graph, targetType, id, contextLines?, scope? }` | `SourcePreview` | 共享 |
 
 浏览器访问统一封装在 `public/js/api.js`。Rust 序列化模型位于 `src/model.rs`，图、项目和
 布局的持久化契约分别以 `schema/*.schema.json` 为准。API 字段统一使用 `camelCase`。
+
+`scope` 可取 `target` 或 `file`，省略时保持原有 `target` 行为。`target` 返回定义/调用点及
+受限上下文；`file` 按用户显式操作返回目标所在完整文本文件，并在响应中回传实际 `scope`。
+整文件请求仍不能携带路径，继续经过调用图目标解析、项目根目录边界、4 MiB 文件上限、
+UTF-8/二进制检查、单行长度和整文件行数预算。浏览器不得为相邻目标自动预取 `file` 响应。
 
 目前没有把 API 伪装成任意文件服务：`/api/open` 与 `/api/preview` 都只接受图目标，
 实际路径由后端从图和项目目录配置中解析。这个不变量不能由前端便利性需求绕过。

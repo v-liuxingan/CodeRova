@@ -5,6 +5,10 @@ const CONTEXT_OPTIONS = [
   { lines: 12, label: "标准" },
   { lines: 24, label: "展开" },
 ];
+const SCOPE_OPTIONS = [
+  { scope: "target", label: "目标范围" },
+  { scope: "file", label: "完整文件" },
+];
 
 export class SourcePreviewView {
   constructor({ surfaces = sourceCodeSurfaces, preferredSurface = "monaco" } = {}) {
@@ -81,8 +85,9 @@ export class SourcePreviewView {
         ? `${preview.focusLine}–${preview.focusEndLine}`
         : String(preview.focusLine);
     const limited = preview.truncatedBefore || preview.truncatedAfter ? " · 上下文受限" : "";
+    const scope = preview.scope === "file" ? "完整文件 · " : "";
     stats.textContent =
-      `${preview.language.toUpperCase()} · 目标 ${range} · ${preview.totalLines} 行 · `
+      `${preview.language.toUpperCase()} · ${scope}目标 ${range} · ${preview.totalLines} 行 · `
       + `${formatBytes(preview.fileSizeBytes)}${limited}`;
     header.append(path, actions, stats);
     return header;
@@ -92,9 +97,26 @@ export class SourcePreviewView {
     const tools = document.createElement("div");
     tools.className = "source-preview-tools";
 
+    const rangeControls = document.createElement("div");
+    rangeControls.className = "source-range-controls";
+    const scope = document.createElement("div");
+    scope.className = "source-scope";
+    scope.setAttribute("aria-label", "源码预览范围");
+    for (const option of SCOPE_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = option.label;
+      button.title =
+        option.scope === "file" ? "按需读取目标所在的完整文件" : "仅显示目标及附近上下文";
+      button.classList.toggle("active", preview.scope === option.scope);
+      button.addEventListener("click", () => callbacks.onScopeChange?.(option.scope));
+      scope.append(button);
+    }
+
     const density = document.createElement("div");
     density.className = "source-density";
     density.setAttribute("aria-label", "源码上下文范围");
+    density.hidden = preview.scope === "file";
     for (const option of CONTEXT_OPTIONS) {
       const button = document.createElement("button");
       button.type = "button";
@@ -104,6 +126,7 @@ export class SourcePreviewView {
       button.addEventListener("click", () => callbacks.onContextChange?.(option.lines));
       density.append(button);
     }
+    rangeControls.append(scope, density);
 
     const search = document.createElement("label");
     search.className = "source-find";
@@ -146,7 +169,7 @@ export class SourcePreviewView {
       this.actionButtons.set(action, button);
       actions.append(button);
     }
-    tools.append(density, search, actions);
+    tools.append(rangeControls, search, actions);
     return tools;
   }
 

@@ -1,4 +1,5 @@
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import "monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import "monaco-editor/esm/vs/editor/contrib/bracketMatching/browser/bracketMatching.js";
 import "monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu.js";
 import "monaco-editor/esm/vs/editor/contrib/find/browser/findController.js";

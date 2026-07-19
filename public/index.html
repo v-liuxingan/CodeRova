@@ -41,7 +41,28 @@
         </section>
 
         <section class="rail-section">
-          <div class="section-label"><span>02</span> 快速检索</div>
+          <div class="section-label"><span>02</span> 当前图谱</div>
+          <div id="graph-overview" class="graph-overview" aria-live="polite">
+            <p id="graph-overview-description">正在读取图谱意图…</p>
+            <dl>
+              <div>
+                <dt>起点</dt>
+                <dd id="graph-overview-start">—</dd>
+              </div>
+              <div>
+                <dt>终点</dt>
+                <dd id="graph-overview-end">—</dd>
+              </div>
+              <div>
+                <dt>规模</dt>
+                <dd id="graph-overview-scale">—</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-label"><span>03</span> 快速检索</div>
           <label class="search-box">
             <span aria-hidden="true">⌕</span>
             <input id="search" type="search" placeholder="函数 / crate / 文件" autocomplete="off" />
@@ -51,7 +72,7 @@
         </section>
 
         <section class="rail-section rail-bottom">
-          <div class="section-label"><span>03</span> 图例</div>
+          <div class="section-label"><span>04</span> 图例</div>
           <div class="legend">
             <span><i class="edge-swatch direct"></i>直接调用</span>
             <span><i class="edge-swatch callback"></i>回调 / 异步</span>
@@ -94,8 +115,11 @@
 
         <nav class="source-stepper" aria-label="源码步进导航" aria-keyshortcuts="ArrowLeft ArrowRight">
             <button id="trace-previous" class="trace-step" disabled>
-              <span aria-hidden="true">←</span>
-              <strong>上一步</strong>
+              <span class="trace-arrow" aria-hidden="true">←</span>
+              <span class="trace-copy">
+                <small>上一步</small>
+                <strong>—</strong>
+              </span>
             </button>
             <button id="trace-callsite" class="trace-step callsite" disabled>
               <span aria-hidden="true">↗</span>
@@ -106,8 +130,11 @@
               <select id="trace-branch" aria-label="选择下游调用分支"></select>
             </label>
             <button id="trace-next" class="trace-step" disabled>
-              <strong>下一步</strong>
-              <span aria-hidden="true">→</span>
+              <span class="trace-copy">
+                <small>下一步</small>
+                <strong>—</strong>
+              </span>
+              <span class="trace-arrow" aria-hidden="true">→</span>
             </button>
         </nav>
 
@@ -133,25 +160,11 @@
         aria-valuemax="800"
         aria-valuenow="520"
       ></div>
-      <aside class="inspector" aria-label="详情与源码工作台">
+      <aside class="inspector" aria-label="语义摘要与源码证据工作台">
         <header class="inspector-workbench-bar">
-          <div class="inspector-tabs" role="tablist" aria-label="侧栏视图">
-            <button
-              id="inspector-details-tab"
-              class="inspector-tab"
-              type="button"
-              role="tab"
-              aria-controls="inspector-details-pane"
-              aria-selected="false"
-            >详情</button>
-            <button
-              id="inspector-source-tab"
-              class="inspector-tab active"
-              type="button"
-              role="tab"
-              aria-controls="inspector-source-pane"
-              aria-selected="true"
-            >源码</button>
+          <div class="inspector-workbench-title">
+            <span>SEMANTIC TRACE</span>
+            <strong>语义与源码证据</strong>
           </div>
           <div class="inspector-workbench-actions">
             <button
@@ -172,11 +185,9 @@
         </header>
         <div class="inspector-stage">
           <section
-            id="inspector-details-pane"
-            class="inspector-pane inspector-details-pane"
-            role="tabpanel"
-            aria-labelledby="inspector-details-tab"
-            hidden
+            id="inspector-summary"
+            class="inspector-summary"
+            aria-label="当前选择的语义摘要"
           >
             <div id="inspector-empty" class="inspector-empty">
               <div class="coordinate">X:— Y:—</div>
@@ -188,9 +199,8 @@
           </section>
           <section
             id="inspector-source-pane"
-            class="inspector-pane inspector-source-pane"
-            role="tabpanel"
-            aria-labelledby="inspector-source-tab"
+            class="inspector-source-pane"
+            aria-label="当前选择的源码证据"
           >
             <div id="source-preview-body" class="source-preview-body">
               <div class="source-workbench-empty">

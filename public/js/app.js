@@ -1,5 +1,4 @@
 import { CallgraphApi } from "./api.js";
-import { isSourceTargetAvailable } from "./click-navigation-policy.js";
 import { ClickNavigationPolicy } from "./click-navigation-policy.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
@@ -17,6 +16,10 @@ const api = new CallgraphApi();
 const elements = {
   graphList: document.querySelector("#graph-list"),
   graphTitle: document.querySelector("#graph-title"),
+  graphOverviewDescription: document.querySelector("#graph-overview-description"),
+  graphOverviewStart: document.querySelector("#graph-overview-start"),
+  graphOverviewEnd: document.querySelector("#graph-overview-end"),
+  graphOverviewScale: document.querySelector("#graph-overview-scale"),
   health: document.querySelector("#health"),
   search: document.querySelector("#search"),
   kindFilters: document.querySelector("#kind-filters"),
@@ -66,10 +69,6 @@ inspectorWorkbench = new InspectorWorkbenchController({
   root: document.documentElement,
   panel: document.querySelector(".inspector"),
   resizablePanel: resizableInspector,
-  detailsTab: document.querySelector("#inspector-details-tab"),
-  sourceTab: document.querySelector("#inspector-source-tab"),
-  detailsPane: document.querySelector("#inspector-details-pane"),
-  sourcePane: document.querySelector("#inspector-source-pane"),
   focusButton: document.querySelector("#inspector-focus"),
   collapseButton: document.querySelector("#inspector-collapse"),
   onLayoutChange: () => renderer.fit(),
@@ -103,6 +102,7 @@ inspector.setCallbacks({
   onHide: (nodeId) => state?.hideNode(nodeId),
   onCollapse: (nodeId) => state?.toggleCollapse(nodeId),
   onPreviewContextChange: (lines) => sourcePreview.setContextLines(lines),
+  onPreviewScopeChange: (scope) => sourcePreview.setScope(scope),
   onPreviewNotice: (message, error) => toast(message, error),
 });
 
@@ -179,6 +179,7 @@ async function activateGraph(slug) {
     element.classList.toggle("active", element.dataset.slug === slug);
   });
   elements.graphTitle.textContent = graph.title;
+  renderGraphOverview(graph);
   elements.revision.textContent = `REVISION ${(graph.sourceRevision || "—").slice(0, 10)}`;
   buildKindFilters();
   render(state, "initial");
@@ -189,9 +190,6 @@ function render(currentState, reason) {
   const visibleGraph = currentState.getVisibleGraph();
   renderer.render(visibleGraph, currentState);
   inspector.render(currentState.selected, currentState.graph);
-  inspectorWorkbench.setSourceAvailable(
-    isSourceTargetAvailable(currentState.graph, currentState.selected),
-  );
   void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
   elements.visibleCount.textContent =
     `${visibleGraph.nodes.length} / ${currentState.graph.nodes.length} 节点`;
@@ -208,7 +206,7 @@ function render(currentState, reason) {
   if (firstRender) {
     requestAnimationFrame(() => renderer.focusStart(currentState.orientation));
     firstRender = false;
-  } else if (reason === "structure") {
+  } else if (reason === "structure" || reason === "focus") {
     requestAnimationFrame(() => renderer.fit());
   }
   setStatus(
@@ -229,6 +227,25 @@ function buildKindFilters() {
     button.addEventListener("click", () => state.toggleKind(kind));
     elements.kindFilters.append(button);
   }
+}
+
+function renderGraphOverview(graph) {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const start = nodeById.get(graph.root);
+  const nodesWithOutgoing = new Set(graph.edges.map((edge) => edge.from));
+  const endpoints = graph.nodes.filter((node) => !nodesWithOutgoing.has(node.id));
+  const endpointLabels = endpoints.map((node) => node.label);
+  const endpointText = endpointLabels.length > 1
+    ? `${endpointLabels[0]} 等 ${endpointLabels.length} 个`
+    : endpointLabels[0] || "未识别";
+
+  elements.graphOverviewDescription.textContent = graph.description || "暂无图谱说明";
+  elements.graphOverviewStart.textContent = start?.label || graph.root || "未识别";
+  elements.graphOverviewStart.title = start?.id || graph.root || "";
+  elements.graphOverviewEnd.textContent = endpointText;
+  elements.graphOverviewEnd.title = endpointLabels.join("、");
+  elements.graphOverviewScale.textContent =
+    `${graph.nodes.length} 节点 · ${graph.edges.length} 关系`;
 }
 
 async function validateActiveGraph() {
@@ -405,6 +422,7 @@ function configureTraceButton(button, node, title) {
   button.disabled = !node;
   button.title = title;
   button.dataset.traceNodeId = node?.id || "";
+  button.querySelector("strong").textContent = node?.label || "—";
 }
 
 function isEditableTarget(target) {

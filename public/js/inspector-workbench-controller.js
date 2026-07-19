@@ -1,7 +1,7 @@
 const STORAGE_KEY = "callgraph_inspector_workbench_v1";
 
 /**
- * Owns only workbench presentation state. Detail/source rendering and panel
+ * Owns only workbench presentation state. Semantic/source rendering and panel
  * width calculation stay in their respective modules.
  */
 export class InspectorWorkbenchController {
@@ -9,10 +9,6 @@ export class InspectorWorkbenchController {
     root,
     panel,
     resizablePanel,
-    detailsTab,
-    sourceTab,
-    detailsPane,
-    sourcePane,
     focusButton,
     collapseButton,
     onLayoutChange,
@@ -20,44 +16,17 @@ export class InspectorWorkbenchController {
     this.root = root;
     this.panel = panel;
     this.resizablePanel = resizablePanel;
-    this.tabs = { details: detailsTab, source: sourceTab };
-    this.panes = { details: detailsPane, source: sourcePane };
     this.focusButton = focusButton;
     this.collapseButton = collapseButton;
     this.onLayoutChange = onLayoutChange;
-    this.preferredPane = "source";
-    this.activePane = "source";
-    this.sourceAvailable = false;
     this.collapsed = false;
     this.bind();
   }
 
   initialize() {
     const stored = readStoredState();
-    if (stored?.preferredPane === "details" || stored?.preferredPane === "source") {
-      this.preferredPane = stored.preferredPane;
-    }
     this.resizablePanel.initialize();
     this.setCollapsed(Boolean(stored?.collapsed), false);
-    this.applyPane();
-  }
-
-  setSourceAvailable(available) {
-    this.sourceAvailable = Boolean(available);
-    if (!this.sourceAvailable) this.clearFocus();
-    this.tabs.source.disabled = !this.sourceAvailable;
-    this.tabs.source.title = this.sourceAvailable
-      ? "查看安全源码预览"
-      : "当前目标没有可预览的精确源码位置";
-    this.applyPane();
-  }
-
-  showPane(pane, persist = true) {
-    if (!this.panes[pane] || (pane === "source" && !this.sourceAvailable)) return;
-    if (pane !== "source") this.clearFocus();
-    this.preferredPane = pane;
-    this.applyPane();
-    if (persist) this.persist();
   }
 
   toggleFocus() {
@@ -105,42 +74,16 @@ export class InspectorWorkbenchController {
     this.clearFocus();
   }
 
-  applyPane() {
-    this.activePane =
-      this.preferredPane === "source" && this.sourceAvailable ? "source" : "details";
-    for (const pane of ["details", "source"]) {
-      const active = pane === this.activePane;
-      this.tabs[pane].classList.toggle("active", active);
-      this.tabs[pane].setAttribute("aria-selected", String(active));
-      this.panes[pane].hidden = !active;
-    }
-    this.focusButton.hidden = this.activePane !== "source";
-  }
-
   persist() {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        preferredPane: this.preferredPane,
         collapsed: this.collapsed,
       }),
     );
   }
 
   bind() {
-    this.tabs.details.addEventListener("click", () => this.showPane("details"));
-    this.tabs.source.addEventListener("click", () => this.showPane("source"));
-    for (const tab of Object.values(this.tabs)) {
-      tab.addEventListener("keydown", (event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        const pane =
-          event.key === "ArrowLeft" || event.key === "Home" ? "details" : "source";
-        if (pane === "source" && !this.sourceAvailable) return;
-        this.showPane(pane);
-        this.tabs[pane].focus();
-      });
-    }
     this.focusButton.addEventListener("click", () => this.toggleFocus());
     this.collapseButton.addEventListener("click", () => this.toggleCollapsed());
   }
