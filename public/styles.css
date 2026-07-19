@@ -26,11 +26,25 @@
   --radius: 8px;
   --panel-shadow: 0 16px 40px rgb(0 0 0 / 18%);
   --rail: 258px;
-  --inspect: 420px;
+  --inspect: 440px;
   --top: 72px;
   --status: 26px;
   font-family: "Bahnschrift", "Microsoft YaHei UI", sans-serif;
 }
+
+html.inspector-width-320 { --inspect: 320px; }
+html.inspector-width-360 { --inspect: 360px; }
+html.inspector-width-400 { --inspect: 400px; }
+html.inspector-width-440 { --inspect: 440px; }
+html.inspector-width-480 { --inspect: 480px; }
+html.inspector-width-520 { --inspect: 520px; }
+html.inspector-width-560 { --inspect: 560px; }
+html.inspector-width-600 { --inspect: 600px; }
+html.inspector-width-640 { --inspect: 640px; }
+html.inspector-width-680 { --inspect: 680px; }
+html.inspector-width-720 { --inspect: 720px; }
+html.inspector-width-760 { --inspect: 760px; }
+html.inspector-width-800 { --inspect: 800px; }
 
 [data-theme="aether"] {
   color-scheme: dark;
@@ -259,6 +273,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 
 .canvas-wrap { position: relative; overflow: hidden; background: var(--canvas); cursor: grab; }
 .canvas-wrap.dragging { cursor: grabbing; }
+.canvas-wrap.node-dragging { cursor: grabbing; }
+body.resizing-inspector { cursor: col-resize; user-select: none; }
 .source-stepper {
   display: flex;
   align-items: center;
@@ -353,10 +369,22 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .graph-edge.data-flow { stroke: var(--rose); stroke-dasharray: 10 5 2 5; }
 .graph-edge-group:hover .graph-edge, .graph-edge-group:focus-visible .graph-edge { opacity: 1; stroke-width: 2; }
 .graph-edge.selected { opacity: 1; stroke: var(--acid); stroke-width: 2; }
-.edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: visiblePainted; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
-.edge-callsite { fill: var(--cyan); font: 700 8px "Cascadia Code", monospace; pointer-events: visiblePainted; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; letter-spacing: .02em; }
+.edge-label-card {
+  fill: color-mix(in srgb, var(--canvas) 94%, var(--panel));
+  stroke: color-mix(in srgb, var(--line) 78%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 3px 7px rgb(0 0 0 / 9%));
+}
+.graph-edge-label-group:hover .edge-label-card,
+.graph-edge-label-group:focus-visible .edge-label-card {
+  stroke: var(--acid);
+}
+.edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: none; }
+.edge-callsite { fill: var(--cyan); font: 700 8px "Cascadia Code", monospace; pointer-events: none; letter-spacing: .02em; }
 .edge-callsite.unavailable { fill: var(--amber); font-weight: 600; }
-.graph-node { cursor: pointer; transform-box: fill-box; transform-origin: center; }
+.graph-node { cursor: grab; transform-box: fill-box; transform-origin: center; touch-action: none; }
+.graph-node.dragging { cursor: grabbing; }
 .node-box { fill: var(--node-bg); stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; transition: .15s; rx: var(--radius); filter: drop-shadow(0 8px 16px rgb(0 0 0 / 13%)); }
 .node-accent { fill: var(--acid); }
 .graph-node:hover .node-box { stroke: var(--acid); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--acid) 20%, transparent)); }
@@ -370,6 +398,36 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .node-collapse { fill: var(--panel-2); stroke: var(--line); cursor: pointer; }
 .node-collapse-text { fill: var(--paper); font: 10px "Cascadia Code", monospace; pointer-events: none; }
 
+.inspector-resizer {
+  position: fixed;
+  z-index: 12;
+  top: var(--top);
+  right: calc(var(--inspect) - 5px);
+  bottom: var(--status);
+  width: 10px;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+.inspector-resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 46px;
+  border-radius: 3px;
+  background: var(--line);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity .15s, background .15s;
+}
+.inspector-resizer:hover::after,
+.inspector-resizer:focus-visible::after,
+.inspector-resizer.active::after {
+  opacity: 1;
+  background: var(--acid);
+}
 .inspector { grid-area: inspect; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 95%, transparent); overflow-y: auto; box-shadow: var(--panel-shadow); }
 .inspector-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; color: var(--muted); }
 .coordinate { align-self: stretch; text-align: right; font: 8px "Cascadia Code", monospace; color: var(--text-subtle); position: absolute; top: 92px; right: 17px; }
@@ -416,6 +474,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
     linear-gradient(120deg, color-mix(in srgb, var(--acid) 8%, transparent), transparent 46%),
     var(--panel-2);
 }
+.source-preview-header-actions { display: flex; gap: 5px; }
 .source-preview-path {
   align-self: center;
   color: var(--paper);
@@ -551,6 +610,32 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .tok-type { color: color-mix(in srgb, var(--cyan) 74%, var(--paper)); }
 .tok-symbol { color: inherit; }
 .line-truncated { color: var(--rose); font-style: italic; }
+.inspector.preview-expanded { overflow: hidden; }
+.inspector.preview-expanded .inspect-content {
+  height: 100%;
+  padding: 12px;
+  animation: none;
+}
+.inspector.preview-expanded .inspect-content > :not(.source-preview) { display: none; }
+.inspector.preview-expanded .source-preview {
+  height: 100%;
+  padding: 0;
+  border: 0;
+}
+.inspector.preview-expanded .source-preview > h3 { margin: 0 0 8px; }
+.inspector.preview-expanded .source-preview-body {
+  height: calc(100% - 18px);
+}
+.inspector.preview-expanded .source-workbench {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.inspector.preview-expanded .source-preview-code {
+  min-height: 0;
+  max-height: none;
+  flex: 1;
+}
 .confidence { display: flex; gap: 9px; align-items: center; }
 .confidence-track {
   height: 4px;

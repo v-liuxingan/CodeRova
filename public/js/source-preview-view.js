@@ -25,7 +25,7 @@ export class SourcePreviewView {
     );
     container.replaceChildren(shell);
     requestAnimationFrame(() => {
-      shell.querySelector(".source-preview-line.focus")?.scrollIntoView({ block: "center" });
+      revealRow(shell.querySelector(".source-preview-line.focus"));
     });
   }
 
@@ -38,6 +38,8 @@ export class SourcePreviewView {
     path.title = preview.path;
     path.textContent = preview.path;
 
+    const actions = document.createElement("div");
+    actions.className = "source-preview-header-actions";
     const copy = document.createElement("button");
     copy.className = "source-mini-action";
     copy.type = "button";
@@ -50,6 +52,18 @@ export class SourcePreviewView {
         callbacks.onNotice?.(error.message, true);
       }
     });
+    const expand = document.createElement("button");
+    expand.className = "source-mini-action";
+    expand.type = "button";
+    expand.dataset.previewExpand = "";
+    expand.setAttribute("aria-pressed", String(Boolean(callbacks.expanded)));
+    expand.textContent = callbacks.expanded ? "收起" : "放大";
+    expand.addEventListener("click", () => {
+      const expanded = Boolean(callbacks.onToggleExpand?.());
+      expand.setAttribute("aria-pressed", String(expanded));
+      expand.textContent = expanded ? "收起" : "放大";
+    });
+    actions.append(copy, expand);
 
     const stats = document.createElement("div");
     stats.className = "source-preview-stats";
@@ -59,7 +73,7 @@ export class SourcePreviewView {
         : String(preview.focusLine);
     stats.textContent =
       `${preview.language.toUpperCase()} · 目标 ${range} · ${preview.totalLines} 行 · ${formatBytes(preview.fileSizeBytes)}`;
-    header.append(path, copy, stats);
+    header.append(path, actions, stats);
     return header;
   }
 
@@ -160,7 +174,7 @@ export class SourcePreviewView {
     for (const row of this.searchRows) row.classList.remove("search-current");
     const current = this.searchRows[this.searchIndex];
     current?.classList.add("search-current");
-    current?.scrollIntoView({ block: "center" });
+    revealRow(current);
     count.textContent = this.searchRows.length
       ? `${this.searchIndex + 1}/${this.searchRows.length}`
       : "0/0";
@@ -183,4 +197,17 @@ function formatBytes(bytes) {
 async function copyText(text) {
   if (!navigator.clipboard?.writeText) throw new Error("当前浏览器不支持安全剪贴板");
   await navigator.clipboard.writeText(text);
+}
+
+function revealRow(row) {
+  if (!row) return;
+  const scroller = row.closest(".source-preview-code");
+  if (!scroller) return;
+  const rowRect = row.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+  const rowTop = rowRect.top - scrollerRect.top + scroller.scrollTop;
+  scroller.scrollTo({
+    top: Math.max(0, rowTop - scroller.clientHeight / 2 + rowRect.height / 2),
+    left: 0,
+  });
 }

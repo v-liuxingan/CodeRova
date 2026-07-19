@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -6,6 +7,8 @@ from playwright.sync_api import sync_playwright
 
 ARTIFACTS = Path(__file__).parent / "artifacts"
 ARTIFACTS.mkdir(exist_ok=True)
+TEMP_LAYOUTS = Path(__file__).parent / ".tmp-layouts"
+shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
 
 
 def stub_source_open(route):
@@ -28,12 +31,14 @@ with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 980}, device_scale_factor=1)
     console_errors = []
+    page_errors = []
     page.on(
         "console",
         lambda message: console_errors.append(message.text)
         if message.type == "error"
         else None,
     )
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
 
     page.goto("http://127.0.0.1:4317")
     page.wait_for_load_state("networkidle")
@@ -77,6 +82,27 @@ with sync_playwright() as playwright:
     assert sum(graph["nodeCount"] for graph in graph_summaries) == 62
     assert sum(graph["edgeCount"] for graph in graph_summaries) == 60
     assert page.locator(".graph-option").count() == 4
+
+    empty_layout = page.request.get(
+        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout"
+    )
+    assert empty_layout.ok
+    assert empty_layout.json() == {
+        "schemaVersion": "0.1",
+        "graph": "tui-authorization",
+        "positions": {},
+    }
+    invalid_layout = page.request.put(
+        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout",
+        data={
+            "schemaVersion": "0.1",
+            "graph": "tui-authorization",
+            "positions": {
+                "vertical": {"missing.node": {"x": 10, "y": 20}}
+            },
+        },
+    )
+    assert invalid_layout.status == 400
 
     for summary in graph_summaries:
         graph_response = page.request.get(
@@ -231,6 +257,44 @@ with sync_playwright() as playwright:
     assert page.locator(".source-find span").inner_text() != "0/0"
     page.locator(".source-find input").fill("")
 
+    canvas_width_before_resize = page.locator("#graph-canvas").bounding_box()["width"]
+    resizer = page.locator("#inspector-resizer")
+    resizer_box = resizer.bounding_box()
+    assert resizer_box
+    initial_resize_class = page.locator("html").get_attribute("class") or ""
+    assert "inspector-width-440" in initial_resize_class, initial_resize_class
+    page.mouse.move(
+        resizer_box["x"] + resizer_box["width"] / 2,
+        resizer_box["y"] + 120,
+    )
+    page.mouse.down()
+    page.mouse.move(resizer_box["x"] - 80, resizer_box["y"] + 120, steps=5)
+    page.mouse.up()
+    resized_class = page.locator("html").get_attribute("class") or ""
+    assert "inspector-width-520" in resized_class, resized_class
+    assert page.locator("#graph-canvas").bounding_box()["width"] < canvas_width_before_resize
+    resizer.focus()
+    page.keyboard.press("ArrowRight")
+    assert "inspector-width-480" in (page.locator("html").get_attribute("class") or "")
+    resizer.dblclick()
+    assert "inspector-width-440" in (page.locator("html").get_attribute("class") or "")
+
+    preview_height = page.locator(".source-preview-code").bounding_box()["height"]
+    page.locator("[data-preview-expand]").click()
+    assert "preview-expanded" in (
+        page.locator(".inspector").get_attribute("class") or ""
+    )
+    assert "inspector-width-720" in (page.locator("html").get_attribute("class") or "")
+    assert page.locator(".source-preview-code").bounding_box()["height"] > preview_height
+    assert page.locator(".source-preview-code").evaluate("element => element.scrollLeft") == 0
+    assert page.locator(".source-preview-body").evaluate("element => element.scrollLeft") == 0
+    page.screenshot(path=str(ARTIFACTS / "source-preview-expanded.png"), full_page=True)
+    page.locator("[data-preview-expand]").click()
+    assert "preview-expanded" not in (
+        page.locator(".inspector").get_attribute("class") or ""
+    )
+    assert "inspector-width-440" in (page.locator("html").get_attribute("class") or "")
+
     page.locator(".source-density button", has_text="展开").click()
     page.wait_for_function(
         "() => document.querySelector('.source-density button.active')?.textContent === '展开'"
@@ -240,6 +304,50 @@ with sync_playwright() as playwright:
     page.wait_for_function(
         "() => document.querySelector('.source-density button.active')?.textContent === '标准'"
     )
+
+    draggable_node = page.locator('[data-node-id="cli.main"]')
+    original_transform = draggable_node.get_attribute("transform")
+    draggable_box = draggable_node.bounding_box()
+    assert draggable_box
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/graphs/tui-authorization/layout")
+        and response.request.method == "PUT"
+    ) as layout_saved:
+        page.mouse.move(
+            draggable_box["x"] + draggable_box["width"] / 2,
+            draggable_box["y"] + draggable_box["height"] / 2,
+        )
+        page.mouse.down()
+        page.mouse.move(
+            draggable_box["x"] + draggable_box["width"] / 2 + 72,
+            draggable_box["y"] + draggable_box["height"] / 2 + 36,
+            steps=6,
+        )
+        page.mouse.up()
+    assert layout_saved.value.ok
+    moved_transform = page.locator('[data-node-id="cli.main"]').get_attribute("transform")
+    assert moved_transform != original_transform
+    saved_layout = page.request.get(
+        "http://127.0.0.1:4317/api/graphs/tui-authorization/layout"
+    ).json()
+    assert "cli.main" in saved_layout["positions"]["vertical"]
+
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    page.locator(".graph-option", has_text="TUI authorization call graph").click()
+    page.wait_for_function(
+        "() => document.querySelector('#graph-title')?.textContent === 'TUI authorization call graph'"
+    )
+    page.wait_for_selector('[data-node-id="cli.main"]')
+    assert page.locator('[data-node-id="cli.main"]').get_attribute("transform") == moved_transform
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/graphs/tui-authorization/layout")
+        and response.request.method == "PUT"
+    ) as layout_reset:
+        page.locator("#reset-layout").click()
+    assert layout_reset.value.ok
+    assert "cli.main" not in layout_reset.value.json()["positions"]["vertical"]
+
     source_link = page.request.post(
         "http://127.0.0.1:4317/api/open",
         data={
@@ -438,6 +546,54 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="全图").click()
     page.locator("#orientation").click()
     assert page.locator("#orientation").inner_text() == "横向布局"
+    edge_rendering = page.locator(
+        '.graph-edge-label-group[data-edge-group-id="edge.client-runtime-start"]'
+    ).evaluate(
+        """group => {
+            const card = group.querySelector(".edge-label-card");
+            const text = group.querySelector(".edge-callsite");
+            const path = document.querySelector(
+                '.graph-edge[data-edge-id="edge.client-runtime-start"]'
+            );
+            const cardRect = card.getBoundingClientRect();
+            const length = path.getTotalLength();
+            const matrix = path.getScreenCTM();
+            const pathCrossesCard = Array.from({ length: 81 }, (_, index) => {
+                const point = path.getPointAtLength(length * index / 80)
+                    .matrixTransform(matrix);
+                return point.x >= cardRect.left && point.x <= cardRect.right
+                    && point.y >= cardRect.top && point.y <= cardRect.bottom;
+            }).some(Boolean);
+            return {
+                pathCrossesCard,
+                textStroke: getComputedStyle(text).stroke,
+                moveCount: (path.getAttribute("d").match(/M/g) || []).length,
+            };
+        }"""
+    )
+    assert not edge_rendering["pathCrossesCard"]
+    assert edge_rendering["textStroke"] == "none"
+    assert edge_rendering["moveCount"] == 1
+    page.evaluate(
+        """() => {
+            const path = document.querySelector(
+                '.graph-edge[data-edge-id="edge.client-runtime-start"]'
+            );
+            const viewport = document.querySelector(".graph-viewport");
+            const canvas = document.querySelector("#graph-canvas").getBoundingClientRect();
+            const box = path.getBBox();
+            const scale = 1.5;
+            viewport.setAttribute(
+                "transform",
+                `translate(${canvas.width / 2 - (box.x + box.width / 2) * scale} `
+                    + `${canvas.height / 2 - (box.y + box.height / 2) * scale}) scale(${scale})`
+            );
+        }"""
+    )
+    page.locator("#canvas-wrap").screenshot(
+        path=str(ARTIFACTS / "edge-label-horizontal.png")
+    )
+    page.locator("#fit-view").click()
 
     page.locator("#search").fill("Bearer")
     dimmed_count = page.locator(".graph-node.search-dim").count()
@@ -506,6 +662,8 @@ with sync_playwright() as playwright:
     page.wait_for_timeout(3700)
     page.screenshot(path=str(ARTIFACTS / "callgraph-overview.png"), full_page=True)
     assert not console_errors, f"browser console errors: {console_errors}"
+    assert not page_errors, f"browser page errors: {page_errors}"
     browser.close()
 
+shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
 print(f"E2E OK; upstream node count={upstream_count}")

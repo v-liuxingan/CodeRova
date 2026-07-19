@@ -14,6 +14,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::graph_store::{FileGraphStore, GraphStore};
+use crate::layout_store::{FileLayoutStore, GraphLayout, LAYOUT_SCHEMA_VERSION, LayoutStore};
 use crate::model::{
     CallGraph, GraphSummary, OpenRequest, OpenResponse, PreviewRequest, SourcePreview,
     ValidationReport,
@@ -29,6 +30,7 @@ pub struct AppState {
     project_catalog: Arc<dyn ProjectCatalog>,
     source_link_builder: Arc<dyn SourceLinkBuilder>,
     source_previewer: Arc<dyn SourcePreviewer>,
+    layout_store: Arc<dyn LayoutStore>,
 }
 
 impl AppState {
@@ -37,12 +39,14 @@ impl AppState {
         project_catalog: Arc<dyn ProjectCatalog>,
         source_link_builder: Arc<dyn SourceLinkBuilder>,
         source_previewer: Arc<dyn SourcePreviewer>,
+        layout_store: Arc<dyn LayoutStore>,
     ) -> Self {
         Self {
             graph_store,
             project_catalog,
             source_link_builder,
             source_previewer,
+            layout_store,
         }
     }
 }
@@ -80,6 +84,7 @@ pub async fn serve(
     address: SocketAddr,
     public_dir: PathBuf,
     graphs_dir: PathBuf,
+    layouts_dir: PathBuf,
     projects_config: PathBuf,
 ) -> Result<(), String> {
     let project_catalog = FileProjectCatalog::from_file(&projects_config)?;
@@ -88,6 +93,7 @@ pub async fn serve(
         Arc::new(project_catalog),
         Arc::new(VscodeUriLinkBuilder),
         Arc::new(FileSourcePreviewer::default()),
+        Arc::new(FileLayoutStore::new(layouts_dir)),
     );
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
@@ -95,6 +101,10 @@ pub async fn serve(
         .route("/api/health", get(health))
         .route("/api/graphs", get(list_graphs))
         .route("/api/graphs/{slug}", get(get_graph))
+        .route(
+            "/api/graphs/{slug}/layout",
+            get(get_graph_layout).put(save_graph_layout),
+        )
         .route("/api/graphs/{slug}/validation", get(validate_graph_source))
         .route("/api/open", post(build_source_link))
         .route("/api/preview", post(preview_source))
@@ -180,6 +190,114 @@ async fn get_graph(
     AxumPath(slug): AxumPath<String>,
 ) -> Result<Json<CallGraph>, AppError> {
     Ok(Json(read_graph(&state, &slug)?))
+}
+
+async fn get_graph_layout(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<GraphLayout>, AppError> {
+    let graph = read_graph(&state, &slug)?;
+    let layout = state
+        .layout_store
+        .load(&slug)
+        .map_err(AppError::Internal)?
+        .unwrap_or_else(|| GraphLayout::empty(&slug));
+    Ok(Json(sanitize_loaded_layout(layout, &slug, &graph)?))
+}
+
+async fn save_graph_layout(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    Json(layout): Json<GraphLayout>,
+) -> Result<Json<GraphLayout>, AppError> {
+    let graph = read_graph(&state, &slug)?;
+    validate_layout(&layout, &slug, &graph)?;
+    state
+        .layout_store
+        .save(&slug, &layout)
+        .map_err(AppError::Internal)?;
+    Ok(Json(layout))
+}
+
+fn validate_layout(layout: &GraphLayout, slug: &str, graph: &CallGraph) -> Result<(), AppError> {
+    if layout.schema_version != LAYOUT_SCHEMA_VERSION {
+        return Err(AppError::BadRequest(format!(
+            "不支持布局 schemaVersion {:?}",
+            layout.schema_version
+        )));
+    }
+    if layout.graph != slug {
+        return Err(AppError::BadRequest(format!(
+            "布局 graph {:?} 与路由 {:?} 不一致",
+            layout.graph, slug
+        )));
+    }
+    let node_ids = graph
+        .nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for (orientation, positions) in &layout.positions {
+        if !matches!(orientation.as_str(), "vertical" | "horizontal") {
+            return Err(AppError::BadRequest(format!("布局方向无效：{orientation}")));
+        }
+        if positions.len() > graph.nodes.len() {
+            return Err(AppError::BadRequest(
+                "布局节点数量超过调用图节点数量".to_owned(),
+            ));
+        }
+        for (node_id, position) in positions {
+            if !node_ids.contains(node_id.as_str()) {
+                return Err(AppError::BadRequest(format!(
+                    "布局引用了不存在的节点：{node_id}"
+                )));
+            }
+            if !position.x.is_finite()
+                || !position.y.is_finite()
+                || position.x.abs() > 1_000_000.0
+                || position.y.abs() > 1_000_000.0
+            {
+                return Err(AppError::BadRequest(format!(
+                    "节点 {node_id} 的布局坐标无效"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sanitize_loaded_layout(
+    mut layout: GraphLayout,
+    slug: &str,
+    graph: &CallGraph,
+) -> Result<GraphLayout, AppError> {
+    if layout.schema_version != LAYOUT_SCHEMA_VERSION || layout.graph != slug {
+        return Err(AppError::BadRequest(
+            "布局配置的 schemaVersion 或 graph 与当前调用图不一致".to_owned(),
+        ));
+    }
+    if layout
+        .positions
+        .keys()
+        .any(|orientation| !matches!(orientation.as_str(), "vertical" | "horizontal"))
+    {
+        return Err(AppError::BadRequest("布局配置包含无效方向".to_owned()));
+    }
+    let node_ids = graph
+        .nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for positions in layout.positions.values_mut() {
+        positions.retain(|node_id, position| {
+            node_ids.contains(node_id.as_str())
+                && position.x.is_finite()
+                && position.y.is_finite()
+                && position.x.abs() <= 1_000_000.0
+                && position.y.abs() <= 1_000_000.0
+        });
+    }
+    Ok(layout)
 }
 
 async fn validate_graph_source(

@@ -11,8 +11,10 @@ Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向�
 
 - 标准 `callgraph.json` 数据模型和 JSON Schema。
 - 节点、连线、职责、证据和置信度展示；精确调用位置直接标注在连线上。
+- 连线与标签分层渲染，标签按曲线真实位置偏移为信息卡，不遮挡字符或制造断线错觉。
 - 上游、下游、完整路径聚焦。
 - 节点折叠、隐藏、恢复和调用类型筛选。
+- 节点可拖动自定义排版，位置按调用图及纵/横方向保存到独立布局配置。
 - 横向/纵向分层布局、缩放、拖动和适配视口。
 - 节点跳到定义位置；连线提供宽点击热区，选中后可跳到精确调用位置。
 - 可手动开启“点击跳转”，直接点击节点或精确调用边即可打开源码；该模式默认关闭。
@@ -20,6 +22,7 @@ Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向�
 - 连续步进会在检查器内更新只读源码工作台并保持浏览器焦点；相邻节点和调用点会提前预取。
 - 预览节点完整定义范围或边的调用行，可切换上下文、就地查找、复制位置，并展示语言、
   文件规模、目标范围和裁剪状态。
+- 详情侧栏支持拖拽调宽、键盘调宽和双击复位；源码预览可进入宽屏专注模式。
 - 预览核心不依赖特定语言分析器；轻量语言着色可注册，未知语言安全回退为纯文本。
 - 多分支节点可按目标、关系与调用位置显式选择下游分支，输入控件聚焦时方向键自动避让。
 - 虚拟节点或省略中间节点的抽象连线不伪造调用位置，并显示不可用原因。
@@ -42,6 +45,7 @@ cargo run -- serve
 - 项目目录配置：`callgraph.projects.json`
 - 源码跳转协议：`vscode://file/...:line:column`
 - 调用图目录：`graphs`
+- 手工布局目录：`layouts`
 - 静态页面目录：`public`
 
 默认配置已经把仓库自带的 Codex 示例映射到 `../codex`：
@@ -50,7 +54,7 @@ cargo run -- serve
 
 ```powershell
 cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
-  --graphs E:/path/to/graphs --port 4317
+  --graphs E:/path/to/graphs --layouts E:/path/to/layouts --port 4317
 ```
 
 ## 项目根路径
@@ -105,6 +109,23 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 }
 ```
 
+节点拖动不会改写调用图。服务会按图谱生成 `layouts/<slug>.layout.json`，并将纵向、横向
+位置分开保存：
+
+```json
+{
+  "schemaVersion": "0.1",
+  "graph": "tui-authorization",
+  "positions": {
+    "vertical": {
+      "cli.main": { "x": 120.5, "y": 36 }
+    }
+  }
+}
+```
+
+“自动排版”只清除当前方向的手工位置，另一个方向不受影响。
+
 ## CLI
 
 校验图结构和每个节点/连线的源码位置：
@@ -134,6 +155,7 @@ cargo run -- open graphs/tui-authorization.json `
 ```text
 src/
   graph_store.rs       GraphStore 接口与 JSON 文件仓储
+  layout_store.rs      LayoutStore 接口与手工节点位置文件仓储
   model.rs             领域数据模型
   navigation.rs        SourceLinkBuilder 接口与 VSCode URI 实现
   project_catalog.rs   ProjectCatalog 接口与项目根路径配置
@@ -149,6 +171,10 @@ public/js/
                        网页内源码预览取消、缓存、预取与异步竞态控制
   source-preview-view.js
                        上下文范围、查找、元数据与安全 DOM 渲染
+  layout-persistence-controller.js
+                       节点位置防抖保存与图谱切换前刷新
+  resizable-panel-controller.js
+                       CSP 兼容的离散宽度侧栏拖拽与专注模式
   syntax-highlighter.js
                        可注册轻量语言着色与纯文本回退
   trace-navigator.js   上游节点、调用位置和下游节点的连续源码步进
@@ -159,11 +185,14 @@ public/js/
 schema/
   callgraph.schema.json  调用图 0.2
   projects.schema.json   项目目录配置 0.1
+  layout.schema.json     手工节点位置配置 0.1
 graphs/
   codex-shell-tool-execution.json
   codex-thread-resume.json
   codex-turn-lifecycle.json
   tui-authorization.json
+layouts/
+  *.layout.json          运行时按需生成的手工排版配置
 ```
 
 模块扩展方式见 [架构说明](docs/architecture.md)，预览工作台的竞品取舍与安全预算见
@@ -181,12 +210,11 @@ Get-ChildItem graphs/*.json | ForEach-Object {
 }
 ```
 
-浏览器端到端测试使用 Playwright，并自动管理 Rust 服务：
+浏览器端到端测试使用 Playwright。项目测试入口直接管理 Rust 服务进程，不经过
+PowerShell、`cmd.exe` 或 `shell=True`，并在结束后确认 4317 端口已经释放：
 
 ```powershell
-python E:/develop/Agent/skills/webapp-testing/scripts/with_server.py `
-  --server "cargo run --quiet -- serve" --port 4317 `
-  -- python tests/e2e_visualizer.py
+python tests/run_e2e.py
 ```
 
 ## 安全边界

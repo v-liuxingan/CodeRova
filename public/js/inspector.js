@@ -7,6 +7,7 @@ export class Inspector {
     this.contentElement = contentElement;
     this.callbacks = {};
     this.targetKey = "";
+    this.previewExpanded = false;
     this.sourcePreviewView = new SourcePreviewView();
   }
 
@@ -53,7 +54,17 @@ export class Inspector {
     this.sourcePreviewView.render(body, preview, {
       onContextChange: (lines) => this.callbacks.onPreviewContextChange?.(lines),
       onNotice: (message, error) => this.callbacks.onPreviewNotice?.(message, error),
+      onToggleExpand: () => this.callbacks.onPreviewExpand?.(),
+      expanded: this.previewExpanded,
     });
+  }
+
+  setPreviewExpanded(expanded) {
+    this.previewExpanded = expanded;
+    this.contentElement.closest(".inspector")?.classList.toggle("preview-expanded", expanded);
+    const button = this.contentElement.querySelector("[data-preview-expand]");
+    button?.setAttribute("aria-pressed", String(expanded));
+    if (button) button.textContent = expanded ? "收起" : "放大";
   }
 
   renderSourcePreviewLoading(target) {

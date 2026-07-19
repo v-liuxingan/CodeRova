@@ -3,8 +3,10 @@ import { ClickNavigationPolicy } from "./click-navigation-policy.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
 import { LayeredLayout } from "./layouts/layered-layout.js";
+import { LayoutPersistenceController } from "./layout-persistence-controller.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
+import { ResizablePanelController } from "./resizable-panel-controller.js";
 import { SourcePreviewController } from "./source-preview-controller.js";
 import { themes } from "./theme-registry.js";
 import { TraceNavigator } from "./trace-navigator.js";
@@ -48,6 +50,21 @@ const inspector = new Inspector(
 );
 const clickNavigation = new ClickNavigationPolicy();
 const sourcePreview = new SourcePreviewController(api, inspector);
+const inspectorPanel = new ResizablePanelController(
+  document.documentElement,
+  document.querySelector("#inspector-resizer"),
+  {
+    onManualResize: () => inspector.setPreviewExpanded(false),
+    onResize: () => renderer.fit(),
+  },
+);
+const layoutPersistence = new LayoutPersistenceController(api, {
+  onStatus: (message) => setStatus(message),
+  onError: (message) => {
+    setStatus("节点布局保存失败");
+    toast(message, true);
+  },
+});
 
 let activeSlug = null;
 let activeGraph = null;
@@ -60,6 +77,10 @@ initializeThemes();
 renderer.setCallbacks({
   onSelect: selectGraphTarget,
   onToggleCollapse: (nodeId) => state?.toggleCollapse(nodeId),
+  onNodeMove: (nodeId, position) => {
+    state?.setNodePosition(nodeId, position);
+    layoutPersistence.schedule(activeSlug, state.exportLayout(activeSlug));
+  },
 });
 inspector.setCallbacks({
   onOpen: openTarget,
@@ -67,8 +88,15 @@ inspector.setCallbacks({
   onCollapse: (nodeId) => state?.toggleCollapse(nodeId),
   onPreviewContextChange: (lines) => sourcePreview.setContextLines(lines),
   onPreviewNotice: (message, error) => toast(message, error),
+  onPreviewExpand: () => {
+    const expanded = inspectorPanel.toggleExpanded();
+    inspector.setPreviewExpanded(expanded);
+    requestAnimationFrame(() => renderer.fit());
+    return expanded;
+  },
 });
 
+inspectorPanel.initialize();
 bindControls();
 bootstrap().catch(showFatal);
 
@@ -125,13 +153,14 @@ function renderGraphList(graphs) {
 }
 
 async function activateGraph(slug) {
+  await layoutPersistence.flush();
   setStatus(`装载 ${slug}`);
-  const graph = await api.loadGraph(slug);
+  const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug)]);
   activeSlug = slug;
   activeGraph = graph;
   firstRender = true;
   unsubscribe?.();
-  state = new GraphState(graph);
+  state = new GraphState(graph, layout);
   traceNavigator = new TraceNavigator(graph);
   state.selected = { type: "node", id: graph.root };
   unsubscribe = state.subscribe(render);
@@ -237,6 +266,12 @@ function bindControls() {
   document.querySelector("#zoom-out").addEventListener("click", () => renderer.zoomBy(0.84));
   document.querySelector("#fit-view").addEventListener("click", () => renderer.fit());
   document.querySelector("#reset-view").addEventListener("click", () => state?.resetVisibility());
+  document.querySelector("#reset-layout").addEventListener("click", () => {
+    if (!state || !activeSlug) return;
+    state.resetNodePositions();
+    layoutPersistence.schedule(activeSlug, state.exportLayout(activeSlug));
+    toast(`已恢复${state.orientation === "vertical" ? "纵向" : "横向"}自动排版`);
+  });
   elements.orientation.addEventListener("click", () => state?.toggleOrientation());
   elements.instantOpenToggle.addEventListener("click", () => {
     const enabled = clickNavigation.toggle();
@@ -263,6 +298,7 @@ function bindControls() {
       && !event.ctrlKey
       && !event.metaKey
       && !event.shiftKey
+      && !event.defaultPrevented
       && !isEditableTarget(event.target)
       && (event.key === "ArrowLeft" || event.key === "ArrowRight")
     ) {

@@ -9,7 +9,7 @@ const downstreamKinds = new Set([
 ]);
 
 export class GraphState {
-  constructor(graph) {
+  constructor(graph, layout = {}) {
     this.graph = graph;
     this.selected = null;
     this.hidden = new Set(
@@ -22,6 +22,10 @@ export class GraphState {
     this.focusMode = "all";
     this.query = "";
     this.orientation = "vertical";
+    this.nodePositions = {
+      vertical: { ...(layout.positions?.vertical || {}) },
+      horizontal: { ...(layout.positions?.horizontal || {}) },
+    };
     this.listeners = new Set();
     this.nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
     this.edgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
@@ -81,6 +85,35 @@ export class GraphState {
     this.notify("structure");
   }
 
+  getNodePositions() {
+    return this.nodePositions[this.orientation];
+  }
+
+  setNodePosition(nodeId, position) {
+    if (!this.nodeById.has(nodeId)) return;
+    this.nodePositions[this.orientation][nodeId] = {
+      x: roundCoordinate(position.x),
+      y: roundCoordinate(position.y),
+    };
+    this.notify("position");
+  }
+
+  resetNodePositions() {
+    this.nodePositions[this.orientation] = {};
+    this.notify("structure");
+  }
+
+  exportLayout(graphSlug) {
+    return {
+      schemaVersion: "0.1",
+      graph: graphSlug,
+      positions: {
+        vertical: { ...this.nodePositions.vertical },
+        horizontal: { ...this.nodePositions.horizontal },
+      },
+    };
+  }
+
   getVisibleGraph() {
     const filteredEdges = this.graph.edges.filter((edge) => this.enabledKinds.has(edge.kind));
     const structurallyHidden = new Set(this.hidden);
@@ -119,6 +152,10 @@ export class GraphState {
       .filter(Boolean)
       .some((value) => value.toLocaleLowerCase().includes(this.query));
   }
+}
+
+function roundCoordinate(value) {
+  return Math.round(Math.max(-1_000_000, Math.min(1_000_000, value)) * 10) / 10;
 }
 function walk(startId, edges, direction) {
   const result = new Set([startId]);

@@ -13,9 +13,9 @@ export class LayeredLayout {
     this.nodeGap = nodeGap;
   }
 
-  compute(graph, orientation = "vertical") {
+  compute(graph, orientation = "vertical", positionOverrides = {}) {
     if (!graph.nodes.length) {
-      return { nodes: new Map(), edges: [], bounds: { width: 0, height: 0 } };
+      return { nodes: new Map(), edges: [], bounds: { x: 0, y: 0, width: 0, height: 0 } };
     }
     const nodeIds = new Set(graph.nodes.map((node) => node.id));
     const incoming = new Map(graph.nodes.map((node) => [node.id, 0]));
@@ -65,10 +65,11 @@ export class LayeredLayout {
         const cross =
           (crossSize - layerWidth) / 2 + index * (crossDimension + this.nodeGap);
         const main = level * (mainDimension + this.layerGap);
+        const override = positionOverrides[node.id];
         positions.set(node.id, {
           node,
-          x: vertical ? cross : main,
-          y: vertical ? main : cross,
+          x: Number.isFinite(override?.x) ? override.x : vertical ? cross : main,
+          y: Number.isFinite(override?.y) ? override.y : vertical ? main : cross,
           width: this.nodeWidth,
           height: this.nodeHeight,
         });
@@ -76,13 +77,19 @@ export class LayeredLayout {
     }
 
     const values = [...positions.values()];
-    const width = Math.max(...values.map((item) => item.x + item.width));
-    const height = Math.max(...values.map((item) => item.y + item.height));
+    const minX = Math.min(...values.map((item) => item.x));
+    const minY = Math.min(...values.map((item) => item.y));
+    const maxX = Math.max(...values.map((item) => item.x + item.width));
+    const maxY = Math.max(...values.map((item) => item.y + item.height));
     const edges = graph.edges.map((edge) => ({
       edge,
       from: positions.get(edge.from),
       to: positions.get(edge.to),
     }));
-    return { nodes: positions, edges, bounds: { width, height } };
+    return {
+      nodes: positions,
+      edges,
+      bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+    };
   }
 }

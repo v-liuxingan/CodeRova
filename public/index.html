@@ -78,6 +78,7 @@
           <span class="tool-divider"></span>
           <button class="tool" id="orientation">纵向布局</button>
           <button class="tool" id="reset-view">恢复全部</button>
+          <button class="tool" id="reset-layout" title="清除当前方向的手工节点位置">自动排版</button>
           <button
             class="tool instant-open-toggle"
             id="instant-open-toggle"
@@ -113,7 +114,7 @@
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
           <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
-          <div class="canvas-hint">滚轮缩放 · 拖动画布 · 点击节点查看证据</div>
+          <div class="canvas-hint">滚轮缩放 · 拖动画布 · 拖动节点自定义排版</div>
           <div id="empty-state" class="empty-state" hidden>
             <span>∅</span>
             <p>当前筛选下没有可见节点</p>
@@ -121,6 +122,17 @@
         </section>
       </main>
 
+      <div
+        id="inspector-resizer"
+        class="inspector-resizer"
+        role="separator"
+        tabindex="0"
+        aria-label="调整源码侧栏宽度"
+        aria-orientation="vertical"
+        aria-valuemin="320"
+        aria-valuemax="800"
+        aria-valuenow="440"
+      ></div>
       <aside class="inspector" aria-label="节点与连线详情">
         <div id="inspector-empty" class="inspector-empty">
           <div class="coordinate">X:— Y:—</div>

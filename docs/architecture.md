@@ -6,6 +6,7 @@
 HTTP / CLI adapters
        │
        ├── GraphStore ─────── FileGraphStore
+       ├── LayoutStore ────── FileLayoutStore
        ├── ProjectCatalog ─── FileProjectCatalog
        ├── SourceLinkBuilder ─ VscodeUriLinkBuilder
        ├── SourcePreviewer ─── FileSourcePreviewer
@@ -19,6 +20,8 @@ UI controller
        ├── Renderer ───────── SvgRenderer
        ├── ThemeRegistry ───── Halo / Aether / Signal
        ├── SourcePreviewController
+       ├── LayoutPersistenceController
+       ├── ResizablePanelController
        └── CallgraphApi
 ```
 
@@ -39,6 +42,15 @@ SQLite、Git 版本库或实时分析器，可实现相同的 `list` / `load` �
 
 目录解析与图存储彼此独立，因此同一个图目录可以引用多个源码项目，也可以用数据库、
 工作区发现器或远程挂载实现替换文件配置。
+
+### `LayoutStore`
+
+负责读取和保存独立于调用图的手工节点位置。默认 `FileLayoutStore` 使用
+`layouts/<slug>.layout.json`，按 `vertical` / `horizontal` 保存节点世界坐标。HTTP 层会校验
+schema、图谱 slug、方向、节点 ID、节点数量和坐标范围；前端不能指定输出文件路径。
+
+调用图仍是可迁移的事实数据，手工排版是可删除、可重新生成的视图配置。“自动排版”仅清空
+当前方向的位置覆盖。
 
 ### `SourceLinkBuilder`
 
@@ -75,6 +87,9 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 只管理图的可见性与选择状态，不读写 DOM。折叠、隐藏、边类型筛选和路径聚焦都在这里
 计算，因此换渲染器不会丢失交互语义。
 
+`GraphState` 同时持有当前图谱两个方向的手工位置覆盖，但不负责文件写入。
+`LayoutPersistenceController` 对拖动结果做防抖保存，并在切换图谱前刷新待写配置。
+
 ### `TraceNavigator`
 
 维护独立于渲染器的源码步进游标。它把当前节点映射为上游节点、主调用边和下游节点，
@@ -95,6 +110,10 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 回退。基础预览不依赖任何语言分析器，未来 LSP、Tree-sitter 或 SCIP 必须作为可替换适配器接入。
 切换到 IDE 仍由检查器中的显式按钮完成。
 
+`ResizablePanelController` 用固定宽度档位调整检查器，避免为了动态内联样式放宽 CSP；
+拖动分隔条、左右方向键和双击分别对应调宽、键盘调宽和复位。预览专注模式会临时扩大侧栏、
+隐藏非源码详情并让代码区占满剩余高度。
+
 ### `ClickNavigationPolicy`
 
 图元点击默认只改变选中状态。用户手动开启“点击跳转”后，节点和 `exact` 边会在选中后立即调用
@@ -114,6 +133,11 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 - `fit()`
 - `zoomBy(factor)`
 - `setCallbacks(callbacks)`
+
+当前 `SvgRenderer` 把边路径、边标签和节点分成独立图层。标签位置来自三次贝塞尔曲线的真实
+中点，并沿主方向偏离路径，以带背景的信息卡展示；源码文字不再使用会遮挡中文笔画的粗描边。
+节点拖动在当前 viewport 缩放下换算为世界坐标，只实时更新相连边，释放后通过
+`onNodeMove` 提交持久化位置。拖节点和拖画布使用独立指针状态机。
 
 `RendererRegistry` 负责按名称创建实现。当前 `SvgRenderer` 是默认实现；Canvas 或 WebGL
 实现可以复用 `GraphState` 和任意布局器。

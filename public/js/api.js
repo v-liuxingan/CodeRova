@@ -15,6 +15,18 @@ export class CallgraphApi {
     return request(`/api/graphs/${encodeURIComponent(slug)}`);
   }
 
+  loadLayout(slug) {
+    return request(`/api/graphs/${encodeURIComponent(slug)}/layout`);
+  }
+
+  saveLayout(slug, layout) {
+    return request(`/api/graphs/${encodeURIComponent(slug)}/layout`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(layout),
+    });
+  }
+
   validateGraph(slug) {
     return request(`/api/graphs/${encodeURIComponent(slug)}/validation`);
   }

@@ -31,6 +31,8 @@ enum Commands {
         graphs: PathBuf,
         #[arg(long, default_value = "public")]
         public: PathBuf,
+        #[arg(long, default_value = "layouts")]
+        layouts: PathBuf,
     },
     /// 校验调用图结构及源码位置
     Validate {
@@ -69,6 +71,7 @@ async fn main() -> ExitCode {
         config: PathBuf::from("callgraph.projects.json"),
         graphs: PathBuf::from("graphs"),
         public: PathBuf::from("public"),
+        layouts: PathBuf::from("layouts"),
     }) {
         Commands::Serve {
             port,
@@ -76,9 +79,10 @@ async fn main() -> ExitCode {
             config,
             graphs,
             public,
+            layouts,
         } => {
             let address = SocketAddr::new(host, port);
-            serve(address, public, graphs, config).await
+            serve(address, public, graphs, layouts, config).await
         }
         Commands::Validate {
             graph,
