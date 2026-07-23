@@ -6,13 +6,23 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "projectId", "title", "root", "nodes", "edges"],
   "properties": {
-    "schemaVersion": { "const": "0.2" },
+    "schemaVersion": { "enum": ["0.2", "0.3"] },
     "projectId": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]+$",
       "description": "Stable id resolved through callgraph.projects.json"
     },
     "title": { "type": "string", "minLength": 1 },
+    "categoryId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Stable physical catalog directory id such as overview, session, tools, or context"
+    },
+    "category": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Human-readable catalog group; blank or omitted graphs fall back to Uncategorized"
+    },
     "description": { "type": "string" },
     "sourceRevision": { "type": ["string", "null"] },
     "root": { "type": "string", "minLength": 1 },
@@ -61,6 +71,20 @@
         "to": { "type": "string", "minLength": 1 },
         "kind": {
           "enum": ["direct", "callback", "trait-dispatch", "spawn", "remote", "async-boundary", "data-flow"]
+        },
+        "flowKind": {
+          "enum": ["normal", "branch", "fallback", "merge", "loop-back", "loop-exit"],
+          "default": "normal",
+          "description": "Runtime control-flow role, independent from the call mechanism in kind"
+        },
+        "condition": {
+          "type": "string",
+          "description": "Human-readable branch or loop condition"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Known execution order among sequential outgoing calls from the same caller"
         },
         "label": { "type": "string" },
         "callSiteStatus": {

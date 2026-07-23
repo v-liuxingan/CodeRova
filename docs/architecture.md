@@ -33,7 +33,8 @@ UI controller
 
 ### `GraphStore`
 
-负责列举和读取调用图。默认 `FileGraphStore` 读取 `graphs/*.json`。如果以后需要
+负责列举和读取调用图。默认 `FileGraphStore` 递归读取 `graphs/**/*.json`，顶层分类目录
+使用稳定的 `categoryId`，文件名仍是全局唯一 slug。如果以后需要
 SQLite、Git 版本库或实时分析器，可实现相同的 `list` / `load` 边界，HTTP 层无需改变。
 
 ### `ProjectCatalog`

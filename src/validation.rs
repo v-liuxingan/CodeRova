@@ -26,6 +26,14 @@ const EDGE_KINDS: &[&str] = &[
     "async-boundary",
     "data-flow",
 ];
+const FLOW_KINDS: &[&str] = &[
+    "normal",
+    "branch",
+    "fallback",
+    "merge",
+    "loop-back",
+    "loop-exit",
+];
 const NODE_STATES: &[&str] = &["expanded", "collapsed", "hidden"];
 
 pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> ValidationReport {
@@ -33,9 +41,9 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     let mut warnings = Vec::new();
     let mut source_locations = Vec::new();
 
-    if graph.schema_version != "0.2" {
+    if !matches!(graph.schema_version.as_str(), "0.2" | "0.3") {
         errors.push(format!(
-            "不支持 schemaVersion {:?}，当前仅支持 0.2",
+            "不支持 schemaVersion {:?}，当前支持 0.2 和 0.3",
             graph.schema_version
         ));
     }
@@ -49,6 +57,20 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     }
     if graph.title.trim().is_empty() {
         errors.push("title 不能为空".to_owned());
+    }
+    if !graph.category_id.is_empty()
+        && !graph
+            .category_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        errors.push("categoryId 必须是字母、数字、连字符或下划线组合".to_owned());
+    }
+    if graph.category.chars().count() > 40 {
+        errors.push("category 不能超过 40 个字符".to_owned());
+    }
+    if !graph.category_id.is_empty() && graph.category.trim().is_empty() {
+        warnings.push("已配置 categoryId，但缺少面向用户的 category 名称".to_owned());
     }
 
     let mut node_ids = HashSet::new();
@@ -98,6 +120,20 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
         }
         if !EDGE_KINDS.contains(&edge.kind.as_str()) {
             errors.push(format!("连线 {} 的 kind 无效：{}", edge.id, edge.kind));
+        }
+        if !FLOW_KINDS.contains(&edge.flow_kind.as_str()) {
+            errors.push(format!(
+                "连线 {} 的 flowKind 无效：{}",
+                edge.id, edge.flow_kind
+            ));
+        }
+        if matches!(edge.flow_kind.as_str(), "branch" | "fallback" | "loop-exit")
+            && edge.condition.trim().is_empty()
+        {
+            warnings.push(format!(
+                "控制流连线 {} 的 {} 缺少 condition",
+                edge.id, edge.flow_kind
+            ));
         }
         if !(0.0..=1.0).contains(&edge.confidence) {
             errors.push(format!("连线 {} 的 confidence 必须在 0 到 1 之间", edge.id));
@@ -220,6 +256,8 @@ mod tests {
             schema_version: "0.2".into(),
             project_id: "demo".into(),
             title: "test".into(),
+            category_id: String::new(),
+            category: String::new(),
             root: "a".into(),
             description: String::new(),
             source_revision: None,
@@ -256,6 +294,9 @@ mod tests {
                 from: "a".into(),
                 to: "b".into(),
                 kind: "direct".into(),
+                flow_kind: "normal".into(),
+                condition: String::new(),
+                order: None,
                 label: "calls".into(),
                 call_site_status: CALL_SITE_EXACT.into(),
                 call_site_note: String::new(),
@@ -272,6 +313,68 @@ mod tests {
     fn accepts_consistent_graph() {
         let report = validate_graph(&graph(), None);
         assert!(report.valid, "{:?}", report.errors);
+    }
+
+    #[test]
+    fn accepts_control_flow_edge_semantics() {
+        let mut graph = graph();
+        graph.schema_version = "0.3".into();
+        graph.edges[0].flow_kind = "loop-exit".into();
+        graph.edges[0].condition = "done".into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(report.valid, "{:?}", report.errors);
+    }
+
+    #[test]
+    fn rejects_unknown_control_flow_kind() {
+        let mut graph = graph();
+        graph.edges[0].flow_kind = "scenario".into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(!report.valid);
+        assert!(report.errors.iter().any(|error| error.contains("flowKind")));
+    }
+
+    #[test]
+    fn validates_category_metadata() {
+        let mut graph = graph();
+        graph.category_id = "../tools".into();
+        graph.category = "x".repeat(41);
+
+        let report = validate_graph(&graph, None);
+
+        assert!(!report.valid);
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("categoryId"))
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("category 不能超过"))
+        );
+    }
+
+    #[test]
+    fn warns_when_conditional_flow_has_no_condition() {
+        let mut graph = graph();
+        graph.edges[0].flow_kind = "branch".into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(report.valid, "{:?}", report.errors);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("缺少 condition"))
+        );
     }
 
     #[test]

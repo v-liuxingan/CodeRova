@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMP_LAYOUTS = ROOT / "tests" / ".tmp-layouts"
+TEMP_GRAPHS = ROOT / "tests" / ".tmp-graphs"
 TARGET_DIR = Path(
     os.environ.get("CALLGRAPH_E2E_TARGET_DIR", ROOT / "target" / "frontend-e2e")
 )
@@ -40,6 +41,36 @@ def find_free_port() -> int:
 
 def main() -> int:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "narrative_layout_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "selection_focus_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "trace_navigator_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "graph_state_collapse_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "node_multiselect_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "catalog_grouping_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
     if (ROOT / "node_modules" / "monaco-editor").is_dir():
         subprocess.run([npm, "run", "build:frontend"], cwd=ROOT, check=True)
     subprocess.run(
@@ -48,6 +79,8 @@ def main() -> int:
         check=True,
     )
     shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
+    shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
+    shutil.copytree(ROOT / "graphs", TEMP_GRAPHS)
     port = find_free_port()
     server = subprocess.Popen(
         [
@@ -55,6 +88,8 @@ def main() -> int:
             "serve",
             "--layouts",
             str(TEMP_LAYOUTS),
+            "--graphs",
+            str(TEMP_GRAPHS),
             "--port",
             str(port),
         ],
@@ -67,6 +102,7 @@ def main() -> int:
         wait_for_port(port, True)
         environment = os.environ.copy()
         environment["CALLGRAPH_TEST_URL"] = f"http://127.0.0.1:{port}"
+        environment["CALLGRAPH_TEST_GRAPHS"] = str(TEMP_GRAPHS)
         result = subprocess.run(
             [sys.executable, str(ROOT / "tests" / "e2e_visualizer.py")],
             cwd=ROOT,
@@ -83,6 +119,7 @@ def main() -> int:
             server.wait(timeout=5)
         wait_for_port(port, False)
         shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
+        shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
 
 
 if __name__ == "__main__":

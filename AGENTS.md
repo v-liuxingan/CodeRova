@@ -84,6 +84,14 @@ that produced them. The application must remain runnable without a CDN.
 Runtime-generated `layouts/*.layout.json` files are user workspace state. Do
 not commit them unless the user explicitly asks to publish a curated layout.
 
+## Callgraph content
+
+Before creating or editing `graphs/**/*.json`, read
+`docs/callgraph-content-standard.md`, `docs/control-flow-semantics.md`, and the
+scoped instructions in `graphs/AGENTS.md`. Graph descriptions are learning
+content, not decorative metadata: preserve source evidence while explaining
+each node's local responsibility and each edge's role in the whole flow.
+
 ## Verification gates
 
 Backend:
@@ -105,7 +113,7 @@ python tests/run_e2e.py
 Contract data:
 
 ```powershell
-Get-ChildItem graphs/*.json | ForEach-Object {
+Get-ChildItem graphs -Recurse -Filter *.json | ForEach-Object {
   cargo run --quiet -- validate $_.FullName
 }
 ```

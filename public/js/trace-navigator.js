@@ -1,4 +1,8 @@
 import { resolveEdgeCallSite } from "./call-site.js";
+import {
+  compareExecutionEdges,
+  edgeExecutionOrder,
+} from "./edge-semantics.js";
 
 export class TraceNavigator {
   constructor(graph) {
@@ -12,6 +16,27 @@ export class TraceNavigator {
     this.positionType = "node";
     this.activeEdgeId = null;
     this.history = [];
+    this.visibleNodeIds = null;
+  }
+
+  setVisibleNodeIds(nodeIds) {
+    this.visibleNodeIds = nodeIds ? new Set(nodeIds) : null;
+    const activeEdge = this.edgeById.get(this.activeEdgeId);
+    if (
+      this.visibleNodeIds
+      && (
+        !this.visibleNodeIds.has(this.cursorId)
+        || (activeEdge && !this.isEdgeVisible(activeEdge))
+      )
+    ) {
+      this.cursorId = this.graph.root;
+      this.preferredOutgoingId = null;
+      this.positionType = "node";
+      this.activeEdgeId = null;
+      this.history = [];
+    }
+    const preferred = this.edgeById.get(this.preferredOutgoingId);
+    if (preferred && !this.isEdgeVisible(preferred)) this.preferredOutgoingId = null;
   }
 
   syncSelection(target) {
@@ -41,7 +66,7 @@ export class TraceNavigator {
       ? this.edgeById.get(this.activeEdgeId)
       : null;
     const outgoingEdge = activeEdge || this.pickOutgoing(this.cursorId);
-    const branches = (this.outgoing.get(this.cursorId) || []).map((edge) => ({
+    const branches = this.visibleEdges(this.outgoing.get(this.cursorId) || []).map((edge) => ({
       edge,
       node: this.nodeById.get(edge.to),
       callSite: resolveEdgeCallSite(edge),
@@ -148,22 +173,39 @@ export class TraceNavigator {
     const historical = this.history.at(-1);
     if (historical) {
       const edge = this.edgeById.get(historical.edgeId);
-      if (edge && edge.to === this.cursorId) return { edge, fromHistory: true };
+      if (edge && edge.to === this.cursorId && this.isEdgeVisible(edge)) {
+        return { edge, fromHistory: true };
+      }
     }
     const edge = pickHighestScore(
-      this.incoming.get(this.cursorId) || [],
-      (candidate) => reachableCount(candidate.from, this.incoming, "from"),
+      this.visibleEdges(this.incoming.get(this.cursorId) || []),
+      (candidate) =>
+        reachableCount(candidate.from, this.incoming, "from", this.visibleNodeIds),
     );
     return edge ? { edge, fromHistory: false } : null;
   }
 
   pickOutgoing(nodeId) {
     const preferred = this.edgeById.get(this.preferredOutgoingId);
-    if (preferred?.from === nodeId) return preferred;
+    if (preferred?.from === nodeId && this.isEdgeVisible(preferred)) return preferred;
+    const visible = this.visibleEdges(this.outgoing.get(nodeId) || []);
+    const ordered = visible
+      .filter((edge) => edgeExecutionOrder(edge) !== null)
+      .sort(compareExecutionEdges);
+    if (ordered.length) return ordered[0];
     return pickHighestScore(
-      this.outgoing.get(nodeId) || [],
-      (edge) => reachableCount(edge.to, this.outgoing, "to"),
+      visible,
+      (edge) => reachableCount(edge.to, this.outgoing, "to", this.visibleNodeIds),
     );
+  }
+
+  visibleEdges(edges) {
+    return edges.filter((edge) => this.isEdgeVisible(edge));
+  }
+
+  isEdgeVisible(edge) {
+    return !this.visibleNodeIds
+      || (this.visibleNodeIds.has(edge.from) && this.visibleNodeIds.has(edge.to));
   }
 }
 
@@ -173,6 +215,7 @@ function groupEdges(edges, key) {
     if (!grouped.has(edge[key])) grouped.set(edge[key], []);
     grouped.get(edge[key]).push(edge);
   }
+  for (const group of grouped.values()) group.sort(compareExecutionEdges);
   return grouped;
 }
 
@@ -189,13 +232,14 @@ function pickHighestScore(edges, score) {
   return selected;
 }
 
-function reachableCount(startId, adjacency, endpoint) {
+function reachableCount(startId, adjacency, endpoint, visibleNodeIds = null) {
   const visited = new Set([startId]);
   const queue = [startId];
   while (queue.length) {
     const current = queue.shift();
     for (const edge of adjacency.get(current) || []) {
       const next = edge[endpoint];
+      if (visibleNodeIds && !visibleNodeIds.has(next)) continue;
       if (visited.has(next)) continue;
       visited.add(next);
       queue.push(next);

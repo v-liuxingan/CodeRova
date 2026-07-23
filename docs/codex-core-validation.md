@@ -15,12 +15,56 @@ Trait 分发、回调、远程协议和跨阶段数据流；无法从调用表�
 
 | 调用图 | 核心问题 | 主要模块 | 节点/边 |
 | --- | --- | --- | --- |
-| `tui-authorization` | 模型请求如何获得认证 | CLI、TUI、App Server、Core | 19 / 19 |
-| `codex-turn-lifecycle` | 用户输入如何成为模型采样回合 | TUI、App Server、Core、Model Client | 14 / 13 |
-| `codex-shell-tool-execution` | 模型工具调用如何经过审批与沙箱执行 | Stream、Tool Router、Exec Policy、Sandbox | 17 / 16 |
-| `codex-thread-resume` | 持久化会话如何恢复成运行线程 | App Server、ThreadStore、Core Session | 12 / 12 |
+| `codex-end-to-end-agent-loop` | 一条用户输入如何完成上下文、模型、工具、回写和压缩闭环 | TUI、App Server、Core、Model Client、Tool Runtime、Compact | 49 / 68 |
+| `tui-authorization` | 模型请求如何获得认证 | CLI、TUI、App Server、Core | 23 / 23 |
+| `codex-turn-lifecycle` | 用户输入如何成为模型采样回合 | TUI、App Server、Core、Model Client | 20 / 21 |
+| `codex-shell-tool-execution` | 模型工具调用如何经过审批与沙箱执行 | Stream、Tool Router、Exec Policy、Sandbox | 21 / 22 |
+| `codex-thread-resume` | 持久化会话如何恢复成运行线程 | App Server、ThreadStore、Core Session | 16 / 18 |
+| `codex-config-resolution` | 系统、用户、项目与运行时配置如何合并 | Core Config、Config Loader、Requirements | 10 / 13 |
+| `codex-mcp-tool-call` | MCP 工具如何经过审批并到达远程 server | Tool Router、MCP Policy、Connection Manager、RMCP | 15 / 15 |
+| `codex-context-compaction` | 上下文超限时如何压缩并安装新历史 | Turn、Compact、Model Client、Session History | 17 / 17 |
 
-合计 62 个节点、60 条边和 122 个节点/调用点源码位置。
+合计 171 个节点、197 条边和 333 个经过校验的节点/调用点源码位置。
+
+## 0. 端到端 Agent 回合与上下文闭环
+
+```text
+ChatWidget user input
+  -> App Server turn/start or turn/steer
+  -> CodexThread / submission_loop
+  -> RegularTask::run
+  -> run_turn
+     -> context updates + skills/plugins + user input history
+     -> ContextManager::for_prompt
+     -> build tools + build_prompt
+     -> ModelClientSession::stream
+        -> Responses HTTP/SSE or WebSocket
+     -> handle_output_item_done
+        -> assistant output persistence
+        -> Shell or MCP tool runtime
+     -> drain_in_flight
+     -> record tool output in history
+     -> next model sampling
+     -> token window check
+        -> remote or local auto compact
+        -> replace_compacted_history
+        -> continue with compacted context
+```
+
+关键结论：
+
+- 这不是一条只到模型请求为止的线性链。`run_turn` 同时拥有采样前压缩、上下文装载、
+  pending steer、模型续跑、工具结果回写和正常结束等多条控制分支。
+- 上下文来源不是单一历史数组：步骤快照、world state、权限与环境更新、用户输入、
+  技能/插件注入和工具结果最终在 `ContextManager::for_prompt` 汇合。
+- 模型传输分成 Responses HTTP/SSE 和 WebSocket 两条运行路径，但统一返回
+  `ResponseEvent`，再由同一个输出处理器识别普通消息或工具调用。
+- Shell 与 MCP 共享 ToolRouter、ToolCallRuntime 和 ToolRegistry；在具体 handler 后分开
+  执行，最终都以 `ResponseInputItem` 回到 `drain_in_flight`。
+- 工具输出写入历史并把 `needs_follow_up` 置为真，因此下一次模型采样能看到工具结果；
+  这条回流是 Agent loop 的关键闭环。
+- token usage 更新后，`context_window_token_status` 决定正常结束还是中途压缩；远程和本地
+  压缩最终都通过 `replace_compacted_history` 汇合，再回到下一次 `for_prompt`。
 
 ## 1. 交互回合生命周期
 
@@ -96,6 +140,78 @@ thread/resume
 - 分页历史只装载最新模型上下文；传统 rollout 模式按需附加完整历史。
 - `spawn_thread_with_source` 会去重相同 conversation id，避免重复运行同一恢复线程。
 - `SessionConfigured` 握手完成且线程注册后，才触发扩展的 thread-resume 生命周期。
+
+## 4. 分层配置解析
+
+```text
+ConfigBuilder::build
+  -> ConfigBuilder::build_inner
+  -> load_config_layers_state
+     -> load_config_layers_internal
+     -> compose_requirements
+     -> ThreadConfigLoader::load_config_layers
+     -> load_project_layers
+  -> ConfigLayerStack::new
+  -> ConfigLayerStack::effective_config
+  -> Config::load_config_with_layer_stack
+```
+
+关键结论：
+
+- 普通配置和强制约束是两条不同的数据通道：普通 TOML 按优先级覆盖，requirements
+  独立组合并在最终 `Config` 装配时施加。
+- 项目配置会被发现，但是否启用取决于项目根与 trust context；未受信任层不会偷偷参与
+  `effective_config`。
+- 线程级配置通过 `ThreadConfigLoader` Trait 注入，并按统一优先级插入，不绕过普通配置栈。
+- 相对路径在各自配置文件所属目录下先解析为绝对路径，最终合并时不再依赖单一 cwd。
+
+## 5. MCP 工具调用
+
+```text
+ResponseItem
+  -> ToolRouter / ToolCallRuntime / ToolRegistry
+  -> McpHandler::handle_call
+  -> handle_mcp_tool_call
+     -> maybe_request_mcp_tool_approval
+     -> handle_approved_mcp_tool_call
+  -> execute_mcp_tool_call
+  -> McpConnectionManager::call_tool
+  -> ManagedClient::call_tool
+  -> MCP server tools/call
+```
+
+关键结论：
+
+- MCP 工具与内置工具共享模型输出识别、并行门禁、注册表、hook 和遥测基础设施，只在具体
+  handler 后进入 MCP 专属策略。
+- 审批同时考虑 permission profile、MCP tool annotations、App policy、会话/持久化记忆、
+  permission hook、Guardian 和用户输入；并非所有 MCP 调用都会弹窗。
+- `execute_mcp_tool_call` 会附加 thread id、沙箱状态和 rollout trace 元数据；连接管理器随后
+  再执行 server/tool 过滤和超时控制。
+- OAuth 刷新、参数形状校验和真正的 `tools/call` 协议请求位于 `ManagedClient`，Core 不直接
+  操纵传输。
+
+## 6. 自动上下文压缩
+
+```text
+run_turn
+  -> run_pre_sampling_compact
+  -> context_window_token_status
+  -> run_auto_compact
+     -> remote: compact_conversation_history
+     -> local: drain_to_completed + build_compacted_history
+  -> Session::replace_compacted_history
+```
+
+关键结论：
+
+- 自动压缩同时受可配置 token budget 和模型硬上下文窗口约束；达到任一有效边界都可在采样前触发。
+- provider 支持远程压缩时调用 Responses compact endpoint；否则用普通 Responses 采样生成
+  摘要，两条路径最终共享“安装 replacement history”的语义边界。
+- 远程结果会过滤不应保留的响应项，并在 mid-turn 场景把规范初始上下文插回正确位置；
+  本地路径保留受限用户消息并追加固定前缀摘要。
+- `replace_compacted_history` 不只改内存：它还持久化 `Compacted`、WorldState 和 TurnContext，
+  并为 compact 后的 session-start hook 排队。
 
 ## 验证边界
 

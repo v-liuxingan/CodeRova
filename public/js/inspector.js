@@ -1,4 +1,9 @@
 import { resolveEdgeCallSite } from "./call-site.js";
+import {
+  edgeExecutionOrder,
+  edgeFlowKind,
+  edgeFlowKindLabel,
+} from "./edge-semantics.js";
 import { SourcePreviewView } from "./source-preview-view.js";
 
 export class Inspector {
@@ -24,10 +29,7 @@ export class Inspector {
       this.renderSourcePlaceholder("选择可定位的节点或连线", "源码将在这里以受限上下文安全展示。");
       return;
     }
-    const item =
-      target.type === "node"
-        ? graph.nodes.find((node) => node.id === target.id)
-        : graph.edges.find((edge) => edge.id === target.id);
+    const item = findTarget(target, graph);
     if (!item) return this.render(null, graph);
 
     const nextTargetKey = targetKey(target);
@@ -36,9 +38,9 @@ export class Inspector {
     if (targetChanged) this.renderSourcePreviewLoading(target);
     this.emptyElement.hidden = true;
     this.contentElement.hidden = false;
-    this.contentElement.className = "inspect-content";
-    this.contentElement.innerHTML =
-      target.type === "node" ? nodeTemplate(item) : edgeTemplate(item, graph);
+    this.contentElement.className =
+      `inspect-content ${target.type === "node" ? "node-detail" : "edge-detail"}`;
+    this.contentElement.innerHTML = targetTemplate(target, item, graph);
     this.contentElement.querySelector("[data-open]")?.addEventListener("click", () => {
       this.callbacks.onOpen?.(target);
     });
@@ -92,7 +94,26 @@ export class Inspector {
     this.sourceBodyElement.replaceChildren(placeholder);
   }
 }
+
+function findTarget(target, graph) {
+  if (target.type === "node") {
+    return graph.nodes.find((node) => node.id === target.id);
+  }
+  if (target.type === "edge") {
+    return graph.edges.find((edge) => edge.id === target.id);
+  }
+  return null;
+}
+
+function targetTemplate(target, item, graph) {
+  if (target.type === "node") return nodeTemplate(item);
+  if (target.type === "edge") return edgeTemplate(item, graph);
+  return "";
+}
+
 function nodeTemplate(node) {
+  const role = node.role?.trim();
+  const description = node.description?.trim();
   return `
     <div class="inspect-heading">
       <div>
@@ -101,7 +122,11 @@ function nodeTemplate(node) {
       </div>
       <div class="inspect-id">${escapeHtml(node.id)}</div>
     </div>
-    <div class="inspect-role"><strong>${escapeHtml(node.role || "暂无职责")}</strong>${escapeHtml(node.description || "暂无描述")}</div>
+    <section class="node-purpose" aria-label="节点职责">
+      <span class="node-purpose-kicker">节点职责 / WHY IT MATTERS</span>
+      <strong class="node-purpose-role${role ? "" : " is-fallback"}">${escapeHtml(role || "职责尚未标注")}</strong>
+      <p class="node-purpose-description${description ? "" : " is-fallback"}">${escapeHtml(description || "当前节点暂无语义描述，可结合下方源码证据继续确认。")}</p>
+    </section>
     <div class="inspect-facts" aria-label="节点事实">
       <span><b>SOURCE</b>${escapeHtml(node.file)}:${node.line}${node.endLine ? `–${node.endLine}` : ""}</span>
       <span><b>OWNER</b>${escapeHtml(node.crate || "—")} / ${escapeHtml(node.module || "—")}</span>
@@ -118,6 +143,18 @@ function edgeTemplate(edge, graph) {
   const callSite = resolveEdgeCallSite(edge);
   const from = graph.nodes.find((node) => node.id === edge.from);
   const to = graph.nodes.find((node) => node.id === edge.to);
+  const flowKind = edgeFlowKind(edge);
+  const flowKindLabel = edgeFlowKindLabel(edge);
+  const executionOrder = edgeExecutionOrder(edge);
+  const executionOrderContent = executionOrder
+    ? `<span><b>CALL ORDER</b>第 ${executionOrder} 步</span>`
+    : "";
+  const controlFlowContent = flowKind === "normal"
+    ? ""
+    : `<span><b>CONTROL FLOW</b>${escapeHtml(flowKindLabel)}</span>`;
+  const conditionContent = edge.condition
+    ? `<span><b>CONDITION</b>${escapeHtml(edge.condition)}</span>`
+    : "";
   const callSiteContent = callSite.available
     ? `<span><b>CALL SITE</b>${escapeHtml(callSite.file)}:${callSite.line}</span>`
     : `<div class="callsite-notice">
@@ -146,6 +183,9 @@ function edgeTemplate(edge, graph) {
     <div class="inspect-facts" aria-label="调用关系事实">
       ${callSiteContent}
       <span><b>RELATION</b>${escapeHtml(edge.kind)}</span>
+      ${executionOrderContent}
+      ${controlFlowContent}
+      ${conditionContent}
     </div>
     <details class="inspect-evidence">
       <summary>查看调用证据</summary>

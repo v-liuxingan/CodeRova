@@ -35,6 +35,13 @@
       </header>
 
       <aside class="rail" aria-label="调用图目录与筛选">
+        <button
+          id="rail-collapse"
+          class="rail-collapse"
+          type="button"
+          aria-expanded="true"
+          title="收起左侧栏"
+        ><span aria-hidden="true">‹</span><span class="rail-collapse-label">收起目录</span></button>
         <section class="rail-section">
           <div class="section-label"><span>01</span> 图谱目录</div>
           <div id="graph-list" class="graph-list"></div>
@@ -125,10 +132,30 @@
               <span aria-hidden="true">↗</span>
               <strong>调用位置</strong>
             </button>
-            <label id="trace-branch-wrap" class="trace-branch" hidden>
-              <span id="trace-branch-label">分支</span>
-              <select id="trace-branch" aria-label="选择下游调用分支"></select>
-            </label>
+            <div id="trace-branch-wrap" class="trace-branch" hidden>
+              <button
+                id="trace-branch-trigger"
+                class="trace-branch-trigger"
+                type="button"
+                aria-expanded="false"
+                aria-controls="trace-branch-menu"
+              >
+                <span class="trace-branch-glyph" aria-hidden="true">⑂</span>
+                <span class="trace-branch-trigger-copy">
+                  <small id="trace-branch-label">分支</small>
+                  <strong id="trace-branch-current">选择下游路径</strong>
+                </span>
+                <span class="trace-branch-caret" aria-hidden="true">⌄</span>
+              </button>
+              <div
+                id="trace-branch-menu"
+                class="trace-branch-menu"
+                role="listbox"
+                aria-label="选择下游调用分支"
+                hidden
+              ></div>
+              <select id="trace-branch" aria-hidden="true" tabindex="-1" hidden></select>
+            </div>
             <button id="trace-next" class="trace-step" disabled>
               <span class="trace-copy">
                 <small>下一步</small>
@@ -141,7 +168,7 @@
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
           <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
-          <div class="canvas-hint">滚轮缩放 · 拖动画布 · 拖动节点自定义排版</div>
+          <div class="canvas-hint">滚轮缩放 · 拖动画布 · Shift 框选 · 拖动群组 · Esc 清除</div>
           <div id="empty-state" class="empty-state" hidden>
             <span>∅</span>
             <p>当前筛选下没有可见节点</p>
@@ -219,6 +246,32 @@
         <span id="revision">REVISION —</span>
       </footer>
     </div>
+    <dialog id="category-editor" class="category-editor" aria-labelledby="category-editor-title">
+      <form method="dialog" id="category-editor-form">
+        <header>
+          <span>CATALOG / MOVE</span>
+          <h2 id="category-editor-title">编辑图谱分类</h2>
+          <p id="category-editor-graph">—</p>
+        </header>
+        <label>
+          <span>移动到</span>
+          <select id="category-editor-select" aria-label="选择已有分类"></select>
+        </label>
+        <label id="category-editor-name-wrap" hidden>
+          <span>新分类名称</span>
+          <input
+            id="category-editor-name"
+            maxlength="40"
+            autocomplete="off"
+            placeholder="例如：鉴权流程"
+          />
+        </label>
+        <footer>
+          <button class="category-editor-cancel" value="cancel">取消</button>
+          <button id="category-editor-save" class="category-editor-save" value="default">保存分类</button>
+        </footer>
+      </form>
+    </dialog>
     <div id="toast-region" class="toast-region" aria-live="polite"></div>
     <script type="module" src="/js/app.js"></script>
   </body>

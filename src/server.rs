@@ -9,7 +9,7 @@ use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
@@ -106,6 +106,10 @@ pub async fn serve(
         .route("/api/graphs", get(list_graphs))
         .route("/api/graphs/{slug}", get(get_graph))
         .route(
+            "/api/graphs/{slug}/category",
+            axum::routing::put(update_graph_category),
+        )
+        .route(
             "/api/graphs/{slug}/layout",
             get(get_graph_layout).put(save_graph_layout),
         )
@@ -199,6 +203,8 @@ async fn list_graphs(State(state): State<AppState>) -> Result<Json<Vec<GraphSumm
         summaries.push(GraphSummary {
             slug,
             title: graph.title,
+            category_id: graph.category_id,
+            category: graph.category,
             description: graph.description,
             project_id: graph.project_id,
             node_count: graph.nodes.len(),
@@ -214,6 +220,25 @@ async fn get_graph(
     AxumPath(slug): AxumPath<String>,
 ) -> Result<Json<CallGraph>, AppError> {
     Ok(Json(read_graph(&state, &slug)?))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CategoryUpdateRequest {
+    category_id: String,
+    category: String,
+}
+
+async fn update_graph_category(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    Json(request): Json<CategoryUpdateRequest>,
+) -> Result<Json<CallGraph>, AppError> {
+    state
+        .graph_store
+        .update_category(&slug, &request.category_id, &request.category)
+        .map(Json)
+        .map_err(graph_store_error)
 }
 
 async fn get_graph_layout(
@@ -434,15 +459,21 @@ fn resolve_target_location<'a>(
 }
 
 fn read_graph(state: &AppState, slug: &str) -> Result<CallGraph, AppError> {
-    state.graph_store.load(slug).map_err(|error| {
-        if error.starts_with("调用图不存在") {
-            AppError::NotFound(error)
-        } else if error == "调用图名称不合法" {
-            AppError::BadRequest(error)
-        } else {
-            AppError::Internal(error)
-        }
-    })
+    state.graph_store.load(slug).map_err(graph_store_error)
+}
+
+fn graph_store_error(error: String) -> AppError {
+    if error.starts_with("调用图不存在") {
+        AppError::NotFound(error)
+    } else if error == "调用图名称不合法"
+        || error.starts_with("categoryId")
+        || error.starts_with("分类名称")
+        || error.starts_with("目标分类中已存在")
+    {
+        AppError::BadRequest(error)
+    } else {
+        AppError::Internal(error)
+    }
 }
 
 #[cfg(test)]

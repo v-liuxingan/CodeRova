@@ -15,6 +15,14 @@ export class CallgraphApi {
     return request(`/api/graphs/${encodeURIComponent(slug)}`);
   }
 
+  updateGraphCategory(slug, categoryId, category) {
+    return request(`/api/graphs/${encodeURIComponent(slug)}/category`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ categoryId, category }),
+    });
+  }
+
   loadLayout(slug) {
     return request(`/api/graphs/${encodeURIComponent(slug)}/layout`);
   }

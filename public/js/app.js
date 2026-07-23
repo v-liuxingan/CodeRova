@@ -1,9 +1,11 @@
 import { CallgraphApi } from "./api.js";
+import { groupGraphCatalog } from "./catalog-grouping.js";
 import { ClickNavigationPolicy } from "./click-navigation-policy.js";
+import { edgeExecutionOrder } from "./edge-semantics.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
 import { InspectorWorkbenchController } from "./inspector-workbench-controller.js";
-import { LayeredLayout } from "./layouts/layered-layout.js";
+import { NarrativeLayout } from "./layouts/narrative-layout.js";
 import { LayoutPersistenceController } from "./layout-persistence-controller.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
@@ -13,7 +15,10 @@ import { themes } from "./theme-registry.js";
 import { TraceNavigator } from "./trace-navigator.js";
 
 const api = new CallgraphApi();
+const CATALOG_COLLAPSE_STORAGE_KEY = "callgraph.catalog.collapsed.v1";
+const RAIL_COLLAPSE_STORAGE_KEY = "callgraph.rail.collapsed.v1";
 const elements = {
+  railCollapse: document.querySelector("#rail-collapse"),
   graphList: document.querySelector("#graph-list"),
   graphTitle: document.querySelector("#graph-title"),
   graphOverviewDescription: document.querySelector("#graph-overview-description"),
@@ -35,10 +40,20 @@ const elements = {
   tracePrevious: document.querySelector("#trace-previous"),
   traceCallSite: document.querySelector("#trace-callsite"),
   traceBranchWrap: document.querySelector("#trace-branch-wrap"),
+  traceBranchTrigger: document.querySelector("#trace-branch-trigger"),
   traceBranchLabel: document.querySelector("#trace-branch-label"),
+  traceBranchCurrent: document.querySelector("#trace-branch-current"),
+  traceBranchMenu: document.querySelector("#trace-branch-menu"),
   traceBranch: document.querySelector("#trace-branch"),
   traceNext: document.querySelector("#trace-next"),
   instantOpenToggle: document.querySelector("#instant-open-toggle"),
+  categoryEditor: document.querySelector("#category-editor"),
+  categoryEditorForm: document.querySelector("#category-editor-form"),
+  categoryEditorGraph: document.querySelector("#category-editor-graph"),
+  categoryEditorSelect: document.querySelector("#category-editor-select"),
+  categoryEditorNameWrap: document.querySelector("#category-editor-name-wrap"),
+  categoryEditorName: document.querySelector("#category-editor-name"),
+  categoryEditorSave: document.querySelector("#category-editor-save"),
 };
 
 const rendererRegistry = new RendererRegistry().register(
@@ -47,7 +62,7 @@ const rendererRegistry = new RendererRegistry().register(
 );
 const renderer = rendererRegistry.create("svg", {
   element: elements.canvas,
-  layout: new LayeredLayout(),
+  layout: new NarrativeLayout(),
 });
 const inspector = new Inspector(
   document.querySelector("#inspector-empty"),
@@ -62,7 +77,6 @@ const resizableInspector = new ResizablePanelController(
   document.querySelector("#inspector-resizer"),
   {
     onManualResize: () => inspectorWorkbench?.handleManualResize(),
-    onResize: () => renderer.fit(),
   },
 );
 inspectorWorkbench = new InspectorWorkbenchController({
@@ -71,7 +85,6 @@ inspectorWorkbench = new InspectorWorkbenchController({
   resizablePanel: resizableInspector,
   focusButton: document.querySelector("#inspector-focus"),
   collapseButton: document.querySelector("#inspector-collapse"),
-  onLayoutChange: () => renderer.fit(),
 });
 const layoutPersistence = new LayoutPersistenceController(api, {
   onStatus: (message) => setStatus(message),
@@ -87,13 +100,20 @@ let state = null;
 let traceNavigator = null;
 let unsubscribe = null;
 let firstRender = true;
+let catalogGraphs = [];
+let categoryEditorSlug = null;
 
 initializeThemes();
+initializeRail();
+initializeCategoryEditor();
 renderer.setCallbacks({
   onSelect: selectGraphTarget,
   onToggleCollapse: (nodeId) => state?.toggleCollapse(nodeId),
-  onNodeMove: (nodeId, position) => {
-    state?.setNodePosition(nodeId, position);
+  onSetNodeSelection: (nodeIds) => state?.setSelectedNodes(nodeIds),
+  onToggleNodeSelection: (nodeId) => state?.toggleSelectedNode(nodeId),
+  onClearInteractionSelection: () => state?.clearInteractionSelection(),
+  onNodesMove: (positions) => {
+    state?.setNodePositions(positions);
     layoutPersistence.schedule(activeSlug, state.exportLayout(activeSlug));
   },
 });
@@ -128,10 +148,11 @@ function initializeThemes() {
 async function bootstrap() {
   elements.status.textContent = "连接本地 Rust 服务";
   const [health, graphs] = await Promise.all([api.health(), api.listGraphs()]);
+  catalogGraphs = graphs;
   updateHealth(health);
-  renderGraphList(graphs);
+  const catalog = renderGraphList(graphs);
   if (!graphs.length) throw new Error("graphs 目录中没有调用图");
-  await activateGraph(graphs[0].slug);
+  await activateGraph(catalog[0].graphs[0].slug);
 }
 
 function updateHealth(health) {
@@ -147,18 +168,207 @@ function updateHealth(health) {
 
 function renderGraphList(graphs) {
   elements.graphList.replaceChildren();
-  for (const graph of graphs) {
-    const button = document.createElement("button");
-    button.className = "graph-option";
-    button.dataset.slug = graph.slug;
-    const title = document.createElement("strong");
-    title.textContent = graph.title;
-    const meta = document.createElement("small");
-    meta.textContent =
-      `${graph.projectId.toUpperCase()} · ${graph.nodeCount} NODES · ${graph.edgeCount} EDGES`;
-    button.append(title, meta);
-    button.addEventListener("click", () => activateGraph(graph.slug));
-    elements.graphList.append(button);
+  const groups = groupGraphCatalog(graphs);
+  const collapsedCategories = loadCollapsedCatalogCategories();
+  groups.forEach(({ categoryId, category, graphs: categoryGraphs }, index) => {
+    const itemsId = `graph-category-${index + 1}`;
+    const collapsed = collapsedCategories.has(categoryId);
+    const section = document.createElement("section");
+    section.className = "graph-category";
+    section.classList.toggle("collapsed", collapsed);
+    section.dataset.category = category;
+    section.dataset.categoryId = categoryId;
+    section.setAttribute("aria-label", `${category}，${categoryGraphs.length} 张图谱`);
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "graph-category-header";
+    header.setAttribute("aria-controls", itemsId);
+    header.setAttribute("aria-expanded", String(!collapsed));
+    header.title = `${collapsed ? "展开" : "折叠"}${category}`;
+    const chevron = document.createElement("span");
+    chevron.className = "graph-category-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    const sequence = document.createElement("span");
+    sequence.className = "graph-category-sequence";
+    sequence.textContent = String(index + 1).padStart(2, "0");
+    const categoryTitle = document.createElement("strong");
+    categoryTitle.textContent = category;
+    const count = document.createElement("small");
+    count.textContent = String(categoryGraphs.length).padStart(2, "0");
+    count.title = `${categoryGraphs.length} 张图谱`;
+    header.append(chevron, sequence, categoryTitle, count);
+    const items = document.createElement("div");
+    items.className = "graph-category-items";
+    items.id = itemsId;
+    items.hidden = collapsed;
+    header.addEventListener("click", () => {
+      const nextCollapsed = !section.classList.contains("collapsed");
+      section.classList.toggle("collapsed", nextCollapsed);
+      header.setAttribute("aria-expanded", String(!nextCollapsed));
+      header.title = `${nextCollapsed ? "展开" : "折叠"}${category}`;
+      items.hidden = nextCollapsed;
+      if (nextCollapsed) collapsedCategories.add(categoryId);
+      else collapsedCategories.delete(categoryId);
+      persistCollapsedCatalogCategories(collapsedCategories);
+    });
+
+    for (const graph of categoryGraphs) {
+      const row = document.createElement("div");
+      row.className = "graph-option-row";
+      const button = document.createElement("button");
+      button.className = "graph-option";
+      button.dataset.slug = graph.slug;
+      button.dataset.category = category;
+      const title = document.createElement("strong");
+      title.textContent = graph.title;
+      const meta = document.createElement("small");
+      meta.textContent =
+        `${graph.projectId.toUpperCase()} · ${graph.nodeCount} NODES · ${graph.edgeCount} EDGES`;
+      button.append(title, meta);
+      button.addEventListener("click", () => activateGraph(graph.slug));
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "graph-category-edit";
+      edit.dataset.slug = graph.slug;
+      edit.setAttribute("aria-label", `编辑 ${graph.title} 的分类`);
+      edit.title = "移动到其他分类";
+      edit.textContent = "···";
+      edit.addEventListener("click", () => openCategoryEditor(graph.slug));
+      row.append(button, edit);
+      items.append(row);
+    }
+    section.append(header, items);
+    elements.graphList.append(section);
+  });
+  return groups;
+}
+
+function initializeRail() {
+  const apply = (collapsed, persist = true) => {
+    document.documentElement.classList.toggle("rail-collapsed", collapsed);
+    elements.railCollapse.setAttribute("aria-expanded", String(!collapsed));
+    elements.railCollapse.title = collapsed ? "展开左侧栏" : "收起左侧栏";
+    elements.railCollapse.querySelector("span:first-child").textContent =
+      collapsed ? "›" : "‹";
+    elements.railCollapse.querySelector(".rail-collapse-label").textContent =
+      collapsed ? "展开目录" : "收起目录";
+    if (persist) {
+      try {
+        localStorage.setItem(RAIL_COLLAPSE_STORAGE_KEY, String(collapsed));
+      } catch {
+        // The rail remains interactive without persistence.
+      }
+    }
+  };
+  apply(document.documentElement.classList.contains("rail-collapsed"), false);
+  elements.railCollapse.addEventListener("click", () => {
+    apply(!document.documentElement.classList.contains("rail-collapsed"));
+  });
+}
+
+function initializeCategoryEditor() {
+  elements.categoryEditorSelect.addEventListener("change", () => {
+    const creating = elements.categoryEditorSelect.value === "__new__";
+    elements.categoryEditorNameWrap.hidden = !creating;
+    elements.categoryEditorName.required = creating;
+    if (creating) elements.categoryEditorName.focus();
+  });
+  elements.categoryEditorForm.addEventListener("submit", async (event) => {
+    if (event.submitter?.value === "cancel") return;
+    event.preventDefault();
+    const selected = elements.categoryEditorSelect.selectedOptions[0];
+    const creating = selected?.value === "__new__";
+    const category = creating
+      ? elements.categoryEditorName.value.trim()
+      : selected?.textContent.trim();
+    const categoryId = creating
+      ? customCategoryId(category)
+      : selected?.value;
+    if (!category || !categoryId) {
+      elements.categoryEditorName.focus();
+      return;
+    }
+    elements.categoryEditorSave.disabled = true;
+    try {
+      const updated = await api.updateGraphCategory(
+        categoryEditorSlug,
+        categoryId,
+        category,
+      );
+      if (activeSlug === categoryEditorSlug) activeGraph = updated;
+      catalogGraphs = await api.listGraphs();
+      renderGraphList(catalogGraphs);
+      document.querySelector(
+        `.graph-option[data-slug="${CSS.escape(activeSlug)}"]`,
+      )?.classList.add("active");
+      elements.categoryEditor.close();
+      toast(`已移动到“${category}”`);
+      setStatus(`图谱分类已更新：${category}`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      elements.categoryEditorSave.disabled = false;
+    }
+  });
+}
+
+function openCategoryEditor(slug) {
+  const graph = catalogGraphs.find((candidate) => candidate.slug === slug);
+  if (!graph) return;
+  categoryEditorSlug = slug;
+  const groups = groupGraphCatalog(catalogGraphs);
+  elements.categoryEditorSelect.replaceChildren();
+  for (const group of groups) {
+    const option = document.createElement("option");
+    option.value = group.categoryId;
+    option.textContent = group.category;
+    option.selected = group.categoryId === graph.categoryId;
+    elements.categoryEditorSelect.append(option);
+  }
+  const createOption = document.createElement("option");
+  createOption.value = "__new__";
+  createOption.textContent = "＋ 新建分类…";
+  elements.categoryEditorSelect.append(createOption);
+  elements.categoryEditorGraph.textContent = graph.title;
+  elements.categoryEditorName.value = "";
+  elements.categoryEditorNameWrap.hidden = true;
+  elements.categoryEditorName.required = false;
+  elements.categoryEditor.showModal();
+  elements.categoryEditorSelect.focus();
+}
+
+function customCategoryId(category) {
+  let hash = 2166136261;
+  for (const character of category) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `custom-${(hash >>> 0).toString(36)}`;
+}
+
+function loadCollapsedCatalogCategories() {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(CATALOG_COLLAPSE_STORAGE_KEY) || "[]",
+    );
+    return new Set(
+      Array.isArray(stored)
+        ? stored.filter((category) => typeof category === "string")
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function persistCollapsedCatalogCategories(categories) {
+  try {
+    window.localStorage.setItem(
+      CATALOG_COLLAPSE_STORAGE_KEY,
+      JSON.stringify([...categories]),
+    );
+  } catch {
+    // Catalog folding remains usable when browser storage is unavailable.
   }
 }
 
@@ -188,6 +398,9 @@ async function activateGraph(slug) {
 
 function render(currentState, reason) {
   const visibleGraph = currentState.getVisibleGraph();
+  traceNavigator?.setVisibleNodeIds(
+    new Set(visibleGraph.nodes.map((node) => node.id)),
+  );
   renderer.render(visibleGraph, currentState);
   inspector.render(currentState.selected, currentState.graph);
   void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
@@ -206,14 +419,21 @@ function render(currentState, reason) {
   if (firstRender) {
     requestAnimationFrame(() => renderer.focusStart(currentState.orientation));
     firstRender = false;
-  } else if (reason === "structure" || reason === "focus") {
-    requestAnimationFrame(() => renderer.fit());
   }
   setStatus(
-    currentState.selected
-      ? `已选择 ${currentState.selected.type === "node" ? "节点" : "连线"} ${currentState.selected.id}`
+    currentState.selectedNodeIds.size
+      ? `已选中 ${currentState.selectedNodeIds.size} 个布局节点`
+      : currentState.selected
+      ? `已选择 ${targetTypeLabel(currentState.selected.type)} ${currentState.selected.id}`
       : "图谱就绪",
   );
+}
+
+function targetTypeLabel(type) {
+  return {
+    node: "节点",
+    edge: "连线",
+  }[type] || "目标";
 }
 
 function buildKindFilters() {
@@ -312,17 +532,41 @@ function bindControls() {
   });
   elements.tracePrevious.addEventListener("click", () => navigateTrace("stepBackward"));
   elements.traceCallSite.addEventListener("click", () => navigateTrace("callSite"));
+  elements.traceBranchTrigger.addEventListener("click", () => {
+    setTraceBranchMenuOpen(elements.traceBranchMenu.hidden);
+  });
+  elements.traceBranchMenu.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-trace-branch-id]");
+    if (!option) return;
+    elements.traceBranch.value = option.dataset.traceBranchId;
+    setTraceBranchMenuOpen(false);
+    elements.traceBranch.dispatchEvent(new Event("change", { bubbles: true }));
+    elements.traceBranchTrigger.focus();
+  });
   elements.traceBranch.addEventListener("change", (event) => {
     const target = traceNavigator?.selectBranch(event.target.value);
     if (target) state?.select(target);
   });
   elements.traceNext.addEventListener("click", () => navigateTrace("stepForward"));
+  document.addEventListener("click", (event) => {
+    if (!elements.traceBranchWrap.contains(event.target)) {
+      setTraceBranchMenuOpen(false);
+    }
+  });
   window.addEventListener("keydown", (event) => {
     if (event.key === "/" && document.activeElement !== elements.search) {
       event.preventDefault();
       elements.search.focus();
     }
-    if (event.key === "Escape") state?.select(null);
+    if (event.key === "Escape") {
+      if (!elements.traceBranchMenu.hidden) {
+        event.preventDefault();
+        setTraceBranchMenuOpen(false);
+        elements.traceBranchTrigger.focus();
+        return;
+      }
+      state?.clearInteractionSelection();
+    }
     if (
       !event.altKey
       && !event.ctrlKey
@@ -394,13 +638,19 @@ function renderTraceBranches(snapshot) {
   const showBranches = snapshot.branches.length > 1;
   elements.traceBranchWrap.hidden = !showBranches;
   if (!showBranches) {
+    setTraceBranchMenuOpen(false);
     elements.traceBranch.replaceChildren();
+    elements.traceBranchMenu.replaceChildren();
+    elements.traceBranchCurrent.textContent = "选择下游路径";
     return;
   }
 
   const selectedIndex = snapshot.branches.findIndex((branch) => branch.selected);
   elements.traceBranchLabel.textContent =
     `分支 ${Math.max(0, selectedIndex) + 1}/${snapshot.branches.length}`;
+  const selectedBranch = snapshot.branches[selectedIndex] || snapshot.branches[0];
+  elements.traceBranchCurrent.textContent =
+    selectedBranch.node?.label || selectedBranch.edge.to;
 
   const options = snapshot.branches.map(({ edge, node, callSite, selected }) => {
     const option = document.createElement("option");
@@ -416,6 +666,59 @@ function renderTraceBranches(snapshot) {
   });
   elements.traceBranch.replaceChildren(...options);
   elements.traceBranch.title = "选择右箭头继续跟随的下游分支";
+
+  const menuOptions = snapshot.branches.map(
+    ({ edge, node, callSite, selected }) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `trace-branch-option${selected ? " selected" : ""}`;
+      option.dataset.traceBranchId = edge.id;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(selected));
+
+      const location = callSite.available
+        ? callSite.compactLabel
+        : callSite.shortLabel || "无调用位置";
+      const relation = edge.flowKind || edge.kind || "call";
+      const executionOrder = edgeExecutionOrder(edge);
+      const optionIndex = document.createElement("span");
+      optionIndex.className = "trace-branch-index";
+      optionIndex.textContent = selected
+        ? "✓"
+        : executionOrder
+          ? String(executionOrder)
+          : "·";
+      const optionCopy = document.createElement("span");
+      optionCopy.className = "trace-branch-option-copy";
+      const optionTitle = document.createElement("strong");
+      optionTitle.textContent = node?.label || edge.to;
+      const optionMeta = document.createElement("small");
+      optionMeta.textContent = [
+        executionOrder
+          ? `第 ${String(executionOrder).padStart(2, "0")} 步`
+          : "",
+        relation,
+        location,
+      ].filter(Boolean).join(" · ");
+      optionCopy.append(optionTitle, optionMeta);
+      const optionArrow = document.createElement("span");
+      optionArrow.className = "trace-branch-option-arrow";
+      optionArrow.setAttribute("aria-hidden", "true");
+      optionArrow.textContent = "→";
+      option.append(optionIndex, optionCopy, optionArrow);
+      option.title = `${edge.id} → ${node?.label || edge.to}`;
+      return option;
+    },
+  );
+  elements.traceBranchMenu.replaceChildren(...menuOptions);
+  elements.traceBranchTrigger.title = "选择右箭头继续跟随的下游分支";
+}
+
+function setTraceBranchMenuOpen(open) {
+  const shouldOpen = Boolean(open && !elements.traceBranchWrap.hidden);
+  elements.traceBranchMenu.hidden = !shouldOpen;
+  elements.traceBranchTrigger.setAttribute("aria-expanded", String(shouldOpen));
+  elements.traceBranchWrap.classList.toggle("open", shouldOpen);
 }
 
 function configureTraceButton(button, node, title) {
@@ -441,7 +744,7 @@ function navigateTrace(action) {
     toast(message, true);
     return;
   }
-  state?.select(target);
+  state?.select(target, { preserveFocusAnchor: true });
   setStatus(`已在网页内预览 ${target.type === "edge" ? "调用位置" : "节点源码"}`);
 }
 

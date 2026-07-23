@@ -4,7 +4,8 @@
 Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。数据模型
 不限定编程语言、框架或仓库。
 
-仓库当前附带一条 Codex TUI 授权链作为真实世界示例，该示例基于提交
+仓库当前附带八条 Codex 关键流程作为真实世界示例，覆盖端到端 Agent 回合、授权、
+交互回合、Shell 工具、线程恢复、分层配置、MCP 工具调用和上下文压缩。这些示例基于提交
 `23899f7cb63a1510e53fddd68740dfc325853e3b` 核验。
 
 ## 功能
@@ -92,12 +93,14 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 不需要重写调用图。需要保存机器专属路径时，可以创建已被 Git 忽略的
 `callgraph.projects.local.json`，并使用 `--config` 指定。
 
-调用图 0.2 通过 `projectId` 引用项目：
+调用图 0.2/0.3 通过 `projectId` 引用项目：
 
 ```json
 {
   "schemaVersion": "0.2",
   "projectId": "codex",
+  "categoryId": "tools",
+  "category": "工具执行",
   "nodes": [
     {
       "file": "codex-rs/cli/src/main.rs",
@@ -106,6 +109,29 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
   ]
 }
 ```
+
+可选的 `categoryId` 是稳定的物理分类目录 id，`category` 是面向用户的图谱目录名称。
+`FileGraphStore` 会递归扫描 `graphs/<categoryId>/*.json`，文件名仍是全局唯一 slug；目录
+与 `categoryId` 不一致时记录警告。缺少分类归属的旧图通过 API 统一呈现为
+`uncategorized / 未分类`，不会根据 slug 或标题猜测分类。页面可将图移动到已有分类或
+新建分类，服务通过 `PUT /api/graphs/{slug}/category` 原子更新 JSON 并移动物理文件。
+布局仍按 slug 保存在平铺的 `layouts/` 中，因此移动图文件不会丢失手工布局。
+
+调用边可通过可选的 `flowKind / condition` 同时表达分支、降级、汇合、循环回边和循环
+退出；普通调用无需额外配置。完整契约见
+[`docs/control-flow-semantics.md`](docs/control-flow-semantics.md)。前端点击任意节点后，
+自动强调其全部上游和下游，完整图始终保留，详见
+[`docs/node-path-focus.md`](docs/node-path-focus.md)。
+
+同一方法内存在可靠执行先后的普通调用，可在调用边上填写可选 `order`。图中会以
+`[01] / [02]` 标记步骤、按序排列同级关系，并让“下一步”优先进入最早调用；互斥分支、
+并发和未知顺序不使用该字段。内容约束见
+[`docs/callgraph-content-standard.md`](docs/callgraph-content-standard.md)。
+
+生成或人工维护调用图时，节点和关系说明应同时解释源码事实与整条链路中的作用，避免只
+复述函数名。内容写法和模型生成流程见
+[`docs/callgraph-content-standard.md`](docs/callgraph-content-standard.md)；`graphs/AGENTS.md`
+会要求仓库智能体在修改图文件前先阅读该规范。
 
 精确边继续使用项目内相对路径：
 
@@ -144,22 +170,22 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 校验图结构和每个节点/连线的源码位置：
 
 ```powershell
-cargo run -- validate graphs/tui-authorization.json
+cargo run -- validate graphs/tools/tui-authorization.json
 ```
 
 输出 JSON 校验报告：
 
 ```powershell
-cargo run -- validate graphs/tui-authorization.json --json
+cargo run -- validate graphs/tools/tui-authorization.json --json
 ```
 
 为节点或调用点生成经过校验的 VSCode URI：
 
 ```powershell
-cargo run -- open graphs/tui-authorization.json `
+cargo run -- open graphs/tools/tui-authorization.json `
   --node cli.main
 
-cargo run -- open graphs/tui-authorization.json `
+cargo run -- open graphs/tools/tui-authorization.json `
   --edge edge.client-runtime-start
 ```
 
@@ -201,10 +227,14 @@ public/js/
   renderer-registry.js 渲染器插件注册
   theme-registry.js    可注册主题与本地持久化切换
 schema/
-  callgraph.schema.json  调用图 0.2
+  callgraph.schema.json  调用图 0.2/0.3
   projects.schema.json   项目目录配置 0.1
   layout.schema.json     手工节点位置配置 0.1
 graphs/
+  codex-config-resolution.json
+  codex-context-compaction.json
+  codex-end-to-end-agent-loop.json
+  codex-mcp-tool-call.json
   codex-shell-tool-execution.json
   codex-thread-resume.json
   codex-turn-lifecycle.json
@@ -232,7 +262,7 @@ cargo fmt --check
 cargo test
 npm ci
 npm run build:frontend
-Get-ChildItem graphs/*.json | ForEach-Object {
+Get-ChildItem graphs -Recurse -Filter *.json | ForEach-Object {
   cargo run --quiet -- validate $_.FullName
 }
 ```

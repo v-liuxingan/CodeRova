@@ -6,6 +6,10 @@ pub struct CallGraph {
     pub schema_version: String,
     pub project_id: String,
     pub title: String,
+    #[serde(default)]
+    pub category_id: String,
+    #[serde(default)]
+    pub category: String,
     pub root: String,
     #[serde(default)]
     pub description: String,
@@ -47,6 +51,15 @@ pub struct GraphEdge {
     pub from: String,
     pub to: String,
     pub kind: String,
+    #[serde(
+        default = "default_flow_kind",
+        skip_serializing_if = "is_normal_flow_kind"
+    )]
+    pub flow_kind: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub condition: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
     #[serde(default)]
     pub label: String,
     #[serde(default = "default_call_site_status")]
@@ -69,6 +82,14 @@ pub const CALL_SITE_EXACT: &str = "exact";
 pub const CALL_SITE_VIRTUAL_NODE: &str = "virtual-node";
 pub const CALL_SITE_OMITTED_NODES: &str = "omitted-nodes";
 
+fn default_flow_kind() -> String {
+    "normal".to_owned()
+}
+
+fn is_normal_flow_kind(kind: &String) -> bool {
+    kind == "normal"
+}
+
 fn default_call_site_status() -> String {
     CALL_SITE_EXACT.to_owned()
 }
@@ -89,6 +110,8 @@ fn default_confidence() -> f32 {
 pub struct GraphSummary {
     pub slug: String,
     pub title: String,
+    pub category_id: String,
+    pub category: String,
     pub description: String,
     pub project_id: String,
     pub node_count: usize,
@@ -183,6 +206,7 @@ pub struct SourcePreviewLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn preview_scope_defaults_to_target_and_rejects_unknown_values() {
@@ -197,5 +221,57 @@ mod tests {
         )
         .expect_err("unknown scope");
         assert!(error.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn graph_category_is_optional_for_existing_documents() {
+        let graph: CallGraph = serde_json::from_value(json!({
+            "schemaVersion": "0.2",
+            "projectId": "codex",
+            "title": "Legacy graph",
+            "root": "root",
+            "nodes": [],
+            "edges": []
+        }))
+        .expect("legacy graph should deserialize");
+
+        assert!(graph.category_id.is_empty());
+        assert!(graph.category.is_empty());
+    }
+
+    #[test]
+    fn graph_summary_serializes_category_for_the_catalog() {
+        let summary = GraphSummary {
+            slug: "shell".into(),
+            title: "Shell".into(),
+            category_id: "tools".into(),
+            category: "工具执行".into(),
+            description: String::new(),
+            project_id: "codex".into(),
+            node_count: 2,
+            edge_count: 1,
+        };
+
+        let value = serde_json::to_value(summary).expect("summary should serialize");
+        assert_eq!(value["category"], "工具执行");
+        assert_eq!(value["categoryId"], "tools");
+    }
+
+    #[test]
+    fn graph_edge_round_trips_optional_execution_order() {
+        let edge: GraphEdge = serde_json::from_value(json!({
+            "id": "caller-first",
+            "from": "caller",
+            "to": "first",
+            "kind": "direct",
+            "order": 1,
+            "file": "src/lib.rs",
+            "line": 12
+        }))
+        .expect("ordered edge");
+
+        assert_eq!(edge.order, Some(1));
+        let value = serde_json::to_value(edge).expect("serialize edge");
+        assert_eq!(value["order"], 1);
     }
 }
