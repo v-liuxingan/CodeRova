@@ -8,6 +8,7 @@ export class TraceNavigator {
   constructor(graph) {
     this.graph = graph;
     this.nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    this.nodeOrder = new Map(graph.nodes.map((node, index) => [node.id, index]));
     this.edgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
     this.outgoing = groupEdges(graph.edges, "from");
     this.incoming = groupEdges(graph.edges, "to");
@@ -58,6 +59,30 @@ export class TraceNavigator {
       this.activeEdgeId = edge.id;
       this.history = [];
     }
+  }
+
+  focusNodes(nodeIds) {
+    const targetIds = new Set(nodeIds || []);
+    const visibleTargets = [...targetIds].filter(
+      (nodeId) =>
+        this.nodeById.has(nodeId)
+        && (!this.visibleNodeIds || this.visibleNodeIds.has(nodeId)),
+    );
+    if (!visibleTargets.length) return null;
+    const entries = visibleTargets.filter((nodeId) =>
+      !(this.incoming.get(nodeId) || []).some(
+        (edge) => targetIds.has(edge.from) && this.isEdgeVisible(edge),
+      ),
+    );
+    const candidates = entries.length ? entries : visibleTargets;
+    candidates.sort(
+      (left, right) =>
+        (this.nodeOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+        - (this.nodeOrder.get(right) ?? Number.MAX_SAFE_INTEGER),
+    );
+    const target = { type: "node", id: candidates[0] };
+    this.syncSelection(target);
+    return target;
   }
 
   snapshot() {

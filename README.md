@@ -1,16 +1,28 @@
 # Callgraph Visualizer
 
-面向任意本地源码仓库的调用链浏览器。它把带证据的调用关系保存为标准 JSON，通过
-Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。数据模型
-不限定编程语言、框架或仓库。
+Callgraph Visualizer 将真实源码转化为可探索、可解释、可验证的执行模型，帮助开发者
+快速理解陌生项目的关键流程。
 
-仓库当前附带八条 Codex 关键流程作为真实世界示例，覆盖端到端 Agent 回合、授权、
-交互回合、Shell 工具、线程恢复、分层配置、MCP 工具调用和上下文压缩。这些示例基于提交
+项目的战略目标是：**让开发者面对陌生项目时，能在 10 分钟内建立一个可验证的执行
+心智模型。** 它不只展示“谁调用了谁”，还要帮助用户理解流程目的、执行阶段、关键
+分支与循环、状态变化及其源码依据。详细的产品定位、衡量方式和取舍原则见
+[`docs/product-strategy.md`](docs/product-strategy.md)。
+
+工具面向任意本地源码仓库。它把带证据的调用关系保存为标准 JSON，通过 Rust 服务
+校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。数据模型不限定
+编程语言、框架或仓库。
+
+仓库当前附带十一条 Codex 关键流程作为真实世界示例，覆盖端到端 Agent 回合、授权、
+交互与非交互执行、Shell、MCP、Apply Patch、Code Mode、线程恢复、分层配置和上下文
+压缩。端到端图负责解释共同主干，复杂工具和运行入口使用独立调用图展开。这些示例基于提交
 `23899f7cb63a1510e53fddd68740dfc325853e3b` 核验。
 
 ## 功能
 
 - 标准 `callgraph.json` 数据模型和 JSON Schema。
+- 节点默认突出用户场景职责，随缩放从“场景概览 → 关系阅读 → 源码证据”逐级增加代码信息。
+- 调用图 0.4 可声明轻量场景阶段；全画布场景地图从真实边聚合主干、职责、分支和回环，
+  点击阶段下钻到可验证的真实调用图，不创建第二份图数据。
 - 节点、连线、职责、证据和置信度展示；精确调用位置直接标注在连线上。
 - 连线与标签分层渲染，标签按曲线真实位置偏移为信息卡，不遮挡字符或制造断线错觉。
 - 上游、下游、完整路径聚焦。
@@ -31,7 +43,10 @@ Rust 服务校验源码位置，再用可交互 SVG 展示节点、调用方向�
   代码折叠、查找、自动换行和字体缩放；装载失败时自动回退到安全 DOM 预览。
 - 详情侧栏支持拖拽调宽、键盘调宽和双击复位；源码预览可进入宽屏专注模式。
 - 预览核心不依赖特定语言分析器；轻量语言着色可注册，未知语言安全回退为纯文本。
-- 多分支节点可按目标、关系与调用位置显式选择下游分支，输入控件聚焦时方向键自动避让。
+- 多下游节点按真实语义显示调用顺序、条件路径、异步路径或普通下游路径，并按目标、关系
+  与调用位置选择下一步；输入控件聚焦时方向键自动避让。
+- 阶段下钻会同步代码预览与 SOURCE WALK 到阶段入口；跨阶段点击直接切换场景上下文。
+- 图谱概览区分业务终点和出度为零的结构出口，避免把内部协议节点误读为用户结果。
 - 虚拟节点或省略中间节点的抽象连线不伪造调用位置，并显示不可用原因。
 - Rust CLI 校验图结构和真实源码位置。
 - 后端校验后由浏览器触发 `vscode://` 外部协议，不创建 shell 或编辑器进程。
@@ -122,6 +137,31 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 [`docs/control-flow-semantics.md`](docs/control-flow-semantics.md)。前端点击任意节点后，
 自动强调其全部上游和下游，完整图始终保留，详见
 [`docs/node-path-focus.md`](docs/node-path-focus.md)。
+
+跨越多个用户场景阶段的图可使用 0.4 `phases`。每个节点最多归属一个 `phaseId`；阶段
+提供稳定布局顺序、标题和摘要，前端根据真实跨阶段边自动生成包含分支、汇合与回环的场景
+拓扑，并在保持当前缩放比例的前提下定位节点。`order` 不代表严格线性执行，简单调用图
+可以继续省略阶段：
+
+```json
+{
+  "schemaVersion": "0.4",
+  "phases": [
+    {
+      "id": "model-request",
+      "title": "发起模型请求",
+      "summary": "装配工具和 Prompt，并选择模型传输。",
+      "order": 3
+    }
+  ],
+  "nodes": [
+    {
+      "id": "turn.run-sampling",
+      "phaseId": "model-request"
+    }
+  ]
+}
+```
 
 同一方法内存在可靠执行先后的普通调用，可在调用边上填写可选 `order`。图中会以
 `[01] / [02]` 标记步骤、按序排列同级关系，并让“下一步”优先进入最早调用；互斥分支、
@@ -234,6 +274,9 @@ graphs/
   codex-config-resolution.json
   codex-context-compaction.json
   codex-end-to-end-agent-loop.json
+  codex-exec-lifecycle.json
+  codex-apply-patch-lifecycle.json
+  codex-code-mode-execution.json
   codex-mcp-tool-call.json
   codex-shell-tool-execution.json
   codex-thread-resume.json

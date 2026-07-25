@@ -19,12 +19,47 @@ const FLOW_KIND_LABELS = {
   "loop-exit": "循环退出",
 };
 
+const EDGE_KIND_LABELS = {
+  direct: "直接调用",
+  callback: "回调",
+  "trait-dispatch": "Trait 分发",
+  spawn: "异步任务",
+  remote: "远程调用",
+  "async-boundary": "异步边界",
+  "data-flow": "数据流",
+};
+
 export function edgeFlowKind(edge) {
   return edge.flowKind || "normal";
 }
 
 export function edgeFlowKindLabel(edge) {
   return FLOW_KIND_LABELS[edgeFlowKind(edge)] || "";
+}
+
+export function edgeRelationLabel(edge) {
+  return edgeFlowKindLabel(edge)
+    || EDGE_KIND_LABELS[edge?.kind]
+    || edge?.kind
+    || "调用";
+}
+
+export function edgeGroupLabel(edges) {
+  if (edges.some((edge) => ["branch", "fallback"].includes(edgeFlowKind(edge)))) {
+    return "条件路径";
+  }
+  if (edges.some((edge) => edgeExecutionOrder(edge) !== null)) {
+    return "调用顺序";
+  }
+  if (
+    edges.length
+    && edges.every((edge) =>
+      ["spawn", "callback", "async-boundary"].includes(edge?.kind),
+    )
+  ) {
+    return "异步路径";
+  }
+  return "下游路径";
 }
 
 export function edgeFlowSemanticText(edge) {

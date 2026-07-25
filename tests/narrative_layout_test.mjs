@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { GraphState } from "../public/js/graph-state.js";
 import { NarrativeLayout } from "../public/js/layouts/narrative-layout.js";
-import { computeEdgeGeometry } from "../public/js/renderers/svg-renderer.js";
+import {
+  computeEdgeGeometry,
+  semanticZoomTier,
+  truncateTextToWidth,
+} from "../public/js/renderers/svg-renderer.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const layout = new NarrativeLayout();
@@ -15,6 +19,8 @@ testDeterministicBranchPlacement();
 testExplicitExecutionOrderPrecedesEdgeIds();
 testCycleSafetyAndDataFallback();
 testPositionOverrides();
+testSemanticZoomTiers();
+testWidthAwareTextTruncation();
 console.log("NarrativeLayout: all assertions passed");
 
 async function testAllRealGraphs() {
@@ -102,6 +108,9 @@ async function testVisibleScenarioCompleteness() {
   assert.deepEqual(feedbackIds(result), [
     "e2e.compacted-history-to-prompt",
     "e2e.history-back-to-prompt",
+    "e2e.hook-prompt-to-prompt",
+    "e2e.sampling-reload-history",
+    "e2e.steer-queue-to-record-inputs",
   ]);
   assert.ok(
     result.edges
@@ -230,6 +239,33 @@ function testPositionOverrides() {
   const geometry = computeEdgeGeometry(result.edges[0], "vertical");
   assert.equal(geometry.routingRole, "feedback");
   assert.match(geometry.pathData, / H .* V .* H /);
+}
+
+function testSemanticZoomTiers() {
+  assert.equal(semanticZoomTier(0.12), "overview");
+  assert.equal(semanticZoomTier(0.28), "context");
+  assert.equal(semanticZoomTier(0.75), "context");
+  assert.equal(semanticZoomTier(0.76), "evidence");
+  assert.equal(semanticZoomTier(1.4), "evidence");
+}
+
+function testWidthAwareTextTruncation() {
+  const wideText = "准备并发送包含上下文与工具定义的模型请求";
+  const fittedWideText = truncateTextToWidth(
+    wideText,
+    12,
+    (value) => Array.from(value).length * 2,
+  );
+  assert.equal(fittedWideText, "准备并发送…");
+  assert.ok(Array.from(fittedWideText).length * 2 <= 12);
+
+  const emojiText = "执行🔧工具调用并回写结果";
+  const fittedEmojiText = truncateTextToWidth(
+    emojiText,
+    10,
+    (value) => Array.from(value).length,
+  );
+  assert.equal(fittedEmojiText, "执行🔧工具调用并回…");
 }
 
 function snapshot(result) {

@@ -69,6 +69,7 @@ html.inspector-width-2720 { --inspect: 2720px; }
 html.inspector-width-2880 { --inspect: 2880px; }
 html.inspector-collapsed { --inspect: 44px; }
 html.rail-collapsed { --rail: 44px; }
+html.scene-map-active { --inspect: 0px; }
 
 [data-theme="aether"] {
   color-scheme: dark;
@@ -509,6 +510,19 @@ button { color: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#graph-overview-end {
+  color: var(--cyan);
+  font-weight: 650;
+}
+#graph-overview-sinks-wrap {
+  margin-top: 2px;
+  padding-top: 7px;
+  border-top: 1px dashed color-mix(in srgb, var(--line) 78%, transparent);
+}
+#graph-overview-sinks {
+  color: var(--text-subtle);
+  font-size: 8px;
+}
 .search-box { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 8px 2px; color: var(--muted); }
 .search-box:focus-within { border-color: var(--acid); color: var(--acid); }
 .search-box input { min-width: 0; flex: 1; background: transparent; border: 0; outline: 0; color: var(--paper); font-size: 12px; }
@@ -531,9 +545,19 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 48px 43px minmax(0, 1fr);
+  grid-template-rows: 48px 0 43px minmax(0, 1fr);
 }
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 0 13px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); }
+.workspace.has-scene-map {
+  grid-template-rows: 48px 36px 43px minmax(0, 1fr);
+}
+.workspace > .toolbar,
+.workspace > .view-context,
+.workspace > .source-stepper,
+.workspace > .phase-navigator,
+.workspace > .canvas-wrap {
+  grid-column: 1;
+}
+.toolbar { grid-row: 1; display: flex; align-items: center; gap: 8px; padding: 0 13px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); }
 .tool-group { display: flex; }
 .tool, .icon-tool {
   height: 28px;
@@ -564,7 +588,261 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .validation-badge.valid { border-color: rgb(200 240 74 / 45%); color: var(--acid); }
 .validation-badge.invalid { border-color: rgb(255 111 121 / 55%); color: var(--rose); }
 
+.view-context {
+  grid-row: 2;
+  position: relative;
+  z-index: 7;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 68%, var(--panel));
+}
+.view-context-root,
+.view-context-action {
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: 9px "Microsoft YaHei UI", sans-serif;
+  cursor: pointer;
+}
+.view-context-root {
+  padding: 0 7px;
+  color: var(--acid);
+  font-weight: 650;
+}
+.view-context-root:hover,
+.view-context-root:focus-visible,
+.view-context-action:hover,
+.view-context-action:focus-visible {
+  color: var(--paper);
+  background: color-mix(in srgb, var(--acid) 8%, var(--panel-2));
+  outline: 1px solid color-mix(in srgb, var(--acid) 42%, transparent);
+}
+.view-context-separator {
+  color: var(--line-strong);
+  font: 11px "Cascadia Code", monospace;
+}
+.view-context strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.view-context-action {
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+}
+.workspace.scene-mode .callgraph-only { display: none !important; }
+.workspace.scene-mode .source-stepper,
+.workspace.scene-mode .canvas-wrap {
+  visibility: hidden;
+  pointer-events: none;
+}
+.scene-map-active .inspector,
+.scene-map-active .inspector-resizer {
+  display: none;
+}
+
+.phase-navigator {
+  grid-row: 3 / 5;
+  grid-column: 1;
+  position: relative;
+  z-index: 6;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--cyan) 4%, transparent), transparent 42%),
+    var(--canvas);
+  cursor: url("/assets/cursors/canvas-pointer.svg") 2 2, grab;
+}
+.phase-navigator.dragging {
+  cursor: url("/assets/cursors/canvas-drag.svg") 12 12, grabbing;
+}
+.phase-navigator[hidden] { display: none; }
+.phase-navigator-heading {
+  position: absolute;
+  z-index: 5;
+  top: 18px;
+  left: 18px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 132px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+  pointer-events: none;
+}
+.phase-navigator-heading span {
+  color: var(--acid);
+  font: 8px "Cascadia Code", monospace;
+  letter-spacing: .15em;
+}
+.phase-navigator-heading strong {
+  color: var(--paper);
+  font-size: 15px;
+  font-weight: 650;
+}
+.phase-navigator-heading small {
+  color: var(--text-subtle);
+  font: 8px "Cascadia Code", monospace;
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
+.phase-topology-viewport {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.phase-topology-plane {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+.phase-topology-graph {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.phase-relation {
+  fill: none;
+  stroke: color-mix(in srgb, var(--edge-direct) 76%, var(--line));
+  stroke-width: 1.7;
+  opacity: .72;
+  vector-effect: non-scaling-stroke;
+}
+.phase-relation-spine {
+  stroke-width: 2;
+  opacity: .88;
+}
+.phase-relation-outcome {
+  stroke-width: 2.1;
+  opacity: .94;
+}
+.phase-relation-shortcut {
+  stroke-dasharray: 3 4;
+  opacity: .42;
+}
+.phase-relation-feedback {
+  stroke: color-mix(in srgb, var(--edge-direct) 82%, var(--line));
+  stroke-width: 1.8;
+  stroke-dasharray: 9 6;
+  opacity: .76;
+}
+.phase-relation-branch,
+.phase-relation-fallback {
+  stroke: var(--amber);
+}
+.phase-relation-loop-exit {
+  stroke: var(--cyan);
+  stroke-dasharray: 2 3;
+}
+.phase-relation-merge { stroke: var(--cyan); }
+.phase-relation-loop-back {
+  stroke: color-mix(in srgb, var(--amber) 88%, var(--edge-direct));
+  opacity: .94;
+}
+.phase-topology-nodes {
+  pointer-events: all;
+}
+.phase-node {
+  cursor: pointer;
+  outline: none;
+}
+.phase-node-box {
+  fill: var(--node-bg);
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 9px 18px rgb(0 0 0 / 12%));
+  transition: fill .16s ease, stroke .16s ease, filter .16s ease;
+}
+.phase-node-accent { fill: var(--acid); }
+.phase-node-port {
+  fill: var(--node-port);
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+.phase-node:hover .phase-node-box,
+.phase-node:focus-visible .phase-node-box {
+  stroke: var(--acid);
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--acid) 22%, transparent));
+}
+.phase-node.active .phase-node-box {
+  fill: var(--node-selected);
+  stroke: var(--acid);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--acid) 25%, transparent));
+}
+.phase-node.active .phase-node-port {
+  fill: var(--acid);
+  stroke: var(--acid);
+}
+.phase-node-decision .phase-node-box {
+  stroke: color-mix(in srgb, var(--amber) 58%, var(--line));
+}
+.phase-node-decision .phase-node-index { fill: var(--amber); }
+.phase-node-branch .phase-node-box {
+  fill: color-mix(in srgb, var(--amber) 4%, var(--node-bg));
+  stroke: color-mix(in srgb, var(--amber) 46%, var(--line));
+}
+.phase-node-branch .phase-node-index { fill: var(--amber); }
+.phase-node-loop .phase-node-box {
+  stroke: color-mix(in srgb, var(--amber) 48%, var(--line));
+  stroke-dasharray: 5 3;
+}
+.phase-node-loop .phase-node-index {
+  fill: color-mix(in srgb, var(--amber) 76%, var(--text-secondary));
+}
+.phase-node-terminal .phase-node-box {
+  fill: color-mix(in srgb, var(--cyan) 5%, var(--node-bg));
+  stroke: color-mix(in srgb, var(--cyan) 56%, var(--line));
+}
+.phase-node-terminal .phase-node-index { fill: var(--cyan); }
+.phase-node-index {
+  fill: var(--text-subtle);
+  font: 9px "Cascadia Code", monospace;
+  letter-spacing: .12em;
+}
+.phase-node.active .phase-node-index { fill: var(--acid); }
+.phase-node-title {
+  fill: var(--paper);
+  font: 650 14px "Microsoft YaHei UI", sans-serif;
+}
+.phase-node-summary {
+  fill: var(--text-secondary);
+  font: 10px "Microsoft YaHei UI", sans-serif;
+}
+.phase-node-route {
+  fill: var(--text-subtle);
+  font: 9px "Microsoft YaHei UI", sans-serif;
+}
+.phase-node-branch .phase-node-route,
+.phase-node-loop .phase-node-route {
+  fill: color-mix(in srgb, var(--amber) 72%, var(--text-secondary));
+}
+.phase-node-terminal .phase-node-route { fill: var(--cyan); }
 .canvas-wrap {
+  grid-row: 4;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -578,7 +856,71 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 }
 .canvas-wrap.marquee-selecting { cursor: crosshair; user-select: none; }
 body.resizing-inspector { cursor: col-resize; user-select: none; }
+.phase-context-card {
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  left: 16px;
+  width: min(286px, calc(100% - 32px));
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px 12px 18px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--amber) 56%, var(--line));
+  border-radius: 5px;
+  color: var(--paper);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 14%);
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.phase-context-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--amber);
+}
+.phase-context-card:hover,
+.phase-context-card:focus-visible {
+  border-color: var(--acid);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--acid) 16%, transparent), 0 14px 30px rgb(0 0 0 / 16%);
+  outline: none;
+  transform: translateY(-1px);
+}
+.phase-context-card.active {
+  border-color: color-mix(in srgb, var(--acid) 70%, var(--cyan));
+  background: color-mix(in srgb, var(--node-selected) 92%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--acid) 18%, transparent), 0 12px 28px rgb(0 0 0 / 12%);
+}
+.phase-context-card.active::before { background: var(--acid); }
+.phase-context-card > span {
+  color: var(--amber);
+  font: 8px "Cascadia Code", monospace;
+  letter-spacing: .12em;
+}
+.phase-context-card.active > span { color: var(--acid); }
+.phase-context-card > strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+.phase-context-card > small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: 10px/1.55 "Microsoft YaHei UI", sans-serif;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.phase-context-card > em {
+  color: var(--amber);
+  font: normal 8px "Microsoft YaHei UI", sans-serif;
+}
+.phase-context-card.active > em { color: var(--cyan); }
 .source-stepper {
+  grid-row: 3;
   position: relative;
   z-index: 4;
   display: grid;
@@ -785,13 +1127,47 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
   display: grid;
   gap: 2px;
 }
+.trace-branch-option-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .trace-branch-option-copy strong,
 .trace-branch-option-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.trace-branch-option-copy strong { font-size: 10px; }
+.trace-branch-option-copy strong {
+  min-width: 0;
+  flex: 1;
+  font-size: 10px;
+}
+.trace-branch-semantic {
+  flex: none;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 42%, var(--line));
+  border-radius: 999px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 8%, var(--panel-2));
+  font: 6px "Cascadia Code", monospace;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.trace-branch-semantic-branch,
+.trace-branch-semantic-fallback,
+.trace-branch-semantic-loop-exit,
+.trace-branch-semantic-loop-back {
+  border-color: color-mix(in srgb, var(--amber) 56%, var(--line));
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, var(--panel-2));
+}
+.trace-branch-semantic-merge {
+  border-color: color-mix(in srgb, var(--acid) 52%, var(--line));
+  color: var(--acid);
+  background: color-mix(in srgb, var(--acid) 7%, var(--panel-2));
+}
 .trace-branch-option-copy small {
   color: var(--text-subtle);
   font: 7px "Cascadia Code", monospace;
@@ -848,6 +1224,11 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
 .data-edge-label-layer .graph-edge-label-group.selected { opacity: 1; }
 .graph-edge-group.path-dimmed { opacity: .24; transition: opacity .16s ease; }
 .graph-edge-group.path-focused { opacity: 1; }
+.graph-edge-group.phase-dimmed { opacity: .16; transition: opacity .16s ease; }
+.graph-edge-group.phase-focused { opacity: 1; }
+.graph-edge-group.phase-dimmed:hover,
+.graph-edge-group.phase-dimmed:focus-visible,
+.graph-edge-group.phase-dimmed.selected { opacity: .86; }
 .graph-edge-group.path-dimmed:hover,
 .graph-edge-group.path-dimmed:focus-visible,
 .graph-edge-group.path-dimmed.selected { opacity: 1; }
@@ -935,6 +1316,11 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
 }
 .graph-node.path-dimmed { opacity: .34; transition: opacity .16s ease; }
 .graph-node.path-focused { opacity: 1; }
+.graph-node.phase-dimmed { opacity: .2; transition: opacity .16s ease; }
+.graph-node.phase-focused { opacity: 1; }
+.graph-node.phase-dimmed:hover,
+.graph-node.phase-dimmed:focus-visible,
+.graph-node.phase-dimmed.selected { opacity: .82; }
 .graph-node.path-dimmed:hover,
 .graph-node.path-dimmed:focus-visible,
 .graph-node.path-dimmed.selected,
@@ -956,10 +1342,31 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
   filter: drop-shadow(0 0 9px color-mix(in srgb, var(--cyan) 34%, transparent));
 }
 .graph-node.search-dim { opacity: .18; }
-.node-kind { fill: var(--acid); font: 8px "Cascadia Code", monospace; letter-spacing: .12em; }
-.node-label { fill: var(--paper); font: 600 12px "Bahnschrift", sans-serif; }
-.node-crate { fill: var(--text-secondary); font: 9px "Cascadia Code", monospace; }
-.node-role { fill: var(--text-subtle); font: 9px "Microsoft YaHei UI", sans-serif; }
+.node-kind { fill: var(--acid); font: 7px "Cascadia Code", monospace; letter-spacing: .12em; }
+.node-role { fill: var(--paper); font: 650 13px "Microsoft YaHei UI", sans-serif; }
+.node-summary { fill: var(--text-secondary); font: 9px "Microsoft YaHei UI", sans-serif; }
+.node-label { fill: var(--text-secondary); font: 600 9px "Cascadia Code", monospace; }
+.node-crate { fill: var(--text-subtle); font: 8px "Cascadia Code", monospace; }
+.graph-node.phase-focused .node-box {
+  stroke: color-mix(in srgb, var(--acid) 68%, var(--cyan));
+  stroke-width: 1.8;
+}
+#graph-canvas[data-semantic-zoom="overview"] .node-technical,
+#graph-canvas[data-semantic-zoom="overview"] .node-summary,
+#graph-canvas[data-semantic-zoom="context"] .node-technical,
+#graph-canvas:not([data-semantic-zoom="evidence"]) .edge-callsite {
+  display: none;
+}
+#graph-canvas[data-semantic-zoom="overview"] .node-role {
+  font-size: 14px;
+  transform: translateY(14px);
+}
+#graph-canvas[data-semantic-zoom="overview"]
+  .graph-edge-label-group[data-flow-kind="normal"][data-execution-order=""] {
+  opacity: 0;
+  pointer-events: none;
+}
+#graph-canvas[data-semantic-zoom="context"] .node-label { display: none; }
 .node-port { fill: var(--node-port); stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .node-collapse { fill: var(--panel-2); stroke: var(--line); cursor: pointer; }
 .node-collapse-text { fill: var(--paper); font: 10px "Cascadia Code", monospace; pointer-events: none; }

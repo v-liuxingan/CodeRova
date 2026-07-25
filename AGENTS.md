@@ -4,6 +4,31 @@ This repository is a single deployable application with independently evolvable
 Rust backend and browser frontend implementations. Read
 `docs/agent-development-boundaries.md` before changing a cross-boundary feature.
 
+## Product strategy
+
+The strategic goal is: **help a developer build a verifiable execution mental
+model of an unfamiliar project within 10 minutes.**
+
+Read `docs/product-strategy.md` before proposing or implementing product,
+interaction, graph-schema, graph-generation, or learning-content changes.
+Callgraph JSON, analysis adapters, rendering, and navigation are means to this
+goal, not success metrics by themselves.
+
+Evaluate product work in this order:
+
+1. Does it reduce the cost of understanding an unfamiliar execution flow?
+2. Does it add execution meaning instead of only fields or visual elements?
+3. Can important conclusions be verified against source evidence, with
+   uncertainty made explicit?
+4. Does it reduce cognitive load and preserve the reader's current context?
+5. Does it generalize to accumulated real-project graphs?
+
+Prefer a smaller design when configuration, modes, buttons, or visual noise
+cost more attention than the understanding they provide. Do not optimize for
+node count, edge count, diagram complexity, or feature count. For significant
+product changes, state which understanding problem is being solved and how it
+can be evaluated using the north-star task in `docs/product-strategy.md`.
+
 ## Choose one ownership role
 
 ### Backend agent

@@ -1,12 +1,18 @@
 import { CallgraphApi } from "./api.js";
 import { groupGraphCatalog } from "./catalog-grouping.js";
 import { ClickNavigationPolicy } from "./click-navigation-policy.js";
-import { edgeExecutionOrder } from "./edge-semantics.js";
+import {
+  edgeExecutionOrder,
+  edgeFlowKind,
+  edgeGroupLabel,
+  edgeRelationLabel,
+} from "./edge-semantics.js";
 import { GraphState } from "./graph-state.js";
 import { Inspector } from "./inspector.js";
 import { InspectorWorkbenchController } from "./inspector-workbench-controller.js";
 import { NarrativeLayout } from "./layouts/narrative-layout.js";
 import { LayoutPersistenceController } from "./layout-persistence-controller.js";
+import { PhaseNavigator } from "./phase-navigator.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
 import { ResizablePanelController } from "./resizable-panel-controller.js";
@@ -18,12 +24,16 @@ const api = new CallgraphApi();
 const CATALOG_COLLAPSE_STORAGE_KEY = "callgraph.catalog.collapsed.v1";
 const RAIL_COLLAPSE_STORAGE_KEY = "callgraph.rail.collapsed.v1";
 const elements = {
+  workspace: document.querySelector(".workspace"),
   railCollapse: document.querySelector("#rail-collapse"),
   graphList: document.querySelector("#graph-list"),
   graphTitle: document.querySelector("#graph-title"),
   graphOverviewDescription: document.querySelector("#graph-overview-description"),
   graphOverviewStart: document.querySelector("#graph-overview-start"),
+  graphOverviewEndLabel: document.querySelector("#graph-overview-end-label"),
   graphOverviewEnd: document.querySelector("#graph-overview-end"),
+  graphOverviewSinksWrap: document.querySelector("#graph-overview-sinks-wrap"),
+  graphOverviewSinks: document.querySelector("#graph-overview-sinks"),
   graphOverviewScale: document.querySelector("#graph-overview-scale"),
   health: document.querySelector("#health"),
   search: document.querySelector("#search"),
@@ -33,10 +43,21 @@ const elements = {
   revision: document.querySelector("#revision"),
   status: document.querySelector("#status-text"),
   canvas: document.querySelector("#graph-canvas"),
+  canvasWrap: document.querySelector("#canvas-wrap"),
   empty: document.querySelector("#empty-state"),
   orientation: document.querySelector("#orientation"),
   themeSelect: document.querySelector("#theme-select"),
   sourceStepper: document.querySelector(".source-stepper"),
+  phaseNavigator: document.querySelector("#phase-navigator"),
+  viewContext: document.querySelector("#view-context"),
+  sceneViewButton: document.querySelector("#scene-view-button"),
+  viewContextCurrent: document.querySelector("#view-context-current"),
+  fullCallgraphButton: document.querySelector("#full-callgraph-button"),
+  phaseContextCard: document.querySelector("#phase-context-card"),
+  phaseContextCardKicker: document.querySelector("#phase-context-card-kicker"),
+  phaseContextCardTitle: document.querySelector("#phase-context-card-title"),
+  phaseContextCardSummary: document.querySelector("#phase-context-card-summary"),
+  phaseContextCardStatus: document.querySelector("#phase-context-card-status"),
   tracePrevious: document.querySelector("#trace-previous"),
   traceCallSite: document.querySelector("#trace-callsite"),
   traceBranchWrap: document.querySelector("#trace-branch-wrap"),
@@ -93,6 +114,9 @@ const layoutPersistence = new LayoutPersistenceController(api, {
     toast(message, true);
   },
 });
+const phaseNavigator = new PhaseNavigator(elements.phaseNavigator, {
+  onSelect: (phaseId) => enterPhase(phaseId),
+});
 
 let activeSlug = null;
 let activeGraph = null;
@@ -102,6 +126,8 @@ let unsubscribe = null;
 let firstRender = true;
 let catalogGraphs = [];
 let categoryEditorSlug = null;
+let workspaceView = "code";
+let drilldownPhaseId = null;
 
 initializeThemes();
 initializeRail();
@@ -378,6 +404,7 @@ async function activateGraph(slug) {
   const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug)]);
   activeSlug = slug;
   activeGraph = graph;
+  drilldownPhaseId = null;
   firstRender = true;
   unsubscribe?.();
   state = new GraphState(graph, layout);
@@ -389,6 +416,8 @@ async function activateGraph(slug) {
     element.classList.toggle("active", element.dataset.slug === slug);
   });
   elements.graphTitle.textContent = graph.title;
+  phaseNavigator.render(graph);
+  setWorkspaceView(phaseNavigator.hasPhases() ? "scene" : "code");
   renderGraphOverview(graph);
   elements.revision.textContent = `REVISION ${(graph.sourceRevision || "—").slice(0, 10)}`;
   buildKindFilters();
@@ -402,6 +431,10 @@ function render(currentState, reason) {
     new Set(visibleGraph.nodes.map((node) => node.id)),
   );
   renderer.render(visibleGraph, currentState);
+  phaseNavigator.setActive(currentState.activePhaseId);
+  if (workspaceView === "code" && phaseNavigator.hasPhases()) {
+    updateWorkspaceContext(drilldownPhaseId, currentState.activePhaseId);
+  }
   inspector.render(currentState.selected, currentState.graph);
   void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
   elements.visibleCount.textContent =
@@ -429,6 +462,83 @@ function render(currentState, reason) {
   );
 }
 
+function activeViewportController() {
+  return workspaceView === "scene" ? phaseNavigator : renderer;
+}
+
+function enterPhase(phaseId) {
+  if (!state || !phaseNavigator.hasPhases()) return;
+  drilldownPhaseId = phaseId;
+  setWorkspaceView("code", phaseId);
+  state.setPhaseFocus(phaseId);
+  const phaseNodeIds = state.graph.nodes
+    .filter((node) => node.phaseId === phaseId)
+    .map((node) => node.id);
+  const phaseEntry = traceNavigator?.focusNodes(phaseNodeIds);
+  if (phaseEntry) state.select(phaseEntry);
+  requestAnimationFrame(() => renderer.centerNodes(phaseNodeIds));
+}
+
+function setWorkspaceView(view, phaseId = null) {
+  const hasSceneMap = phaseNavigator.hasPhases();
+  workspaceView = view === "scene" && hasSceneMap ? "scene" : "code";
+  elements.workspace.classList.toggle("has-scene-map", hasSceneMap);
+  elements.workspace.classList.toggle("scene-mode", workspaceView === "scene");
+  elements.workspace.classList.toggle("code-mode", workspaceView === "code");
+  document.documentElement.classList.toggle(
+    "scene-map-active",
+    workspaceView === "scene",
+  );
+  elements.workspace.dataset.workspaceView = workspaceView;
+  elements.viewContext.hidden = !hasSceneMap;
+  phaseNavigator.setVisible(workspaceView === "scene");
+  elements.sceneViewButton.setAttribute(
+    "aria-current",
+    workspaceView === "scene" ? "page" : "false",
+  );
+  elements.sourceStepper.setAttribute(
+    "aria-hidden",
+    String(workspaceView === "scene"),
+  );
+  elements.canvasWrap.setAttribute(
+    "aria-hidden",
+    String(workspaceView === "scene"),
+  );
+  if (phaseId) drilldownPhaseId = phaseId;
+  updateWorkspaceContext(drilldownPhaseId, state?.activePhaseId);
+}
+
+function updateWorkspaceContext(phaseId, activePhaseId) {
+  if (workspaceView === "scene") {
+    elements.viewContextCurrent.textContent = "全局结构";
+    elements.fullCallgraphButton.hidden = false;
+    elements.fullCallgraphButton.textContent = "查看完整调用图 →";
+    elements.phaseContextCard.hidden = true;
+    return;
+  }
+  const phase = activeGraph?.phases?.find(
+    (candidate) => candidate.id === phaseId,
+  );
+  elements.viewContextCurrent.textContent = phase?.title || "完整调用图";
+  elements.fullCallgraphButton.hidden = !phase;
+  elements.fullCallgraphButton.textContent = "退出阶段聚焦";
+  elements.phaseContextCard.hidden = !phase;
+  if (!phase) return;
+  const phaseIndex = activeGraph.phases.findIndex(
+    (candidate) => candidate.id === phase.id,
+  );
+  const highlighted = activePhaseId === phase.id;
+  elements.phaseContextCard.classList.toggle("active", highlighted);
+  elements.phaseContextCard.setAttribute("aria-pressed", String(highlighted));
+  elements.phaseContextCardKicker.textContent =
+    `SCENARIO PHASE · P${phaseIndex + 1}`;
+  elements.phaseContextCardTitle.textContent = phase.title;
+  elements.phaseContextCardSummary.textContent = phase.summary || phase.title;
+  elements.phaseContextCardStatus.textContent = highlighted
+    ? "当前场景已高亮"
+    : "高亮已取消 · 点击恢复";
+}
+
 function targetTypeLabel(type) {
   return {
     node: "节点",
@@ -454,18 +564,42 @@ function renderGraphOverview(graph) {
   const start = nodeById.get(graph.root);
   const nodesWithOutgoing = new Set(graph.edges.map((edge) => edge.from));
   const endpoints = graph.nodes.filter((node) => !nodesWithOutgoing.has(node.id));
-  const endpointLabels = endpoints.map((node) => node.label);
+  const endpointLabels = endpoints.map(nodeScenarioLabel);
   const endpointText = endpointLabels.length > 1
     ? `${endpointLabels[0]} 等 ${endpointLabels.length} 个`
     : endpointLabels[0] || "未识别";
 
   elements.graphOverviewDescription.textContent = graph.description || "暂无图谱说明";
-  elements.graphOverviewStart.textContent = start?.label || graph.root || "未识别";
-  elements.graphOverviewStart.title = start?.id || graph.root || "";
-  elements.graphOverviewEnd.textContent = endpointText;
-  elements.graphOverviewEnd.title = endpointLabels.join("、");
+  elements.graphOverviewStart.textContent =
+    nodeScenarioLabel(start) || graph.root || "未识别";
+  elements.graphOverviewStart.title = start
+    ? `${start.label} · ${start.id}`
+    : graph.root || "";
+  const orderedPhases = [...(graph.phases || [])].sort(
+    (left, right) => left.order - right.order,
+  );
+  const terminalPhase = orderedPhases.at(-1);
+  if (terminalPhase) {
+    elements.graphOverviewEndLabel.textContent = "业务终点";
+    elements.graphOverviewEnd.textContent = terminalPhase.title;
+    elements.graphOverviewEnd.title = terminalPhase.summary || terminalPhase.title;
+    elements.graphOverviewSinksWrap.hidden = false;
+    elements.graphOverviewSinks.textContent = endpointText;
+    elements.graphOverviewSinks.title = endpointLabels.join("、");
+  } else {
+    elements.graphOverviewEndLabel.textContent = "结构终点";
+    elements.graphOverviewEnd.textContent = endpointText;
+    elements.graphOverviewEnd.title = endpointLabels.join("、");
+    elements.graphOverviewSinksWrap.hidden = true;
+    elements.graphOverviewSinks.textContent = "";
+    elements.graphOverviewSinks.title = "";
+  }
   elements.graphOverviewScale.textContent =
     `${graph.nodes.length} 节点 · ${graph.edges.length} 关系`;
+}
+
+function nodeScenarioLabel(node) {
+  return node?.role?.trim() || node?.label?.trim() || "";
 }
 
 async function validateActiveGraph() {
@@ -512,9 +646,30 @@ function bindControls() {
       state.setFocus(button.dataset.focus);
     });
   });
-  document.querySelector("#zoom-in").addEventListener("click", () => renderer.zoomBy(1.18));
-  document.querySelector("#zoom-out").addEventListener("click", () => renderer.zoomBy(0.84));
-  document.querySelector("#fit-view").addEventListener("click", () => renderer.fit());
+  document.querySelector("#zoom-in").addEventListener(
+    "click",
+    () => activeViewportController().zoomBy(1.18),
+  );
+  document.querySelector("#zoom-out").addEventListener(
+    "click",
+    () => activeViewportController().zoomBy(0.84),
+  );
+  document.querySelector("#fit-view").addEventListener(
+    "click",
+    () => activeViewportController().fit(),
+  );
+  elements.sceneViewButton.addEventListener("click", () => {
+    if (phaseNavigator.hasPhases()) setWorkspaceView("scene");
+  });
+  elements.phaseContextCard.addEventListener("click", () => {
+    if (!drilldownPhaseId || state?.activePhaseId === drilldownPhaseId) return;
+    state?.setPhaseFocus(drilldownPhaseId);
+  });
+  elements.fullCallgraphButton.addEventListener("click", () => {
+    drilldownPhaseId = null;
+    state?.clearInteractionSelection();
+    setWorkspaceView("code");
+  });
   document.querySelector("#reset-view").addEventListener("click", () => state?.resetVisibility());
   document.querySelector("#reset-layout").addEventListener("click", () => {
     if (!state || !activeSlug) return;
@@ -587,6 +742,17 @@ function bindControls() {
 }
 
 function selectGraphTarget(target) {
+  if (workspaceView === "code" && drilldownPhaseId && target?.type === "node") {
+    const node = activeGraph?.nodes.find((candidate) => candidate.id === target.id);
+    if (node?.phaseId && node.phaseId !== drilldownPhaseId) {
+      const phase = activeGraph.phases?.find(
+        (candidate) => candidate.id === node.phaseId,
+      );
+      drilldownPhaseId = node.phaseId;
+      state?.setPhaseFocus(node.phaseId);
+      toast(`已切换到场景「${phase?.title || node.phaseId}」`);
+    }
+  }
   traceNavigator?.syncSelection(target);
   state?.select(target);
   if (clickNavigation.shouldOpen(activeGraph, target)) void openTarget(target);
@@ -646,8 +812,11 @@ function renderTraceBranches(snapshot) {
   }
 
   const selectedIndex = snapshot.branches.findIndex((branch) => branch.selected);
+  const groupLabel = edgeGroupLabel(
+    snapshot.branches.map((branch) => branch.edge),
+  );
   elements.traceBranchLabel.textContent =
-    `分支 ${Math.max(0, selectedIndex) + 1}/${snapshot.branches.length}`;
+    `${groupLabel} ${Math.max(0, selectedIndex) + 1}/${snapshot.branches.length}`;
   const selectedBranch = snapshot.branches[selectedIndex] || snapshot.branches[0];
   elements.traceBranchCurrent.textContent =
     selectedBranch.node?.label || selectedBranch.edge.to;
@@ -659,7 +828,7 @@ function renderTraceBranches(snapshot) {
       ? callSite.compactLabel
       : callSite.shortLabel || "无调用位置";
     option.textContent =
-      `${node?.label || edge.to} · ${edge.kind} · ${location}`;
+      `${node?.label || edge.to} · ${edgeRelationLabel(edge)} · ${location}`;
     option.title = `${edge.id} → ${node?.label || edge.to}`;
     option.selected = selected;
     return option;
@@ -679,7 +848,7 @@ function renderTraceBranches(snapshot) {
       const location = callSite.available
         ? callSite.compactLabel
         : callSite.shortLabel || "无调用位置";
-      const relation = edge.flowKind || edge.kind || "call";
+      const relation = edgeRelationLabel(edge);
       const executionOrder = edgeExecutionOrder(edge);
       const optionIndex = document.createElement("span");
       optionIndex.className = "trace-branch-index";
@@ -692,26 +861,39 @@ function renderTraceBranches(snapshot) {
       optionCopy.className = "trace-branch-option-copy";
       const optionTitle = document.createElement("strong");
       optionTitle.textContent = node?.label || edge.to;
+      const semanticBadge = document.createElement("span");
+      const semanticKind = edgeFlowKind(edge) !== "normal"
+        ? edgeFlowKind(edge)
+        : edge.kind || "call";
+      semanticBadge.className =
+        `trace-branch-semantic trace-branch-semantic-${semanticKind}`;
+      semanticBadge.textContent = relation;
       const optionMeta = document.createElement("small");
       optionMeta.textContent = [
         executionOrder
           ? `第 ${String(executionOrder).padStart(2, "0")} 步`
           : "",
-        relation,
         location,
       ].filter(Boolean).join(" · ");
-      optionCopy.append(optionTitle, optionMeta);
+      const optionHeading = document.createElement("span");
+      optionHeading.className = "trace-branch-option-heading";
+      optionHeading.append(optionTitle, semanticBadge);
+      optionCopy.append(optionHeading, optionMeta);
       const optionArrow = document.createElement("span");
       optionArrow.className = "trace-branch-option-arrow";
       optionArrow.setAttribute("aria-hidden", "true");
       optionArrow.textContent = "→";
       option.append(optionIndex, optionCopy, optionArrow);
-      option.title = `${edge.id} → ${node?.label || edge.to}`;
+      option.title = [
+        `${edge.id} → ${node?.label || edge.to}`,
+        relation,
+        edge.condition ? `条件：${edge.condition}` : "",
+      ].filter(Boolean).join(" · ");
       return option;
     },
   );
   elements.traceBranchMenu.replaceChildren(...menuOptions);
-  elements.traceBranchTrigger.title = "选择右箭头继续跟随的下游分支";
+  elements.traceBranchTrigger.title = `选择右箭头继续跟随的${groupLabel}`;
 }
 
 function setTraceBranchMenuOpen(open) {

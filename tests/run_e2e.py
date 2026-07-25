@@ -57,6 +57,11 @@ def main() -> int:
         check=True,
     )
     subprocess.run(
+        ["node", str(ROOT / "tests" / "edge_semantics_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
         ["node", str(ROOT / "tests" / "graph_state_collapse_test.mjs")],
         cwd=ROOT,
         check=True,
@@ -68,6 +73,11 @@ def main() -> int:
     )
     subprocess.run(
         ["node", str(ROOT / "tests" / "catalog_grouping_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "phase_topology_test.mjs")],
         cwd=ROOT,
         check=True,
     )

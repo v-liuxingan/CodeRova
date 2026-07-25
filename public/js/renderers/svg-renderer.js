@@ -2,6 +2,7 @@ import { resolveEdgeCallSite } from "../call-site.js";
 import {
   edgeExecutionOrder,
   edgeFlowKind,
+  edgeFlowKindLabel,
   edgeFlowSemanticText,
   isControlEdge,
 } from "../edge-semantics.js";
@@ -12,6 +13,11 @@ import {
 import { placeEdgeLabels } from "./edge-label-placer.js";
 
 const NS = "http://www.w3.org/2000/svg";
+const EDGE_LABEL_MAX_TEXT_WIDTH = 210;
+const EDGE_LABEL_FONT = '9px "Cascadia Code", monospace';
+const EDGE_LABEL_ORDERED_FONT = '700 9px "Cascadia Code", monospace';
+const EDGE_CALLSITE_FONT = '700 8px "Cascadia Code", monospace';
+const EDGE_CALLSITE_LETTER_SPACING = 0.16;
 const markerColorVariables = {
   direct: "--edge-direct",
   callback: "--edge-async",
@@ -80,8 +86,9 @@ export class SvgRenderer {
     );
     this.svg.dataset.layoutMode = this.lastLayout.layoutMode || "narrative";
     const selectionFocus = normalizeSelectionFocus(graph.selectionFocus);
+    const phaseFocus = normalizePhaseFocus(graph.phaseFocus);
     for (const entry of this.lastLayout.edges) {
-      this.drawEdge(entry, state, selectionFocus);
+      this.drawEdge(entry, state, selectionFocus, phaseFocus);
     }
     this.layoutEdgeLabels(state.orientation);
     const structure = visibleControlDegrees(graph.nodes, graph.edges);
@@ -91,6 +98,7 @@ export class SvgRenderer {
         state,
         structure.get(entry.node.id),
         selectionFocus,
+        phaseFocus,
       );
     }
     this.setViewport(viewport);
@@ -125,7 +133,7 @@ export class SvgRenderer {
     backEdge = false,
     feedbackLane = 0,
     bounds = null,
-  }, state, selectionFocus) {
+  }, state, selectionFocus, phaseFocus) {
     if (!from || !to) return;
     const kind = markerColorVariables[edge.kind] ? edge.kind : "direct";
     const dataFlow = edge.kind === "data-flow";
@@ -134,6 +142,9 @@ export class SvgRenderer {
       selectionFocus.active,
       selectionFocus.edgeIds.has(edge.id),
     );
+    const phaseFocused =
+      phaseFocus.nodeIds.has(edge.from) || phaseFocus.nodeIds.has(edge.to);
+    const phaseFocusClass = focusClass(phaseFocus.active, phaseFocused, "phase");
     const callSite = resolveEdgeCallSite(edge);
     const flowKind = edgeFlowKind(edge);
     const semanticText = edgeFlowSemanticText(edge);
@@ -156,7 +167,7 @@ export class SvgRenderer {
       selectEdge(event);
     };
     const edgeGroup = svgElement("g", {
-      class: `graph-edge-group${dataFlow ? " data-flow-relation" : ""}${pathFocusClass}${selected ? " selected" : ""}`,
+      class: `graph-edge-group${dataFlow ? " data-flow-relation" : ""}${pathFocusClass}${phaseFocusClass}${selected ? " selected" : ""}`,
       tabindex: "0",
       role: "button",
       "aria-label": accessibleLabel,
@@ -197,7 +208,7 @@ export class SvgRenderer {
     edgeGroup.append(hitTarget, path);
 
     const labelGroup = svgElement("g", {
-      class: `graph-edge-label-group graph-edge-group${dataFlow ? " data-flow-relation" : ""}${pathFocusClass}${selected ? " selected" : ""}`,
+      class: `graph-edge-label-group graph-edge-group${dataFlow ? " data-flow-relation" : ""}${pathFocusClass}${phaseFocusClass}${selected ? " selected" : ""}`,
       role: "button",
       tabindex: "0",
       "aria-label": accessibleLabel,
@@ -222,20 +233,20 @@ export class SvgRenderer {
     });
     labelGroup.append(card);
     let label = null;
-    if (edge.label || executionOrder) {
+    const displayLabel = edgeDisplayLabel(edge, executionOrder);
+    if (displayLabel) {
       label = svgElement("text", {
         class: `edge-label${executionOrder ? " ordered" : ""}`,
         x: "0",
         y: "-4",
         "text-anchor": "middle",
       });
-      const orderLabel = executionOrder
-        ? String(executionOrder).padStart(2, "0")
-        : "";
-      label.textContent = [
-        orderLabel ? `[${orderLabel}]` : "",
-        edge.label || "顺序调用",
-      ].filter(Boolean).join(" ");
+      setFittedTextContent(
+        label,
+        displayLabel,
+        EDGE_LABEL_MAX_TEXT_WIDTH,
+        executionOrder ? EDGE_LABEL_ORDERED_FONT : EDGE_LABEL_FONT,
+      );
       labelGroup.append(label);
     }
 
@@ -247,9 +258,15 @@ export class SvgRenderer {
       "data-edge-id": edge.id,
       "data-callsite-status": callSite.status,
     });
-    callSiteLabel.textContent = callSite.available
-      ? callSite.compactLabel
-      : `◇ ${callSite.shortLabel}`;
+    setFittedTextContent(
+      callSiteLabel,
+      callSite.available
+        ? callSite.compactLabel
+        : `◇ ${callSite.shortLabel}`,
+      EDGE_LABEL_MAX_TEXT_WIDTH,
+      EDGE_CALLSITE_FONT,
+      EDGE_CALLSITE_LETTER_SPACING,
+    );
     labelGroup.append(callSiteLabel);
     (dataFlow ? this.dataEdgeLayer : this.edgeLayer).append(edgeGroup);
     (dataFlow ? this.dataEdgeLabelLayer : this.edgeLabelLayer).append(labelGroup);
@@ -284,6 +301,7 @@ export class SvgRenderer {
     state,
     structure = { incoming: 0, outgoing: 0 },
     selectionFocus = { active: false, originNodeId: null, nodeIds: new Set() },
+    phaseFocus = { active: false, phaseId: null, nodeIds: new Set() },
   ) {
     const { node, x, y, width, height } = entry;
     const selected = state.selected?.type === "node" && state.selected.id === node.id;
@@ -295,14 +313,20 @@ export class SvgRenderer {
     );
     const pathOrigin =
       selectionFocus.active && selectionFocus.originNodeId === node.id;
+    const phaseFocusClass = focusClass(
+      phaseFocus.active,
+      phaseFocus.nodeIds.has(node.id),
+      "phase",
+    );
     const group = svgElement("g", {
-      class: `graph-node narrative-${entry.narrativeRole || "branch"}${pathFocusClass}${pathOrigin ? " path-origin" : ""}${selected ? " selected" : ""}${groupSelected ? " group-selected" : ""}${dimmed ? " search-dim" : ""}`,
+      class: `graph-node narrative-${entry.narrativeRole || "branch"}${pathFocusClass}${phaseFocusClass}${pathOrigin ? " path-origin" : ""}${selected ? " selected" : ""}${groupSelected ? " group-selected" : ""}${dimmed ? " search-dim" : ""}`,
       transform: `translate(${x} ${y})`,
       tabindex: "0",
       role: "button",
-      "aria-label": `${node.label}，${node.role}${groupSelected ? "，已加入布局多选" : ""}`,
+      "aria-label": `${node.role}，源码符号 ${node.label}${groupSelected ? "，已加入布局多选" : ""}`,
       "aria-pressed": String(groupSelected),
       "data-node-id": node.id,
+      "data-phase-id": node.phaseId || "",
       "data-narrative-role": entry.narrativeRole || "branch",
       "data-path-focus": focusData(
         selectionFocus.active,
@@ -335,10 +359,44 @@ export class SvgRenderer {
       svgElement("circle", { class: "node-port", cx: width / 2, cy: "0", r: "4" }),
       svgElement("circle", { class: "node-port", cx: width / 2, cy: height, r: "4" }),
     );
-    addText(group, node.kind.toUpperCase(), 14, 17, "node-kind");
-    addText(group, truncate(node.label, 31), 14, 39, "node-label");
-    addText(group, truncate(`${node.crate || "unknown"} · ${shortPath(node.file)}:${node.line}`, 39), 14, 59, "node-crate");
-    addText(group, truncate(node.role, 32), 14, 77, "node-role");
+    const textWidth = width - 28;
+    addText(group, node.kind.toUpperCase(), 14, 14, "node-kind node-technical");
+    addFittedText(
+      group,
+      node.role || node.label,
+      14,
+      35,
+      "node-role",
+      textWidth,
+      '650 13px "Microsoft YaHei UI", sans-serif',
+    );
+    addFittedText(
+      group,
+      nodeSemanticSummary(node.description),
+      14,
+      54,
+      "node-summary",
+      textWidth,
+      '9px "Microsoft YaHei UI", sans-serif',
+    );
+    addFittedText(
+      group,
+      node.label,
+      14,
+      72,
+      "node-label node-technical",
+      textWidth,
+      '600 9px "Cascadia Code", monospace',
+    );
+    addFittedText(
+      group,
+      `${node.crate || "unknown"} · ${shortPath(node.file)}:${node.line}`,
+      14,
+      86,
+      "node-crate node-technical",
+      textWidth,
+      '8px "Cascadia Code", monospace',
+    );
     if (structure.incoming > 1) {
       group.append(structureMarker("merge", `MERGE ${structure.incoming}`, 7, -18));
     }
@@ -402,8 +460,11 @@ export class SvgRenderer {
   sizeEdgeLabel(view) {
     const textWidths = [view.label, view.callSiteLabel]
       .filter(Boolean)
-      .map((element) => element.getComputedTextLength());
-    view.labelWidth = Math.max(54, ...textWidths) + 16;
+      .map((element) => Number(element.dataset.measuredWidth || 0));
+    // Canvas and SVG can differ by a fraction of a pixel for the same system
+    // font. Keep a deliberate 10px horizontal inset instead of sizing the card
+    // flush to the measured glyph bounds.
+    view.labelWidth = Math.max(54, ...textWidths) + 20;
     view.labelHeight = view.label ? 32 : 22;
     view.card.setAttribute("x", String(-view.labelWidth / 2));
     view.card.setAttribute("y", String(-view.labelHeight / 2));
@@ -481,6 +542,24 @@ export class SvgRenderer {
     this.applyTransform();
   }
 
+  centerNodes(nodeIds) {
+    if (!this.lastLayout?.nodes?.size || !nodeIds?.length) return false;
+    const entries = nodeIds
+      .map((nodeId) => this.lastLayout.nodes.get(nodeId))
+      .filter(Boolean);
+    if (!entries.length) return false;
+    const minX = Math.min(...entries.map((entry) => entry.x));
+    const minY = Math.min(...entries.map((entry) => entry.y));
+    const maxX = Math.max(...entries.map((entry) => entry.x + entry.width));
+    const maxY = Math.max(...entries.map((entry) => entry.y + entry.height));
+    const rect = this.svg.getBoundingClientRect();
+    const scale = this.transform.scale;
+    this.transform.x = rect.width / 2 - ((minX + maxX) / 2) * scale;
+    this.transform.y = rect.height / 2 - ((minY + maxY) / 2) * scale;
+    this.applyTransform();
+    return true;
+  }
+
   getViewport() {
     return { ...this.transform };
   }
@@ -531,6 +610,7 @@ export class SvgRenderer {
   }
 
   applyTransform() {
+    this.svg.dataset.semanticZoom = semanticZoomTier(this.transform.scale);
     this.viewport?.setAttribute(
       "transform",
       `translate(${this.transform.x} ${this.transform.y}) scale(${this.transform.scale})`,
@@ -901,14 +981,48 @@ function normalizeSelectionFocus(selectionFocus) {
   };
 }
 
-function focusClass(active, focused) {
+function focusClass(active, focused, prefix = "path") {
   if (!active) return "";
-  return focused ? " path-focused" : " path-dimmed";
+  return focused ? ` ${prefix}-focused` : ` ${prefix}-dimmed`;
 }
 
 function focusData(active, focused) {
   if (!active) return "none";
   return focused ? "focused" : "dimmed";
+}
+
+function normalizePhaseFocus(phaseFocus) {
+  return {
+    active: Boolean(phaseFocus?.active),
+    phaseId: phaseFocus?.phaseId || null,
+    nodeIds: phaseFocus?.nodeIds instanceof Set
+      ? phaseFocus.nodeIds
+      : new Set(phaseFocus?.nodeIds || []),
+  };
+}
+
+function edgeDisplayLabel(edge, executionOrder) {
+  const orderLabel = executionOrder
+    ? `[${String(executionOrder).padStart(2, "0")}]`
+    : "";
+  const semanticLabel = edge.condition
+    || edgeFlowKindLabel(edge)
+    || edge.label
+    || (executionOrder ? "顺序调用" : "");
+  return [orderLabel, semanticLabel].filter(Boolean).join(" ");
+}
+
+function nodeSemanticSummary(description) {
+  const value = String(description || "").trim();
+  if (!value) return "职责说明待补充";
+  const [first] = value.split(/[。；;]/, 1);
+  return first || value;
+}
+
+export function semanticZoomTier(scale) {
+  if (scale < 0.28) return "overview";
+  if (scale < 0.76) return "context";
+  return "evidence";
 }
 
 function svgElement(name, attributes = {}) {
@@ -926,11 +1040,65 @@ function addText(parent, content, x, y, className, anchor) {
   parent.append(text);
 }
 
+let textMeasureContext;
+
+function addFittedText(parent, content, x, y, className, maxWidth, font) {
+  const text = svgElement("text", { x, y, class: className });
+  setFittedTextContent(text, content, maxWidth, font);
+  parent.append(text);
+}
+
+function setFittedTextContent(
+  element,
+  content,
+  maxWidth,
+  font,
+  letterSpacing = 0,
+) {
+  const fullText = String(content || "");
+  const measure = (value) => measureTextWidth(value, font, letterSpacing);
+  const fitted = truncateTextToWidth(fullText, maxWidth, measure);
+  element.textContent = fitted;
+  element.dataset.measuredWidth = String(measure(fitted));
+  if (fitted !== fullText) {
+    const title = svgElement("title");
+    title.textContent = fullText;
+    element.append(title);
+  }
+}
+
+function measureTextWidth(value, font, letterSpacing = 0) {
+  if (!textMeasureContext) {
+    textMeasureContext = document.createElement("canvas").getContext("2d");
+  }
+  if (!textMeasureContext) return Array.from(value).length * 8;
+  textMeasureContext.font = font;
+  const characters = Array.from(value);
+  return textMeasureContext.measureText(value).width
+    + Math.max(0, characters.length - 1) * letterSpacing;
+}
+
+export function truncateTextToWidth(value, maxWidth, measure) {
+  const text = String(value || "");
+  if (!text || measure(text) <= maxWidth) return text;
+
+  const characters = Array.from(text);
+  const ellipsis = "…";
+  const available = Math.max(0, maxWidth - measure(ellipsis));
+  let low = 0;
+  let high = characters.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (measure(characters.slice(0, middle).join("")) <= available) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return `${characters.slice(0, low).join("")}${ellipsis}`;
+}
+
 function shortPath(path) {
   const parts = path.split(/[\\/]/);
   return parts.slice(-2).join("/");
-}
-
-function truncate(value, max) {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }

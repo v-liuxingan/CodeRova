@@ -41,9 +41,9 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     let mut warnings = Vec::new();
     let mut source_locations = Vec::new();
 
-    if !matches!(graph.schema_version.as_str(), "0.2" | "0.3") {
+    if !matches!(graph.schema_version.as_str(), "0.2" | "0.3" | "0.4") {
         errors.push(format!(
-            "不支持 schemaVersion {:?}，当前支持 0.2 和 0.3",
+            "不支持 schemaVersion {:?}，当前支持 0.2、0.3 和 0.4",
             graph.schema_version
         ));
     }
@@ -73,7 +73,30 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
         warnings.push("已配置 categoryId，但缺少面向用户的 category 名称".to_owned());
     }
 
+    let mut phase_ids = HashSet::new();
+    let mut phase_orders = HashSet::new();
+    for phase in &graph.phases {
+        if phase.id.is_empty()
+            || !phase.id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+            })
+        {
+            errors.push(format!("阶段 id 无效：{}", phase.id));
+        } else if !phase_ids.insert(phase.id.as_str()) {
+            errors.push(format!("阶段 id 重复：{}", phase.id));
+        }
+        if phase.title.trim().is_empty() {
+            errors.push(format!("阶段 {} 的 title 不能为空", phase.id));
+        }
+        if phase.order == 0 {
+            errors.push(format!("阶段 {} 的 order 必须大于 0", phase.id));
+        } else if !phase_orders.insert(phase.order) {
+            errors.push(format!("阶段 order 重复：{}", phase.order));
+        }
+    }
+
     let mut node_ids = HashSet::new();
+    let mut used_phase_ids = HashSet::new();
     for node in &graph.nodes {
         if !node_ids.insert(node.id.as_str()) {
             errors.push(format!("节点 id 重复：{}", node.id));
@@ -96,6 +119,16 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
         if node.role.trim().is_empty() {
             warnings.push(format!("节点 {} 缺少 role", node.id));
         }
+        if !node.phase_id.is_empty() {
+            if !phase_ids.contains(node.phase_id.as_str()) {
+                errors.push(format!(
+                    "节点 {} 的 phaseId 不存在：{}",
+                    node.id, node.phase_id
+                ));
+            } else {
+                used_phase_ids.insert(node.phase_id.as_str());
+            }
+        }
         if let Some(root) = source_root {
             source_locations.push(check_source_location(
                 root, "node", &node.id, &node.file, node.line,
@@ -105,6 +138,9 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
 
     if !node_ids.contains(graph.root.as_str()) {
         errors.push(format!("root 指向不存在的节点：{}", graph.root));
+    }
+    for phase_id in phase_ids.difference(&used_phase_ids) {
+        warnings.push(format!("阶段 {phase_id} 没有归属节点"));
     }
 
     let mut edge_ids = HashSet::new();
@@ -261,9 +297,11 @@ mod tests {
             root: "a".into(),
             description: String::new(),
             source_revision: None,
+            phases: Vec::new(),
             nodes: vec![
                 GraphNode {
                     id: "a".into(),
+                    phase_id: String::new(),
                     kind: "function".into(),
                     label: "a".into(),
                     crate_name: "demo".into(),
@@ -277,6 +315,7 @@ mod tests {
                 },
                 GraphNode {
                     id: "b".into(),
+                    phase_id: String::new(),
                     kind: "method".into(),
                     label: "b".into(),
                     crate_name: "demo".into(),
@@ -325,6 +364,76 @@ mod tests {
         let report = validate_graph(&graph, None);
 
         assert!(report.valid, "{:?}", report.errors);
+    }
+
+    #[test]
+    fn validates_scenario_phase_contract() {
+        let mut graph = graph();
+        graph.schema_version = "0.4".into();
+        graph.phases = vec![
+            crate::model::GraphPhase {
+                id: "input".into(),
+                title: "接收输入".into(),
+                summary: "把外部输入送入系统".into(),
+                order: 1,
+            },
+            crate::model::GraphPhase {
+                id: "model".into(),
+                title: "请求模型".into(),
+                summary: String::new(),
+                order: 2,
+            },
+        ];
+        graph.nodes[0].phase_id = "input".into();
+        graph.nodes[1].phase_id = "model".into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(report.valid, "{:?}", report.errors);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    }
+
+    #[test]
+    fn rejects_unknown_and_duplicated_scenario_phases() {
+        let mut graph = graph();
+        graph.schema_version = "0.4".into();
+        graph.phases = vec![
+            crate::model::GraphPhase {
+                id: "input".into(),
+                title: "接收输入".into(),
+                summary: String::new(),
+                order: 1,
+            },
+            crate::model::GraphPhase {
+                id: "input".into(),
+                title: "重复阶段".into(),
+                summary: String::new(),
+                order: 1,
+            },
+        ];
+        graph.nodes[0].phase_id = "missing".into();
+
+        let report = validate_graph(&graph, None);
+
+        assert!(!report.valid);
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("阶段 id 重复"))
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("阶段 order 重复"))
+        );
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("phaseId 不存在"))
+        );
     }
 
     #[test]

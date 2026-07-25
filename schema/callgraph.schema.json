@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "projectId", "title", "root", "nodes", "edges"],
   "properties": {
-    "schemaVersion": { "enum": ["0.2", "0.3"] },
+    "schemaVersion": { "enum": ["0.2", "0.3", "0.4"] },
     "projectId": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]+$",
@@ -25,6 +25,11 @@
     },
     "description": { "type": "string" },
     "sourceRevision": { "type": ["string", "null"] },
+    "phases": {
+      "type": "array",
+      "description": "Ordered user-facing scenario phases; nodes opt in through phaseId",
+      "items": { "$ref": "#/$defs/phase" }
+    },
     "root": { "type": "string", "minLength": 1 },
     "nodes": {
       "type": "array",
@@ -36,6 +41,20 @@
     }
   },
   "$defs": {
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "order"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "order": { "type": "integer", "minimum": 1 }
+      }
+    },
     "sourcePath": {
       "type": "string",
       "minLength": 1,
@@ -47,6 +66,11 @@
       "required": ["id", "kind", "label", "file", "line", "role"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
+        "phaseId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "Optional user-facing scenario phase membership"
+        },
         "kind": {
           "enum": ["function", "method", "closure", "trait", "struct", "module", "process", "remote-service"]
         },

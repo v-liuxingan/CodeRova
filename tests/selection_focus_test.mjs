@@ -180,14 +180,14 @@ function testRunTurnKeepsTheCurrentIncomingBranch() {
   let focus = state.getVisibleGraph().selectionFocus;
   assert.equal(focus.focusNodeIds.has("e2e.turn-start-client"), false);
 
-  state.select({ type: "node", id: "e2e.run-turn" });
+  state.select({ type: "node", id: "e2e.steer-input-queue" });
   focus = state.getVisibleGraph().selectionFocus;
   assert.equal(focus.anchorNodeId, "e2e.turn-steer-client");
   assert.equal(focus.focusNodeIds.has("e2e.turn-steer-client"), true);
   assert.equal(
     focus.focusNodeIds.has("e2e.turn-start-client"),
     false,
-    "selecting run_turn must not reopen the inactive turn_start entry branch",
+    "following the steer queue must not reopen the inactive turn_start entry branch",
   );
 }
 

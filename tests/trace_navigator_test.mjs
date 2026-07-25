@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { TraceNavigator } from "../public/js/trace-navigator.js";
 
 testExplicitCallOrderControlsBranchesAndNextStep();
+testPhaseFocusResetsTraceToPhaseEntry();
 console.log("TraceNavigator order: all assertions passed");
 
 function testExplicitCallOrderControlsBranchesAndNextStep() {
@@ -27,6 +28,29 @@ function testExplicitCallOrderControlsBranchesAndNextStep() {
     ["a-first", "z-second", "unsequenced"],
   );
   assert.deepEqual(navigator.next(), { type: "node", id: "first" });
+}
+
+function testPhaseFocusResetsTraceToPhaseEntry() {
+  const graph = {
+    root: "root",
+    nodes: ["root", "phase-entry", "phase-child", "other"].map((id) => ({
+      id,
+      label: id,
+    })),
+    edges: [
+      { id: "root-entry", from: "root", to: "phase-entry", kind: "direct" },
+      { id: "entry-child", from: "phase-entry", to: "phase-child", kind: "direct" },
+      { id: "root-other", from: "root", to: "other", kind: "direct" },
+    ],
+  };
+  const navigator = new TraceNavigator(graph);
+  navigator.syncSelection({ type: "node", id: "other" });
+  assert.deepEqual(
+    navigator.focusNodes(["phase-entry", "phase-child"]),
+    { type: "node", id: "phase-entry" },
+  );
+  assert.equal(navigator.snapshot().currentNode.id, "phase-entry");
+  assert.equal(navigator.snapshot().nextNode.id, "phase-child");
 }
 
 function edge(id, to, order, line) {

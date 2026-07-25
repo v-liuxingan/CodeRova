@@ -19,6 +19,7 @@ testMultipleCollapsedRoots();
 testGraphStateSelectionAndFilterBoundary();
 testRealAgentLoopRegression();
 testCollapseControlAvailability();
+testPhaseFocusProjection();
 console.log("GraphState collapse: all assertions passed");
 
 function testBranchMergeBoundary() {
@@ -132,6 +133,43 @@ function testCollapseControlAvailability() {
   assert.equal(hasCollapsibleChildren("data-parent", edges), false);
   assert.equal(hasCollapsibleChildren("loop-parent", edges), false);
   assert.equal(hasCollapsibleChildren("control-parent", edges), true);
+}
+
+function testPhaseFocusProjection() {
+  const graph = graphOf(
+    ["input", "prepare", "request"],
+    [
+      edge("input-prepare", "input", "prepare"),
+      edge("prepare-request", "prepare", "request"),
+    ],
+  );
+  graph.phases = [
+    { id: "entry", title: "接收输入", order: 1 },
+    { id: "model", title: "请求模型", order: 2 },
+  ];
+  graph.nodes[0].phaseId = "entry";
+  graph.nodes[1].phaseId = "model";
+  graph.nodes[2].phaseId = "model";
+  const state = new GraphState(graph);
+
+  state.setPhaseFocus("model");
+  const focused = state.getVisibleGraph().phaseFocus;
+  assert.equal(focused.active, true);
+  assert.equal(focused.phaseId, "model");
+  assert.deepEqual(focused.nodeIds, new Set(["prepare", "request"]));
+
+  state.setPhaseFocus("model");
+  assert.equal(
+    state.getVisibleGraph().phaseFocus.active,
+    true,
+    "reselecting a phase preserves its reading context",
+  );
+
+  state.setPhaseFocus("entry");
+  state.select({ type: "node", id: "request" });
+  assert.equal(state.activePhaseId, "entry", "node selection preserves phase focus");
+  state.clearInteractionSelection();
+  assert.equal(state.activePhaseId, null, "clearing the canvas removes transient phase focus");
 }
 
 function fixtureGraph() {

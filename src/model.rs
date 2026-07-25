@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallGraph {
     pub schema_version: String,
     pub project_id: String,
@@ -15,14 +15,28 @@ pub struct CallGraph {
     pub description: String,
     #[serde(default)]
     pub source_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<GraphPhase>,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GraphPhase {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    pub order: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphNode {
     pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub phase_id: String,
     pub kind: String,
     pub label: String,
     #[serde(rename = "crate", default)]
@@ -45,7 +59,7 @@ fn default_node_state() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphEdge {
     pub id: String,
     pub from: String,
@@ -237,6 +251,7 @@ mod tests {
 
         assert!(graph.category_id.is_empty());
         assert!(graph.category.is_empty());
+        assert!(graph.phases.is_empty());
     }
 
     #[test]
@@ -273,5 +288,39 @@ mod tests {
         assert_eq!(edge.order, Some(1));
         let value = serde_json::to_value(edge).expect("serialize edge");
         assert_eq!(value["order"], 1);
+    }
+
+    #[test]
+    fn graph_round_trips_scenario_phases_without_affecting_legacy_graphs() {
+        let graph: CallGraph = serde_json::from_value(json!({
+            "schemaVersion": "0.4",
+            "projectId": "codex",
+            "title": "Scenario graph",
+            "root": "root",
+            "phases": [{
+                "id": "input",
+                "title": "接收输入",
+                "summary": "把外部输入送入内部回合。",
+                "order": 1
+            }],
+            "nodes": [{
+                "id": "root",
+                "phaseId": "input",
+                "kind": "function",
+                "label": "main",
+                "file": "src/main.rs",
+                "line": 1,
+                "role": "用户输入入口"
+            }],
+            "edges": []
+        }))
+        .expect("scenario graph should deserialize");
+
+        assert_eq!(graph.phases.len(), 1);
+        assert_eq!(graph.phases[0].id, "input");
+        assert_eq!(graph.nodes[0].phase_id, "input");
+        let value = serde_json::to_value(graph).expect("serialize scenario graph");
+        assert_eq!(value["phases"][0]["title"], "接收输入");
+        assert_eq!(value["nodes"][0]["phaseId"], "input");
     }
 }

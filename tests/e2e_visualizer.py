@@ -105,6 +105,9 @@ with sync_playwright() as playwright:
         "codex-config-resolution",
         "codex-context-compaction",
         "codex-end-to-end-agent-loop",
+        "codex-exec-lifecycle",
+        "codex-apply-patch-lifecycle",
+        "codex-code-mode-execution",
         "codex-mcp-tool-call",
         "codex-shell-tool-execution",
         "codex-thread-resume",
@@ -113,19 +116,19 @@ with sync_playwright() as playwright:
     }
     assert {graph["slug"] for graph in graph_summaries} == expected_slugs
     assert all(graph["projectId"] == "codex" for graph in graph_summaries)
-    assert sum(graph["nodeCount"] for graph in graph_summaries) == 171
-    assert sum(graph["edgeCount"] for graph in graph_summaries) == 197
-    assert page.locator(".graph-option").count() == 8
+    assert sum(graph["nodeCount"] for graph in graph_summaries) == 230
+    assert sum(graph["edgeCount"] for graph in graph_summaries) == 274
+    assert page.locator(".graph-option").count() == 11
     expected_category_counts = {
         "全景流程": 1,
-        "会话运行": 2,
-        "工具执行": 3,
+        "会话运行": 3,
+        "工具执行": 5,
         "配置与上下文": 2,
     }
     expected_category_id_counts = {
         "overview": 1,
-        "session": 2,
-        "tools": 3,
+        "session": 3,
+        "tools": 5,
         "context": 2,
     }
     assert Counter(
@@ -196,7 +199,7 @@ with sync_playwright() as playwright:
     catalog_slugs = page.locator(".graph-option").evaluate_all(
         "buttons => buttons.map(button => button.dataset.slug)"
     )
-    assert len(catalog_slugs) == len(set(catalog_slugs)) == 8
+    assert len(catalog_slugs) == len(set(catalog_slugs)) == 11
     category_by_slug = {
         graph["slug"]: graph["category"] for graph in graph_summaries
     }
@@ -399,7 +402,10 @@ with sync_playwright() as playwright:
     expected_graphs = {
         "Codex layered configuration resolution": (10, 23),
         "Codex automatic context compaction": (17, 34),
-        "Codex end-to-end agent turn and context loop": (49, 91),
+        "Codex end-to-end agent turn and context loop": (53, 96),
+        "Codex non-interactive exec task lifecycle": (20, 34),
+        "Codex apply_patch safety and file mutation lifecycle": (16, 31),
+        "Codex Code Mode script orchestration and nested tool concurrency": (19, 29),
         "Codex MCP tool call lifecycle": (15, 30),
         "Codex shell tool approval and sandbox execution": (21, 41),
         "Codex persisted thread resume": (16, 33),
@@ -426,6 +432,28 @@ with sync_playwright() as playwright:
             "(text) => document.querySelector('#validation-badge')?.textContent === text",
             arg=f"{source_location_count} 处源码有效",
         )
+        expansion_artifact = {
+            "Codex non-interactive exec task lifecycle": "codex-exec-scenario-map.png",
+            "Codex apply_patch safety and file mutation lifecycle": (
+                "codex-apply-patch-scenario-map.png"
+            ),
+            "Codex Code Mode script orchestration and nested tool concurrency": (
+                "codex-code-mode-scenario-map.png"
+            ),
+        }.get(title)
+        if expansion_artifact:
+            page.locator("#fit-view").click()
+            assert (
+                page.locator(".workspace").get_attribute("data-workspace-view")
+                == "scene"
+            )
+            assert page.locator(".phase-node").count() == 6
+            page.evaluate(
+                """() => document.querySelector("#toast-region")?.replaceChildren()"""
+            )
+            page.locator(".workspace").screenshot(
+                path=str(ARTIFACTS / expansion_artifact)
+            )
         if title == "Codex automatic context compaction":
             long_description = (
                 "原子替换活动历史，更新 WorldState 基线，持久化 "
@@ -616,7 +644,7 @@ with sync_playwright() as playwright:
                 """() => {
                     const center = (id) => {
                         const box = document.querySelector(
-                            `[data-node-id="${id}"]`
+                            `[data-node-id="${id}"] .node-box`
                         ).getBoundingClientRect();
                         return box.left + box.width / 2;
                     };
@@ -725,6 +753,247 @@ with sync_playwright() as playwright:
             assert keyboard_focus["stroke"] != "none", keyboard_focus
             assert keyboard_focus["strokeWidth"] >= 2, keyboard_focus
         if title == "Codex end-to-end agent turn and context loop":
+            assert (
+                page.locator("#graph-overview-end-label").inner_text()
+                == "业务终点"
+            )
+            assert page.locator("#graph-overview-end").inner_text() == "完成本轮"
+            assert page.locator("#graph-overview-sinks-wrap").is_visible()
+            assert "本轮完成事件" in page.locator(
+                "#graph-overview-sinks"
+            ).get_attribute("title")
+            page.locator("#fit-view").click()
+            assert (
+                page.locator(".workspace").get_attribute("data-workspace-view")
+                == "scene"
+            )
+            assert page.locator("#phase-navigator").is_visible()
+            assert not page.locator(".source-stepper").is_visible()
+            assert not page.locator(".inspector").is_visible()
+            scene_bounds = page.locator("#phase-navigator").bounding_box()
+            assert scene_bounds["width"] > 900, scene_bounds
+            assert scene_bounds["height"] > 500, scene_bounds
+            assert page.locator(".phase-node").count() == 8
+            assert page.locator(".phase-node-title").all_text_contents() == [
+                "用户提交指令",
+                "组装本轮上下文",
+                "请求模型生成下一步",
+                "解析响应并判断下一步",
+                "执行工具",
+                "记录结果并续跑",
+                "压缩上下文",
+                "完成本轮",
+            ]
+            assert page.locator(".phase-node-summary").count() == 8
+            assert "生成模型可见历史" in page.locator(
+                '.phase-node[data-phase-id="model-request"] .phase-node-summary'
+            ).text_content()
+            assert (
+                page.locator(".phase-navigator-heading small").inner_text()
+                == "主干 · 分支 · 回环"
+            )
+            phase_plane = page.locator(".phase-topology-plane")
+            assert phase_plane.get_attribute("data-total-relations") == "14"
+            assert phase_plane.get_attribute("data-visible-relations") == "10"
+            assert phase_plane.get_attribute("data-columns") == "4"
+            assert phase_plane.get_attribute("data-rows") == "2"
+            assert page.locator(".phase-relation").count() == 10
+            assert page.locator(".phase-relation-feedback").count() == 3
+            assert page.locator(
+                '.phase-relation-loop-back[data-from-phase-id="result-feedback"]'
+                '[data-to-phase-id="model-request"]'
+            ).count() == 1
+            assert page.locator(
+                '.phase-relation-branch[data-from-phase-id="output-routing"]'
+                '[data-to-phase-id="compact-or-finish"]'
+            ).count() == 1
+            assert page.locator(
+                '.phase-relation-loop-exit[data-from-phase-id="output-routing"]'
+                '[data-to-phase-id="turn-finish"]'
+            ).count() == 1
+            assert page.locator(
+                '.phase-node[data-phase-id="model-request"] .phase-node-route'
+            ).text_content() == "3 条回环在此重试"
+            assert page.locator(
+                '.phase-node[data-phase-id="tool-execution"] .phase-node-route'
+            ).text_content() == "模型请求工具"
+            assert page.locator(
+                '.phase-node[data-phase-id="compact-or-finish"] .phase-node-route'
+            ).text_content() == "上下文超限"
+            assert page.locator(
+                '.phase-node[data-phase-id="turn-finish"] .phase-node-route'
+            ).text_content() == "完成本轮"
+            output_tools_relation = page.locator(
+                '.phase-relation-branch[data-from-phase-id="output-routing"]'
+                '[data-to-phase-id="tool-execution"]'
+            )
+            assert output_tools_relation.count() == 1
+            assert output_tools_relation.get_attribute("data-edge-count") == "2"
+            assert page.locator(
+                '.phase-node-decision[data-phase-id="output-routing"]'
+            ).get_attribute("data-topology-role") == "decision"
+            assert page.locator(
+                '.phase-node-branch[data-phase-id="tool-execution"]'
+            ).get_attribute("data-topology-role") == "branch"
+            assert page.locator(
+                '.phase-node-loop[data-phase-id="result-feedback"]'
+            ).get_attribute("data-topology-role") == "loop"
+            assert page.locator(
+                '.phase-node-terminal[data-phase-id="turn-finish"]'
+            ).get_attribute("data-topology-role") == "terminal"
+            assert "WebSocket" in page.locator(
+                '.phase-node[data-phase-id="model-request"]'
+            ).get_attribute("title")
+            assert page.locator("#view-context-current").inner_text() == "全局结构"
+            scene_viewport = page.locator(".phase-map-viewport")
+            fitted_scene_transform = scene_viewport.get_attribute("transform")
+            assert page.evaluate(
+                """() => {
+                    const root = document.querySelector("#phase-navigator")
+                        .getBoundingClientRect();
+                    return [...document.querySelectorAll(".phase-node-box")].every(
+                        (box) => {
+                            const rect = box.getBoundingClientRect();
+                            return (
+                                rect.left >= root.left
+                                && rect.right <= root.right
+                                && rect.top >= root.top
+                                && rect.bottom <= root.bottom
+                            );
+                        },
+                    );
+                }"""
+            )
+            page.evaluate(
+                """() => document.querySelector(".toast-region")?.replaceChildren()"""
+            )
+            page.locator(".workspace").screenshot(
+                path=str(ARTIFACTS / "scenario-phase-map.png")
+            )
+            page.locator("#zoom-in").click()
+            zoomed_scene_transform = scene_viewport.get_attribute("transform")
+            assert zoomed_scene_transform != fitted_scene_transform
+            phase_viewport = page.locator(".graph-viewport")
+            before_phase_transform = phase_viewport.get_attribute("transform")
+            before_phase_scale = float(
+                before_phase_transform.split("scale(")[1].rstrip(")")
+            )
+            page.locator('.phase-node[data-phase-id="model-request"]').click()
+            page.wait_for_function(
+                """() =>
+                    document.querySelector(".workspace")?.dataset.workspaceView === "code"
+                    && document.querySelectorAll(".graph-node.phase-focused").length === 11
+                    && document.querySelectorAll(".graph-node.phase-dimmed").length === 42"""
+            )
+            assert page.locator("#phase-navigator").is_hidden()
+            assert page.locator(".source-stepper").is_visible()
+            assert page.locator(".inspector").is_visible()
+            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
+            assert page.locator("#full-callgraph-button").inner_text() == "退出阶段聚焦"
+            assert page.locator("#phase-context-card").is_visible()
+            assert page.locator("#phase-context-card").get_attribute(
+                "aria-pressed"
+            ) == "true"
+            assert "生成模型可见历史" in page.locator(
+                "#phase-context-card-summary"
+            ).inner_text()
+            assert page.locator(".source-stepper").get_attribute(
+                "data-current-node"
+            ) == "e2e.run-sampling"
+            assert page.locator('[data-node-id="e2e.run-sampling"]').get_attribute(
+                "class"
+            ).find("selected") >= 0
+            overview_node = page.locator(
+                '[data-node-id="e2e.run-turn"]'
+            )
+            assert overview_node.locator(".node-role").is_visible()
+            assert not overview_node.locator(".node-label").is_visible()
+            assert page.locator(
+                '.phase-node[data-phase-id="model-request"]'
+            ).get_attribute("aria-pressed") == "true"
+            after_phase_transform = phase_viewport.get_attribute("transform")
+            after_phase_scale = float(
+                after_phase_transform.split("scale(")[1].rstrip(")")
+            )
+            assert after_phase_scale == before_phase_scale
+            assert after_phase_transform != before_phase_transform
+            page.locator("#graph-canvas").dispatch_event("click")
+            assert page.locator(".graph-node.phase-focused").count() == 0
+            assert page.locator(".graph-node.phase-dimmed").count() == 0
+            assert page.locator(
+                '.phase-node[data-phase-id="model-request"]'
+            ).get_attribute("aria-pressed") == "false"
+            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
+            assert page.locator("#phase-context-card").get_attribute(
+                "aria-pressed"
+            ) == "false"
+            assert "点击恢复" in page.locator(
+                "#phase-context-card-status"
+            ).inner_text()
+            page.evaluate(
+                """() => document.querySelector(".toast-region")?.replaceChildren()"""
+            )
+            page.locator(".app-shell").screenshot(
+                path=str(ARTIFACTS / "scenario-phase-drilldown.png")
+            )
+            page.locator("#phase-context-card").click()
+            assert page.locator(".graph-node.phase-focused").count() == 11
+            assert page.locator(".graph-node.phase-dimmed").count() == 42
+            assert page.locator("#phase-context-card").get_attribute(
+                "aria-pressed"
+            ) == "true"
+            before_cross_phase_selection = phase_viewport.get_attribute("transform")
+            page.locator('[data-node-id="e2e.shell-handler"]').evaluate(
+                "element => element.dispatchEvent("
+                "new MouseEvent('click', { bubbles: true }))"
+            )
+            assert page.locator("#view-context-current").inner_text() == "执行工具"
+            assert page.locator(".graph-node.phase-focused").count() == 8
+            assert page.locator(".source-stepper").get_attribute(
+                "data-current-node"
+            ) == "e2e.shell-handler"
+            assert "已切换到场景「执行工具」" in page.locator(
+                "#toast-region"
+            ).inner_text()
+            assert (
+                phase_viewport.get_attribute("transform")
+                == before_cross_phase_selection
+            )
+            page.locator('[data-node-id="e2e.run-sampling"]').evaluate(
+                "element => element.dispatchEvent("
+                "new MouseEvent('click', { bubbles: true }))"
+            )
+            assert (
+                page.locator("#view-context-current").inner_text()
+                == "请求模型生成下一步"
+            )
+            assert page.locator(".graph-node.phase-focused").count() == 11
+            assert (
+                phase_viewport.get_attribute("transform")
+                == before_cross_phase_selection
+            )
+            page.locator("#scene-view-button").click()
+            assert (
+                page.locator(".workspace").get_attribute("data-workspace-view")
+                == "scene"
+            )
+            assert page.locator("#phase-navigator").is_visible()
+            assert scene_viewport.get_attribute("transform") == zoomed_scene_transform
+            assert page.locator(
+                '.phase-node[data-phase-id="model-request"]'
+            ).get_attribute("aria-pressed") == "true"
+            assert phase_viewport.get_attribute("transform") == after_phase_transform
+            page.locator('.phase-node[data-phase-id="model-request"]').click()
+            assert page.locator(".graph-node.phase-focused").count() == 11
+            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
+            page.locator("#scene-view-button").click()
+            page.locator("#full-callgraph-button").click()
+            assert (
+                page.locator(".workspace").get_attribute("data-workspace-view")
+                == "code"
+            )
+            assert page.locator(".graph-node.phase-focused").count() == 0
+            assert phase_viewport.get_attribute("transform") == after_phase_transform
             page.locator("#fit-view").click()
             assert page.locator("#graph-canvas").get_attribute(
                 "data-layout-mode"
@@ -794,6 +1063,9 @@ with sync_playwright() as playwright:
             assert sorted(item["id"] for item in feedback_geometry) == [
                 "e2e.compacted-history-to-prompt",
                 "e2e.history-back-to-prompt",
+                "e2e.hook-prompt-to-prompt",
+                "e2e.sampling-reload-history",
+                "e2e.steer-queue-to-record-inputs",
             ], feedback_geometry
             assert all(item["outside"] for item in feedback_geometry), feedback_geometry
             assert all(
@@ -926,7 +1198,7 @@ with sync_playwright() as playwright:
                 "element => element.dispatchEvent("
                 "new MouseEvent('click', { bubbles: true }))"
             )
-            assert page.locator(".graph-node").count() == 48
+            assert page.locator(".graph-node").count() == 52
             assert page.locator('[data-node-id="e2e.responses-http"]').count() == 0
             assert page.locator('[data-node-id="e2e.handle-output"]').count() == 1
             assert page.locator('[data-node-id="e2e.websocket-stream"]').count() == 1
@@ -940,7 +1212,7 @@ with sync_playwright() as playwright:
                 "element => element.dispatchEvent("
                 "new MouseEvent('click', { bubbles: true }))"
             )
-            assert page.locator(".graph-node").count() == 49
+            assert page.locator(".graph-node").count() == 53
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
@@ -957,7 +1229,7 @@ with sync_playwright() as playwright:
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
-            assert page.locator(".graph-node").count() == 49
+            assert page.locator(".graph-node").count() == 53
             assert "path-focused" in (
                 page.locator('[data-node-id="e2e.http-stream"]')
                 .get_attribute("class") or ""
@@ -1039,7 +1311,7 @@ with sync_playwright() as playwright:
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
-            assert page.locator(".graph-node").count() == 49
+            assert page.locator(".graph-node").count() == 53
             assert "path-focused" in (
                 page.locator('[data-node-id="e2e.mcp-remote"]')
                 .get_attribute("class") or ""
@@ -1065,12 +1337,12 @@ with sync_playwright() as playwright:
                 page.locator('[data-node-id="e2e.turn-start-client"]')
                 .get_attribute("class") or ""
             )
-            page.locator('[data-node-id="e2e.run-turn"]').evaluate(
+            page.locator('[data-node-id="e2e.steer-input-queue"]').evaluate(
                 "element => element.dispatchEvent("
                 "new MouseEvent('click', { bubbles: true }))"
             )
             assert "path-origin" in (
-                page.locator('[data-node-id="e2e.run-turn"]')
+                page.locator('[data-node-id="e2e.steer-input-queue"]')
                 .get_attribute("class") or ""
             )
             assert "path-focused" in (
@@ -1083,9 +1355,13 @@ with sync_playwright() as playwright:
             )
             assert "path-focused" in (
                 page.locator(
-                    '[data-edge-group-id="e2e.steer-back-to-turn"]'
+                    '[data-edge-group-id="e2e.steer-client-to-queue"]'
                     ":not(.graph-edge-label-group)"
                 ).get_attribute("class") or ""
+            )
+            page.locator('[data-node-id="e2e.run-turn"]').evaluate(
+                "element => element.dispatchEvent("
+                "new MouseEvent('click', { bubbles: true }))"
             )
             assert page.locator("#trace-next").get_attribute(
                 "data-trace-node-id"
@@ -1200,7 +1476,7 @@ with sync_playwright() as playwright:
                     ".graph-node.path-focused, .graph-node.path-dimmed"
                 ).length === 0"""
             )
-            assert page.locator(".graph-node").count() == 49
+            assert page.locator(".graph-node").count() == 53
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
@@ -1274,7 +1550,10 @@ with sync_playwright() as playwright:
             )
             loop_summary = page.locator("#inspector-content").text_content() or ""
             assert "CONTROL FLOW循环回边" in loop_summary
-            assert "CONDITIONneeds_follow_up" in loop_summary
+            assert (
+                "CONDITION工具结果仍需模型处理（needs_follow_up）"
+                in loop_summary
+            )
             page.locator("#orientation").click()
             assert page.locator("#orientation").inner_text() == "横向布局"
             assert page.locator("#graph-canvas").get_attribute(
@@ -1359,7 +1638,7 @@ with sync_playwright() as playwright:
             assert page.locator("#trace-branch-wrap").is_visible()
             assert page.locator("#trace-branch option").count() == 2
             assert page.locator("#trace-branch").input_value() == "shell.output-to-runtime"
-            assert page.locator("#trace-branch-label").inner_text() == "分支 2/2"
+            assert page.locator("#trace-branch-label").inner_text() == "下游路径 2/2"
             assert "ToolCallRuntime::handle_tool_call" in page.locator(
                 "#trace-branch option:checked"
             ).inner_text()
@@ -1375,6 +1654,10 @@ with sync_playwright() as playwright:
             assert page.locator(
                 '.trace-branch-option[aria-selected="true"]'
             ).count() == 1
+            assert page.locator(".trace-branch-semantic").all_text_contents() == [
+                "直接调用",
+                "异步边界",
+            ]
             page.locator(".workspace").screenshot(
                 path=str(ARTIFACTS / "source-stepper-branch-menu.png")
             )
@@ -1385,7 +1668,7 @@ with sync_playwright() as playwright:
                 "aria-expanded"
             ) == "false"
             assert not page.locator("#trace-branch-menu").is_visible()
-            assert page.locator("#trace-branch-label").inner_text() == "分支 1/2"
+            assert page.locator("#trace-branch-label").inner_text() == "下游路径 1/2"
             assert page.locator("#trace-callsite").get_attribute(
                 "data-trace-edge-id"
             ) == "shell.output-to-build"
@@ -1473,8 +1756,10 @@ with sync_playwright() as playwright:
     assert "从 Codex CLI 启动到模型请求鉴权" in page.locator(
         "#graph-overview-description"
     ).inner_text()
-    assert page.locator("#graph-overview-start").inner_text() == "main"
+    assert page.locator("#graph-overview-start").inner_text() == "CLI 进程入口"
     assert "等 3 个" in page.locator("#graph-overview-end").inner_text()
+    assert page.locator("#graph-overview-end-label").inner_text() == "结构终点"
+    assert page.locator("#graph-overview-sinks-wrap").is_hidden()
     assert page.locator("#graph-overview-scale").inner_text() == "23 节点 · 23 关系"
     assert page.locator("#trace-next strong").inner_text() == "cli_main"
     assert "RUST · 目标 956–962" in page.locator(".source-preview-stats").inner_text()
@@ -2257,6 +2542,25 @@ with sync_playwright() as playwright:
                 '.graph-edge[data-edge-id="edge.client-runtime-start"]'
             );
             const cardRect = card.getBoundingClientRect();
+            const cardBounds = card.getBBox();
+            const textBounds = [...group.querySelectorAll(
+                ".edge-label, .edge-callsite"
+            )]
+                .filter((element) => getComputedStyle(element).display !== "none")
+                .map((element) => {
+                    const bounds = element.getBBox();
+                    return {
+                        className: element.getAttribute("class"),
+                        x: bounds.x,
+                        width: bounds.width,
+                        overflows: bounds.x < cardBounds.x + 7
+                        || bounds.x + bounds.width > cardBounds.x
+                            + cardBounds.width - 7,
+                    };
+                });
+            const textOverflowsCard = textBounds.some(
+                (bounds) => bounds.overflows
+            );
             const length = path.getTotalLength();
             const matrix = path.getScreenCTM();
             const pathCrossesCard = Array.from({ length: 81 }, (_, index) => {
@@ -2267,12 +2571,16 @@ with sync_playwright() as playwright:
             }).some(Boolean);
             return {
                 pathCrossesCard,
+                textOverflowsCard,
+                cardBounds: { x: cardBounds.x, width: cardBounds.width },
+                textBounds,
                 textStroke: getComputedStyle(text).stroke,
                 moveCount: (path.getAttribute("d").match(/M/g) || []).length,
             };
         }"""
     )
     assert not edge_rendering["pathCrossesCard"]
+    assert not edge_rendering["textOverflowsCard"], edge_rendering
     assert edge_rendering["textStroke"] == "none"
     assert edge_rendering["moveCount"] == 1
     page.evaluate(
@@ -2354,13 +2662,84 @@ with sync_playwright() as playwright:
     ).inner_text()
     page.keyboard.press("Escape")
     assert page.locator("#inspector-empty").is_visible()
-    page.locator(
+    exact_callsite = page.locator(
         '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
-    ).click()
+    )
+    assert not exact_callsite.is_visible()
+    page.locator(
+        '.graph-edge-label-group[data-edge-group-id="edge.client-runtime-start"]'
+    ).evaluate(
+        "element => element.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+    )
     assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
+    page.keyboard.press("Escape")
 
-    page.locator("#zoom-in").click()
-    page.locator("#zoom-in").click()
+    for _ in range(24):
+        if page.locator("#graph-canvas").get_attribute(
+            "data-semantic-zoom"
+        ) == "evidence":
+            break
+        page.locator("#zoom-in").click()
+    assert page.locator("#graph-canvas").get_attribute(
+        "data-semantic-zoom"
+    ) == "evidence"
+    overflowing_node_text = page.evaluate(
+        """() => [...document.querySelectorAll(".graph-node")].flatMap((node) => {
+            const box = node.querySelector(".node-box").getBBox();
+            return [...node.querySelectorAll(
+                ".node-role, .node-summary, .node-label, .node-crate"
+            )]
+                .filter((text) => getComputedStyle(text).display !== "none")
+                .filter((text) => {
+                    const bounds = text.getBBox();
+                    return bounds.x < box.x - 0.5
+                        || bounds.x + bounds.width > box.x + box.width + 0.5;
+                })
+                .map((text) => ({
+                    nodeId: node.dataset.nodeId,
+                    className: text.getAttribute("class"),
+                    text: text.firstChild?.textContent || "",
+                    width: text.getBBox().width,
+                    boxWidth: box.width,
+                }));
+        })"""
+    )
+    assert not overflowing_node_text, overflowing_node_text
+    assert exact_callsite.is_visible()
+    edge_label = page.locator(
+        '.graph-edge-label-group[data-edge-group-id="edge.client-runtime-start"]'
+    )
+    edge_label_before_selection = edge_label.evaluate(
+        """group => {
+            const card = group.querySelector(".edge-label-card").getBBox();
+            const text = [...group.querySelectorAll(".edge-label, .edge-callsite")]
+                .map((element) => element.getBBox());
+            return {
+                width: card.width,
+                overflow: text.some((bounds) =>
+                    bounds.x < card.x + 7
+                    || bounds.x + bounds.width > card.x + card.width - 7
+                ),
+            };
+        }"""
+    )
+    assert not edge_label_before_selection["overflow"]
+    exact_callsite.evaluate(
+        "element => element.parentElement.dispatchEvent("
+        "new MouseEvent('click', { bubbles: true }))"
+    )
+    edge_label_after_selection = edge_label.evaluate(
+        """group => ({
+            width: group.querySelector(".edge-label-card").getBBox().width,
+            selected: group.classList.contains("selected"),
+        })"""
+    )
+    assert edge_label_after_selection["selected"]
+    assert abs(
+        edge_label_after_selection["width"]
+        - edge_label_before_selection["width"]
+    ) < 0.01
+    assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
     page.wait_for_timeout(3700)
     page.screenshot(path=str(ARTIFACTS / "callgraph-overview.png"), full_page=True)
     assert not console_errors, f"browser console errors: {console_errors}"

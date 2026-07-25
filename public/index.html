@@ -57,8 +57,12 @@
                 <dd id="graph-overview-start">—</dd>
               </div>
               <div>
-                <dt>终点</dt>
+                <dt id="graph-overview-end-label">结构终点</dt>
                 <dd id="graph-overview-end">—</dd>
+              </div>
+              <div id="graph-overview-sinks-wrap" hidden>
+                <dt>结构出口</dt>
+                <dd id="graph-overview-sinks">—</dd>
               </div>
               <div>
                 <dt>规模</dt>
@@ -91,7 +95,7 @@
 
       <main class="workspace">
         <div class="toolbar" role="toolbar" aria-label="图谱操作">
-          <div class="tool-group">
+          <div class="tool-group callgraph-only">
             <button class="tool active" data-focus="all">全图</button>
             <button class="tool" data-focus="upstream">上游</button>
             <button class="tool" data-focus="downstream">下游</button>
@@ -104,21 +108,34 @@
             <button class="icon-tool" id="zoom-in" aria-label="放大">＋</button>
           </div>
           <span class="tool-divider"></span>
-          <button class="tool" id="orientation">纵向布局</button>
-          <button class="tool" id="reset-view">恢复全部</button>
-          <button class="tool" id="reset-layout" title="清除当前方向的手工节点位置">自动排版</button>
+          <button class="tool callgraph-only" id="orientation">纵向布局</button>
+          <button class="tool callgraph-only" id="reset-view">恢复全部</button>
+          <button class="tool callgraph-only" id="reset-layout" title="清除当前方向的手工节点位置">自动排版</button>
           <button
-            class="tool instant-open-toggle"
+            class="tool instant-open-toggle callgraph-only"
             id="instant-open-toggle"
             type="button"
             aria-pressed="false"
             title="开启后，点击节点或精确调用边会立即打开源码"
           >点击跳转：关</button>
-          <div class="toolbar-meta">
+          <div class="toolbar-meta callgraph-only">
             <span id="visible-count">0 / 0 节点</span>
             <span id="validation-badge" class="validation-badge">待校验</span>
           </div>
         </div>
+
+        <nav id="view-context" class="view-context" aria-label="阅读层级" hidden>
+          <button id="scene-view-button" class="view-context-root" type="button">
+            <span aria-hidden="true">⌘</span>
+            场景地图
+          </button>
+          <span class="view-context-separator" aria-hidden="true">/</span>
+          <strong id="view-context-current">全局结构</strong>
+          <button id="full-callgraph-button" class="view-context-action" type="button">
+            查看完整调用图
+            <span aria-hidden="true">→</span>
+          </button>
+        </nav>
 
         <nav class="source-stepper" aria-label="源码步进导航" aria-keyshortcuts="ArrowLeft ArrowRight">
             <button id="trace-previous" class="trace-step" disabled>
@@ -165,8 +182,22 @@
             </button>
         </nav>
 
+        <section id="phase-navigator" class="phase-navigator" aria-label="用户场景拓扑" hidden></section>
+
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
+          <button
+            id="phase-context-card"
+            class="phase-context-card"
+            type="button"
+            aria-pressed="false"
+            hidden
+          >
+            <span id="phase-context-card-kicker">SCENARIO PHASE</span>
+            <strong id="phase-context-card-title">—</strong>
+            <small id="phase-context-card-summary">—</small>
+            <em id="phase-context-card-status">点击恢复场景高亮</em>
+          </button>
           <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
           <div class="canvas-hint">滚轮缩放 · 拖动画布 · Shift 框选 · 拖动群组 · Esc 清除</div>
           <div id="empty-state" class="empty-state" hidden>

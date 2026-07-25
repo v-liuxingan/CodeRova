@@ -18,6 +18,7 @@ export class GraphState {
   constructor(graph, layout = {}) {
     this.graph = graph;
     this.selected = null;
+    this.activePhaseId = null;
     this.selectionFocusNodeId = null;
     this.selectionFocusAnchorId = null;
     this.selectedNodeIds = new Set();
@@ -78,8 +79,9 @@ export class GraphState {
   }
 
   clearInteractionSelection() {
-    if (!this.selected && !this.selectedNodeIds.size) return;
+    if (!this.selected && !this.selectedNodeIds.size && !this.activePhaseId) return;
     this.selected = null;
+    this.activePhaseId = null;
     this.selectionFocusNodeId = null;
     this.selectionFocusAnchorId = null;
     this.selectedNodeIds.clear();
@@ -94,6 +96,14 @@ export class GraphState {
   setFocus(mode) {
     this.focusMode = mode;
     this.notify("focus");
+  }
+
+  setPhaseFocus(phaseId) {
+    const exists = (this.graph.phases || []).some((phase) => phase.id === phaseId);
+    const next = exists ? phaseId : null;
+    if (this.activePhaseId === next) return;
+    this.activePhaseId = next;
+    this.notify("phase-focus");
   }
 
   toggleKind(kind) {
@@ -247,11 +257,24 @@ export class GraphState {
         edges,
         this.selectionFocusAnchorId,
       );
+    const phaseNodeIds = new Set(
+      this.activePhaseId
+        ? nodes
+          .filter((node) => node.phaseId === this.activePhaseId)
+          .map((node) => node.id)
+        : [],
+    );
     return {
       root: this.graph.root,
+      phases: this.graph.phases || [],
       nodes,
       edges,
       selectionFocus,
+      phaseFocus: {
+        active: phaseNodeIds.size > 0,
+        phaseId: this.activePhaseId,
+        nodeIds: phaseNodeIds,
+      },
     };
   }
 

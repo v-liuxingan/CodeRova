@@ -113,8 +113,7 @@ impl GraphStore for FileGraphStore {
             .ok_or_else(|| format!("调用图不存在：{slug}"))?;
         let original =
             fs::read(&source).map_err(|error| format!("无法读取 {}：{error}", source.display()))?;
-        let mut graph: CallGraph = serde_json::from_slice(&original)
-            .map_err(|error| format!("无法解析 {}：{error}", source.display()))?;
+        let mut graph = parse_graph(&original, &source)?;
         graph.category_id = category_id.trim().to_owned();
         graph.category = category.trim().to_owned();
 
@@ -303,9 +302,62 @@ fn warn_on_category_mismatch(root: &Path, path: &Path, graph: &CallGraph) {
 }
 
 pub fn read_graph_file(path: &Path) -> Result<CallGraph, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|error| format!("无法读取 {}：{error}", path.display()))?;
-    serde_json::from_str(&content).map_err(|error| format!("无法解析 {}：{error}", path.display()))
+    let content =
+        fs::read(path).map_err(|error| format!("无法读取 {}：{error}", path.display()))?;
+    parse_graph(&content, path)
+}
+
+fn parse_graph(content: &[u8], path: &Path) -> Result<CallGraph, String> {
+    let mut deserializer = serde_json::Deserializer::from_slice(content);
+    serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+        let field_path = match error.path().to_string().as_str() {
+            "." => "根对象".to_owned(),
+            value => value.to_owned(),
+        };
+        let source = error.inner();
+        let category = match source.classify() {
+            serde_json::error::Category::Syntax => "JSON 语法错误",
+            serde_json::error::Category::Data => "字段格式错误",
+            serde_json::error::Category::Eof => "JSON 内容不完整",
+            serde_json::error::Category::Io => "JSON 读取错误",
+        };
+        let suggestion = parse_error_suggestion(source);
+        format!(
+            "调用图格式检查失败：{}\n\
+             位置：{}（第 {} 行，第 {} 列）\n\
+             类型：{}\n\
+             原因：{}\n\
+             修复建议：{}",
+            path.display(),
+            field_path,
+            source.line(),
+            source.column(),
+            category,
+            source,
+            suggestion,
+        )
+    })
+}
+
+fn parse_error_suggestion(error: &serde_json::Error) -> &'static str {
+    let message = error.to_string();
+    if message.contains("unknown field") {
+        "删除未知字段，或改用原因中列出的允许字段。"
+    } else if message.contains("missing field") {
+        "补充原因中指出的必填字段，并对照 schema/callgraph.schema.json 填写。"
+    } else if message.contains("invalid type") {
+        "将该字段改为原因中要求的 JSON 类型。"
+    } else {
+        match error.classify() {
+            serde_json::error::Category::Syntax | serde_json::error::Category::Eof => {
+                "检查该行附近的逗号、引号和括号是否完整。"
+            }
+            serde_json::error::Category::Data => {
+                "对照 schema/callgraph.schema.json 修正该字段的名称、类型或取值。"
+            }
+            serde_json::error::Category::Io => "确认文件可读取且内容为 UTF-8 JSON。",
+        }
+    }
 }
 
 fn validate_slug(slug: &str) -> Result<(), String> {
@@ -365,6 +417,105 @@ mod tests {
 
         let error = store.list().expect_err("duplicate slug");
         assert!(error.contains("调用图 slug 重复：shared"));
+    }
+
+    #[test]
+    fn graph_format_error_reports_unknown_field_and_repair_hint() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("unknown-field.json");
+        fs::write(
+            &path,
+            br#"{
+                "schemaVersion": "0.4",
+                "projectId": "codex",
+                "title": "Unknown field",
+                "root": "root",
+                "nodes": [],
+                "edges": [],
+                "titel": "typo"
+            }"#,
+        )
+        .expect("write invalid graph");
+
+        let error = read_graph_file(&path).expect_err("unknown field should fail");
+        assert!(error.contains("调用图格式检查失败"));
+        assert!(error.contains("unknown field `titel`"));
+        assert!(error.contains("修复建议：删除未知字段"));
+        assert!(error.contains("第 8 行"));
+    }
+
+    #[test]
+    fn graph_format_error_reports_nested_field_path_and_expected_type() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("invalid-type.json");
+        fs::write(
+            &path,
+            br#"{
+                "schemaVersion": "0.4",
+                "projectId": "codex",
+                "title": "Invalid type",
+                "root": "root",
+                "nodes": [{
+                    "id": "root",
+                    "kind": "function",
+                    "label": "root",
+                    "file": "src/main.rs",
+                    "line": "twelve",
+                    "role": "entry"
+                }],
+                "edges": []
+            }"#,
+        )
+        .expect("write invalid graph");
+
+        let error = read_graph_file(&path).expect_err("invalid type should fail");
+        assert!(error.contains("位置：nodes[0].line"));
+        assert!(error.contains("invalid type"));
+        assert!(error.contains("修复建议：将该字段改为"));
+    }
+
+    #[test]
+    fn graph_format_error_reports_missing_required_field() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("missing-field.json");
+        fs::write(
+            &path,
+            br#"{
+                "schemaVersion": "0.4",
+                "projectId": "codex",
+                "root": "root",
+                "nodes": [],
+                "edges": []
+            }"#,
+        )
+        .expect("write invalid graph");
+
+        let error = read_graph_file(&path).expect_err("missing field should fail");
+        assert!(error.contains("missing field `title`"));
+        assert!(error.contains("修复建议：补充原因中指出的必填字段"));
+    }
+
+    #[test]
+    fn graph_format_error_reports_json_syntax_location() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("invalid-syntax.json");
+        fs::write(
+            &path,
+            br#"{
+                "schemaVersion": "0.4",
+                "projectId": "codex",
+                "title": "Invalid syntax",
+                "root": "root",
+                "nodes": [],
+                "edges": [],
+            }"#,
+        )
+        .expect("write invalid graph");
+
+        let error = read_graph_file(&path).expect_err("invalid syntax should fail");
+        assert!(error.contains("JSON 语法错误"));
+        assert!(error.contains("修复建议：检查该行附近的逗号"));
+        assert!(error.contains("第 8 行"));
     }
 
     #[test]
