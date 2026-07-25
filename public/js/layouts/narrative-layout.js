@@ -126,6 +126,13 @@ export class NarrativeLayout {
       crossStep,
       positionOverrides,
     });
+    resolveAutomaticLayerCollisions({
+      positions,
+      vertical,
+      crossDimension,
+      crossStep,
+      positionOverrides,
+    });
 
     const values = [...positions.values()];
     const minX = Math.min(...values.map((item) => item.x));
@@ -442,6 +449,55 @@ function applyOrderedSiblingBands({
       if (Number.isFinite(positionOverrides[edge.to]?.[crossOverride])) return;
       if (vertical) child.x = startCross + index * crossStep;
       else child.y = startCross + index * crossStep;
+    });
+  }
+}
+
+function resolveAutomaticLayerCollisions({
+  positions,
+  vertical,
+  crossDimension,
+  crossStep,
+  positionOverrides,
+}) {
+  const layers = new Map();
+  const crossProperty = vertical ? "x" : "y";
+  for (const entry of positions.values()) {
+    if (!layers.has(entry.level)) layers.set(entry.level, []);
+    layers.get(entry.level).push(entry);
+  }
+
+  for (const entries of layers.values()) {
+    if (
+      entries.length < 2
+      || entries.some((entry) =>
+        Number.isFinite(positionOverrides[entry.node.id]?.[crossProperty]))
+    ) {
+      continue;
+    }
+    const ordered = [...entries].sort((left, right) =>
+      left[crossProperty] - right[crossProperty]
+      || String(left.node.id).localeCompare(String(right.node.id)));
+    const overlaps = ordered.some((entry, index) =>
+      index > 0
+      && entry[crossProperty] - ordered[index - 1][crossProperty] < crossDimension);
+    if (!overlaps) continue;
+
+    const spineIndex = ordered.findIndex((entry) => entry.narrativeRole === "spine");
+    if (spineIndex >= 0) {
+      ordered[spineIndex][crossProperty] = 0;
+      for (let index = spineIndex - 1; index >= 0; index -= 1) {
+        ordered[index][crossProperty] = -(spineIndex - index) * crossStep;
+      }
+      for (let index = spineIndex + 1; index < ordered.length; index += 1) {
+        ordered[index][crossProperty] = (index - spineIndex) * crossStep;
+      }
+      continue;
+    }
+
+    const startCross = -((ordered.length - 1) * crossStep) / 2;
+    ordered.forEach((entry, index) => {
+      entry[crossProperty] = startCross + index * crossStep;
     });
   }
 }

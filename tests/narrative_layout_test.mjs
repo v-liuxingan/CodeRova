@@ -17,6 +17,7 @@ await testAllRealGraphs();
 await testVisibleScenarioCompleteness();
 testDeterministicBranchPlacement();
 testExplicitExecutionOrderPrecedesEdgeIds();
+testCompetingOrderedBandsDoNotOverlap();
 testCycleSafetyAndDataFallback();
 testPositionOverrides();
 testSemanticZoomTiers();
@@ -193,6 +194,38 @@ function testExplicitExecutionOrderPrecedesEdgeIds() {
     result.nodes.get("second").x,
     "dragging one ordered sibling must not reshuffle the remaining band",
   );
+}
+
+function testCompetingOrderedBandsDoNotOverlap() {
+  const graph = {
+    root: "root",
+    nodes: ["root", "left-parent", "right-parent", "left-a", "left-b", "right-a", "right-b"]
+      .map((id) => ({ id })),
+    edges: [
+      edge("root-left", "root", "left-parent"),
+      edge("root-right", "root", "right-parent"),
+      { ...edge("left-a", "left-parent", "left-a"), order: 1 },
+      { ...edge("left-b", "left-parent", "left-b"), order: 2 },
+      { ...edge("right-a", "right-parent", "right-a"), order: 1 },
+      { ...edge("right-b", "right-parent", "right-b"), order: 2 },
+    ],
+  };
+
+  for (const orientation of ["vertical", "horizontal"]) {
+    const result = layout.compute(graph, orientation);
+    const cross = [...result.nodes.values()]
+      .filter((entry) => entry.level === 2)
+      .map((entry) => orientation === "vertical" ? entry.x : entry.y)
+      .sort((a, b) => a - b);
+    const nodeSpan = orientation === "vertical"
+      ? layout.nodeWidth
+      : layout.nodeHeight;
+    assert.ok(
+      cross.every((value, index) =>
+        index === 0 || value - cross[index - 1] >= nodeSpan),
+      `${orientation} competing ordered sibling bands remain readable`,
+    );
+  }
 }
 
 function testCycleSafetyAndDataFallback() {

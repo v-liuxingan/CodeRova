@@ -17,6 +17,10 @@ Callgraph Visualizer 将真实源码转化为可探索、可解释、可验证�
 压缩。端到端图负责解释共同主干，复杂工具和运行入口使用独立调用图展开。这些示例基于提交
 `23899f7cb63a1510e53fddd68740dfc325853e3b` 核验。
 
+此外，`项目自身` 分类包含三张自描述图，分别解释图谱发现与加载、格式/源码证据校验，
+以及场景拓扑、链路高亮和调用步进共享的前端交互回环。它们以本仓库真实源码作为证据，
+用于开发者反向理解可视化工具本身。
+
 ## 功能
 
 - 标准 `callgraph.json` 数据模型和 JSON Schema。
@@ -267,21 +271,15 @@ public/js/
   renderer-registry.js 渲染器插件注册
   theme-registry.js    可注册主题与本地持久化切换
 schema/
-  callgraph.schema.json  调用图 0.2/0.3
+  callgraph.schema.json  调用图 0.2/0.3/0.4
   projects.schema.json   项目目录配置 0.1
   layout.schema.json     手工节点位置配置 0.1
 graphs/
-  codex-config-resolution.json
-  codex-context-compaction.json
-  codex-end-to-end-agent-loop.json
-  codex-exec-lifecycle.json
-  codex-apply-patch-lifecycle.json
-  codex-code-mode-execution.json
-  codex-mcp-tool-call.json
-  codex-shell-tool-execution.json
-  codex-thread-resume.json
-  codex-turn-lifecycle.json
-  tui-authorization.json
+  context/              配置与上下文
+  overview/             端到端全景
+  project/              Callgraph Visualizer 自身关键链路
+  session/              会话与回合
+  tools/                工具执行与授权
 layouts/
   *.layout.json          运行时按需生成的手工排版配置
 frontend/

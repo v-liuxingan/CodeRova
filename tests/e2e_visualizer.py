@@ -94,9 +94,11 @@ with sync_playwright() as playwright:
     health = page.request.get(f"{BASE_URL}/api/health")
     assert health.ok
     projects = health.json()["projects"]
-    assert len(projects) == 1
-    assert projects[0]["id"] == "codex"
-    assert projects[0]["rootExists"]
+    assert [project["id"] for project in projects] == [
+        "callgraph-visualizer",
+        "codex",
+    ]
+    assert all(project["rootExists"] for project in projects)
 
     graphs = page.request.get(f"{BASE_URL}/api/graphs")
     assert graphs.ok
@@ -112,24 +114,32 @@ with sync_playwright() as playwright:
         "codex-shell-tool-execution",
         "codex-thread-resume",
         "codex-turn-lifecycle",
+        "callgraph-visualizer-graph-loading",
+        "callgraph-visualizer-source-evidence",
+        "callgraph-visualizer-interaction-loop",
         "tui-authorization",
     }
     assert {graph["slug"] for graph in graph_summaries} == expected_slugs
-    assert all(graph["projectId"] == "codex" for graph in graph_summaries)
-    assert sum(graph["nodeCount"] for graph in graph_summaries) == 230
-    assert sum(graph["edgeCount"] for graph in graph_summaries) == 274
-    assert page.locator(".graph-option").count() == 11
+    assert Counter(graph["projectId"] for graph in graph_summaries) == {
+        "codex": 11,
+        "callgraph-visualizer": 3,
+    }
+    assert sum(graph["nodeCount"] for graph in graph_summaries) == 289
+    assert sum(graph["edgeCount"] for graph in graph_summaries) == 343
+    assert page.locator(".graph-option").count() == 14
     expected_category_counts = {
         "全景流程": 1,
         "会话运行": 3,
         "工具执行": 5,
         "配置与上下文": 2,
+        "项目自身": 3,
     }
     expected_category_id_counts = {
         "overview": 1,
         "session": 3,
         "tools": 5,
         "context": 2,
+        "project": 3,
     }
     assert Counter(
         graph["category"] for graph in graph_summaries
@@ -147,10 +157,10 @@ with sync_playwright() as playwright:
         ]))"""
     ) == expected_category_counts
     category_toggles = page.locator(".graph-category-header")
-    assert category_toggles.count() == 4
+    assert category_toggles.count() == 5
     assert category_toggles.evaluate_all(
         "buttons => buttons.map(button => button.getAttribute('aria-expanded'))"
-    ) == ["true", "true", "true", "true"]
+    ) == ["true", "true", "true", "true", "true"]
     tools_category = page.locator('.graph-category[data-category-id="tools"]')
     tools_toggle = tools_category.locator(".graph-category-header")
     tools_items = tools_category.locator(".graph-category-items")
@@ -199,7 +209,7 @@ with sync_playwright() as playwright:
     catalog_slugs = page.locator(".graph-option").evaluate_all(
         "buttons => buttons.map(button => button.dataset.slug)"
     )
-    assert len(catalog_slugs) == len(set(catalog_slugs)) == 11
+    assert len(catalog_slugs) == len(set(catalog_slugs)) == 14
     category_by_slug = {
         graph["slug"]: graph["category"] for graph in graph_summaries
     }
@@ -410,6 +420,9 @@ with sync_playwright() as playwright:
         "Codex shell tool approval and sandbox execution": (21, 41),
         "Codex persisted thread resume": (16, 33),
         "Codex interactive turn lifecycle": (20, 37),
+        "Callgraph Visualizer graph discovery and loading": (17, 32),
+        "Callgraph Visualizer validation and source evidence": (18, 35),
+        "Callgraph Visualizer interactive exploration loop": (24, 46),
         "TUI authorization call graph": (23, 44),
     }
     for title, (node_count, source_location_count) in expected_graphs.items():
@@ -1112,6 +1125,53 @@ with sync_playwright() as playwright:
             assert default_feedback_style["cardStrokeWidth"] >= 1.1
             assert default_feedback_style["labelFill"] != "none"
             assert default_feedback_style["callsiteFill"] != "none"
+            edge_hierarchy_style = page.evaluate(
+                """() => {
+                    const styleFor = (selector) => {
+                        const edge = document.querySelector(selector);
+                        if (!edge) return null;
+                        const style = getComputedStyle(edge);
+                        return {
+                            opacity: Number.parseFloat(style.opacity),
+                            stroke: style.stroke,
+                            strokeWidth: Number.parseFloat(style.strokeWidth),
+                            dash: style.strokeDasharray,
+                        };
+                    };
+                    return {
+                        spine: styleFor(
+                            '.graph-edge-group[data-narrative-role="spine"]'
+                            + ':not(.graph-edge-label-group) .graph-edge'
+                        ),
+                        supporting: styleFor(
+                            '.graph-edge-group[data-narrative-role="branch"]'
+                            + '[data-flow-kind="normal"]'
+                            + ':not(.graph-edge-label-group) .graph-edge'
+                        ),
+                        fallback: styleFor(
+                            '[data-edge-group-id="e2e.model-to-http"]'
+                            + ':not(.graph-edge-label-group) .graph-edge'
+                        ),
+                    };
+                }"""
+            )
+            assert edge_hierarchy_style["spine"], edge_hierarchy_style
+            assert edge_hierarchy_style["supporting"], edge_hierarchy_style
+            assert edge_hierarchy_style["fallback"], edge_hierarchy_style
+            assert (
+                edge_hierarchy_style["spine"]["strokeWidth"]
+                > edge_hierarchy_style["supporting"]["strokeWidth"]
+            ), edge_hierarchy_style
+            assert (
+                edge_hierarchy_style["spine"]["opacity"]
+                > edge_hierarchy_style["supporting"]["opacity"]
+            ), edge_hierarchy_style
+            assert (
+                edge_hierarchy_style["fallback"]["strokeWidth"]
+                > edge_hierarchy_style["supporting"]["strokeWidth"]
+            ), edge_hierarchy_style
+            assert edge_hierarchy_style["fallback"]["dash"] != "none"
+            assert page.locator("#layered-demo-link").count() == 0
             page.locator(".workspace").screenshot(
                 path=str(ARTIFACTS / "narrative-agent-loop.png")
             )

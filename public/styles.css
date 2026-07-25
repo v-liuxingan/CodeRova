@@ -532,10 +532,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font:
 .kind-filter.active { border-color: var(--acid); color: var(--acid); background: rgb(200 240 74 / 6%); }
 .legend { display: grid; gap: 9px; font-size: 11px; color: var(--muted); }
 .legend span { display: flex; gap: 9px; align-items: center; }
-.edge-swatch { width: 24px; border-top: 2px solid var(--paper); }
-.edge-swatch.callback { border-color: var(--amber); border-top-style: dashed; }
-.edge-swatch.trait { border-color: var(--cyan); border-top-style: dotted; }
-.edge-swatch.data { border-color: var(--rose); border-top-style: dashed; }
+.edge-swatch { width: 24px; border-top: 1px solid var(--edge-direct); }
+.edge-swatch.spine { border-top: 3px solid color-mix(in srgb, var(--edge-direct) 72%, var(--paper)); }
+.edge-swatch.branch { border-top: 2px dashed var(--amber); }
+.edge-swatch.merge { border-top: 2px solid var(--cyan); }
+.edge-swatch.loop { border-top: 2px dashed color-mix(in srgb, var(--amber) 76%, var(--edge-direct)); }
 
 .workspace {
   position: relative;
@@ -1201,11 +1202,30 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
 
 .graph-edge-group { cursor: pointer; outline: none; }
 .graph-edge-hit { fill: none; stroke: transparent; stroke-width: 24; pointer-events: stroke; vector-effect: non-scaling-stroke; }
-.graph-edge { fill: none; stroke: var(--edge-direct); stroke-width: 1.4; opacity: .68; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
-.graph-edge.narrative-spine { stroke-width: 2.15; opacity: .94; }
+.graph-edge { fill: none; stroke: var(--edge-direct); stroke-width: 1.2; opacity: .48; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
+.graph-edge.narrative-spine {
+  stroke: color-mix(in srgb, var(--edge-direct) 72%, var(--paper));
+  stroke-width: 2.35;
+  opacity: .96;
+}
 .graph-edge.callback, .graph-edge.spawn, .graph-edge.async-boundary { stroke: var(--amber); stroke-dasharray: 7 5; }
 .graph-edge.trait-dispatch { stroke: var(--cyan); stroke-dasharray: 2 5; }
 .graph-edge.data-flow { stroke: var(--rose); stroke-dasharray: 10 5 2 5; }
+.graph-edge-group[data-flow-kind="branch"] .graph-edge,
+.graph-edge-group[data-flow-kind="fallback"] .graph-edge {
+  stroke: color-mix(in srgb, var(--amber) 76%, var(--edge-direct));
+  stroke-width: 1.7;
+  opacity: .86;
+}
+.graph-edge-group[data-flow-kind="branch"] .graph-edge { stroke-dasharray: 7 4; }
+.graph-edge-group[data-flow-kind="fallback"] .graph-edge { stroke-dasharray: 3 5; }
+.graph-edge-group[data-flow-kind="merge"] .graph-edge,
+.graph-edge-group[data-flow-kind="loop-exit"] .graph-edge {
+  stroke: color-mix(in srgb, var(--cyan) 76%, var(--edge-direct));
+  stroke-width: 1.75;
+  opacity: .88;
+}
+.graph-edge-group[data-flow-kind="loop-exit"] .graph-edge { stroke-dasharray: 9 4; }
 .graph-edge.feedback,
 .graph-edge.geometry-feedback {
   stroke: color-mix(in srgb, var(--amber) 88%, var(--edge-direct));
@@ -1249,6 +1269,19 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
 .graph-edge-label-group:hover .edge-label-card,
 .graph-edge-label-group:focus-visible .edge-label-card {
   stroke: var(--acid);
+}
+.graph-edge-label-group[data-narrative-role="spine"] .edge-label-card {
+  stroke: color-mix(in srgb, var(--edge-direct) 48%, var(--line));
+}
+.graph-edge-label-group[data-flow-kind="branch"] .edge-label-card,
+.graph-edge-label-group[data-flow-kind="fallback"] .edge-label-card {
+  fill: color-mix(in srgb, var(--canvas) 91%, var(--amber));
+  stroke: color-mix(in srgb, var(--amber) 58%, var(--line));
+}
+.graph-edge-label-group[data-flow-kind="merge"] .edge-label-card,
+.graph-edge-label-group[data-flow-kind="loop-exit"] .edge-label-card {
+  fill: color-mix(in srgb, var(--canvas) 92%, var(--cyan));
+  stroke: color-mix(in srgb, var(--cyan) 58%, var(--line));
 }
 .edge-label { fill: var(--muted); font: 9px "Cascadia Code", monospace; pointer-events: none; }
 .edge-label.ordered {
@@ -1365,6 +1398,20 @@ body.resizing-inspector { cursor: col-resize; user-select: none; }
   .graph-edge-label-group[data-flow-kind="normal"][data-execution-order=""] {
   opacity: 0;
   pointer-events: none;
+}
+#graph-canvas[data-semantic-zoom="context"]
+  .graph-edge-label-group[data-narrative-role="branch"][data-flow-kind="normal"][data-execution-order=""] {
+  opacity: .24;
+}
+#graph-canvas[data-semantic-zoom="context"]
+  .graph-edge-label-group[data-narrative-role="branch"][data-flow-kind="normal"][data-execution-order=""]:hover,
+#graph-canvas[data-semantic-zoom="context"]
+  .graph-edge-label-group[data-narrative-role="branch"][data-flow-kind="normal"][data-execution-order=""]:focus-visible,
+#graph-canvas[data-semantic-zoom="context"]
+  .graph-edge-label-group[data-narrative-role="branch"][data-flow-kind="normal"][data-execution-order=""].selected,
+#graph-canvas[data-semantic-zoom="context"]
+  .graph-edge-label-group[data-narrative-role="branch"][data-flow-kind="normal"][data-execution-order=""].path-focused {
+  opacity: 1;
 }
 #graph-canvas[data-semantic-zoom="context"] .node-label { display: none; }
 .node-port { fill: var(--node-port); stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
