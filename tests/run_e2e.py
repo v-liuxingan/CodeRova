@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TEMP_LAYOUTS = ROOT / "tests" / ".tmp-layouts"
 TEMP_GRAPHS = ROOT / "tests" / ".tmp-graphs"
+TEMP_SCENARIOS = ROOT / "tests" / ".tmp-scenarios"
 TARGET_DIR = Path(
     os.environ.get("CALLGRAPH_E2E_TARGET_DIR", ROOT / "target" / "frontend-e2e")
 )
@@ -41,6 +42,26 @@ def find_free_port() -> int:
 
 def main() -> int:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "mermaid_scene_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "scene_render_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "project_evidence_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["node", str(ROOT / "tests" / "execution_context_test.mjs")],
+        cwd=ROOT,
+        check=True,
+    )
     subprocess.run(
         ["node", str(ROOT / "tests" / "narrative_layout_test.mjs")],
         cwd=ROOT,
@@ -90,7 +111,9 @@ def main() -> int:
     )
     shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
     shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
+    shutil.rmtree(TEMP_SCENARIOS, ignore_errors=True)
     shutil.copytree(ROOT / "graphs", TEMP_GRAPHS)
+    shutil.copytree(ROOT / "scenarios", TEMP_SCENARIOS)
     port = find_free_port()
     server = subprocess.Popen(
         [
@@ -100,6 +123,8 @@ def main() -> int:
             str(TEMP_LAYOUTS),
             "--graphs",
             str(TEMP_GRAPHS),
+            "--scenarios",
+            str(TEMP_SCENARIOS),
             "--port",
             str(port),
         ],
@@ -119,7 +144,22 @@ def main() -> int:
             env=environment,
             check=False,
         )
-        return result.returncode
+        if result.returncode:
+            return result.returncode
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tests" / "navigation_e2e.py")],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+        )
+        if result.returncode:
+            return result.returncode
+        return subprocess.run(
+            [sys.executable, str(ROOT / "tests" / "scenes_e2e.py")],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+        ).returncode
     finally:
         server.terminate()
         try:
@@ -130,6 +170,7 @@ def main() -> int:
         wait_for_port(port, False)
         shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
         shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
+        shutil.rmtree(TEMP_SCENARIOS, ignore_errors=True)
 
 
 if __name__ == "__main__":

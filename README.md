@@ -12,21 +12,22 @@ Callgraph Visualizer 将真实源码转化为可探索、可解释、可验证�
 校验源码位置，再用可交互 SVG 展示节点、调用方向和间接调用边界。数据模型不限定
 编程语言、框架或仓库。
 
-仓库当前附带十一条 Codex 关键流程作为真实世界示例，覆盖端到端 Agent 回合、授权、
-交互与非交互执行、Shell、MCP、Apply Patch、Code Mode、线程恢复、分层配置和上下文
-压缩。端到端图负责解释共同主干，复杂工具和运行入口使用独立调用图展开。这些示例基于提交
-`23899f7cb63a1510e53fddd68740dfc325853e3b` 核验。
+仓库当前附带多张从用户操作出发的 Codex 关键流程图。目录先回答“发送消息后发生什么”，
+再分别解释提交与恢复任务、运行命令、修改文件、调用外部工具、读取配置和压缩长对话。
+每张图的标题、阶段、节点职责和关系说明都面向第一次接触 Codex 的读者；函数名只作为
+回到源码验证的证据。这些示例基于提交
+`a68d0a74bd38ddc01361ce42262da689b788afce` 核验。
 
 此外，`项目自身` 分类包含三张自描述图，分别解释图谱发现与加载、格式/源码证据校验，
-以及场景拓扑、链路高亮和调用步进共享的前端交互回环。它们以本仓库真实源码作为证据，
+以及链路高亮和调用步进共享的前端交互回环。它们以本仓库真实源码作为证据，
 用于开发者反向理解可视化工具本身。
 
 ## 功能
 
 - 标准 `callgraph.json` 数据模型和 JSON Schema。
 - 节点默认突出用户场景职责，随缩放从“场景概览 → 关系阅读 → 源码证据”逐级增加代码信息。
-- 调用图 0.4 可声明轻量场景阶段；全画布场景地图从真实边聚合主干、职责、分支和回环，
-  点击阶段下钻到可验证的真实调用图，不创建第二份图数据。
+- 场景地图由 Mermaid 时序文本与元数据生成静态时序页面，支持嵌套分支、循环、可选和并发区域，
+  与调用图通过普通链接互相跳转。模型无需生成坐标或 HTML/SVG。
 - 节点、连线、职责、证据和置信度展示；精确调用位置直接标注在连线上。
 - 连线与标签分层渲染，标签按曲线真实位置偏移为信息卡，不遮挡字符或制造断线错觉。
 - 上游、下游、完整路径聚焦。
@@ -49,8 +50,8 @@ Callgraph Visualizer 将真实源码转化为可探索、可解释、可验证�
 - 预览核心不依赖特定语言分析器；轻量语言着色可注册，未知语言安全回退为纯文本。
 - 多下游节点按真实语义显示调用顺序、条件路径、异步路径或普通下游路径，并按目标、关系
   与调用位置选择下一步；输入控件聚焦时方向键自动避让。
-- 阶段下钻会同步代码预览与 SOURCE WALK 到阶段入口；跨阶段点击直接切换场景上下文。
-- 图谱概览区分业务终点和出度为零的结构出口，避免把内部协议节点误读为用户结果。
+- 场景页与调用图分别生成、分别阅读，不同步阶段、选中节点或视口。
+- 图谱概览只将无出边节点标为结构终点，不从阶段排序推断业务完成。
 - 虚拟节点或省略中间节点的抽象连线不伪造调用位置，并显示不可用原因。
 - Rust CLI 校验图结构和真实源码位置。
 - 后端校验后由浏览器触发 `vscode://` 外部协议，不创建 shell 或编辑器进程。
@@ -80,6 +81,7 @@ npm run build:frontend
 - 调用图目录：`graphs`
 - 手工布局目录：`layouts`
 - 静态页面目录：`public`
+- 场景数据目录：`scenes`，生成页面目录：`public/scenes`
 
 默认配置已经把仓库自带的 Codex 示例映射到 `../codex`：
 
@@ -119,11 +121,11 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
   "schemaVersion": "0.2",
   "projectId": "codex",
   "categoryId": "tools",
-  "category": "工具执行",
+  "category": "让 Codex 操作项目",
   "nodes": [
     {
       "file": "codex-rs/cli/src/main.rs",
-      "line": 956
+      "line": 958
     }
   ]
 }
@@ -142,10 +144,9 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 自动强调其全部上游和下游，完整图始终保留，详见
 [`docs/node-path-focus.md`](docs/node-path-focus.md)。
 
-跨越多个用户场景阶段的图可使用 0.4 `phases`。每个节点最多归属一个 `phaseId`；阶段
-提供稳定布局顺序、标题和摘要，前端根据真实跨阶段边自动生成包含分支、汇合与回环的场景
-拓扑，并在保持当前缩放比例的前提下定位节点。`order` 不代表严格线性执行，简单调用图
-可以继续省略阶段：
+调用图可使用 0.4 `phases` 保留内部阶段说明。每个节点最多归属一个 `phaseId`；阶段
+提供布局顺序、标题和摘要，主工作台不再由它生成场景地图或同步跨页状态。
+`order` 不代表严格线性执行或业务终点，也不要求调用图提供阶段：
 
 ```json
 {
@@ -176,6 +177,31 @@ cargo run -- serve --config E:/path/to/callgraph.projects.local.json `
 复述函数名。内容写法和模型生成流程见
 [`docs/callgraph-content-standard.md`](docs/callgraph-content-standard.md)；`graphs/AGENTS.md`
 会要求仓库智能体在修改图文件前先阅读该规范。
+
+## 生成场景地图与调用图
+
+统一入口见 [`docs/graph-authoring.md`](docs/graph-authoring.md)。生成模型分别交付场景
+Mermaid 与少量元数据，或调用图 JSON，项目负责显示；无需加载完整绘图 skill。
+
+场景模型只需阅读 [`docs/scenario-authoring.md`](docs/scenario-authoring.md)，按
+该规范支持的 Mermaid 子集输出 `scenes/<slug>.mmd`，并按
+`schema/mermaid-scene.schema.json` 输出同名元数据 JSON，然后运行：
+
+```powershell
+npm run build:scenes
+npm run check:scenes
+```
+
+构建器将 Mermaid 转为内部语义数据，原有完整 JSON 入口也继续支持。
+共用渲染器自动生成页面与目录，访问 `/scenes/index.html` 即可阅读；后续新增场景不需要
+修改前端代码。图中参与者、消息、条件、循环和并发由数据表达，布局、换行与配色由项目
+实现，不设固定内容数量上限。提交数据及生成的 HTML，不手工维护 SVG 坐标。
+
+调用图的源码校验仍使用 `cargo run -- validate <图文件>`。文件存在与行号有效只是基础
+检查，重要证据还需核对符号和调用位置。项目自身图另有 `tests/project_evidence_test.mjs`
+防止源码行号偏移后看似校验通过；完整回归统一运行 `python tests/run_e2e.py`。
+
+### 调用位置证据
 
 精确边继续使用项目内相对路径：
 
@@ -275,11 +301,11 @@ schema/
   projects.schema.json   项目目录配置 0.1
   layout.schema.json     手工节点位置配置 0.1
 graphs/
-  context/              配置与上下文
-  overview/             端到端全景
+  context/              设置与长对话
+  overview/             第一次阅读入口
   project/              Callgraph Visualizer 自身关键链路
-  session/              会话与回合
-  tools/                工具执行与授权
+  session/              提交与继续任务
+  tools/                Codex 对项目执行的操作
 layouts/
   *.layout.json          运行时按需生成的手工排版配置
 frontend/

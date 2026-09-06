@@ -132,6 +132,81 @@ pub struct GraphSummary {
     pub edge_count: usize,
 }
 
+/// A bounded, architecture-level reading path. Unlike `GraphPhase`, a scenario
+/// may cross projects and links implementation details through stable graph
+/// targets instead of inferring its topology from one callgraph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArchitectureScenario {
+    pub schema_version: String,
+    pub title: String,
+    pub goal: String,
+    #[serde(default)]
+    pub description: String,
+    pub participants: Vec<ScenarioParticipant>,
+    pub steps: Vec<ScenarioStep>,
+    pub links: Vec<ScenarioLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScenarioParticipant {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScenarioStep {
+    pub id: String,
+    pub participant_id: String,
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drilldowns: Vec<ScenarioDrilldown>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScenarioDrilldown {
+    pub project_id: String,
+    pub graph_slug: String,
+    pub target_ids: Vec<String>,
+    pub purpose: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScenarioLink {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub kind: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub condition: String,
+    #[serde(default = "default_confidence")]
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioSummary {
+    pub slug: String,
+    pub title: String,
+    pub goal: String,
+    pub participant_count: usize,
+    pub step_count: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidationReport {

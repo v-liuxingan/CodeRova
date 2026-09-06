@@ -196,6 +196,27 @@ function themeAccent() {
 
 function registerThemes(monaco) {
   if (themesRegistered) return;
+  monaco.editor.defineTheme("callgraph-editorial", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "647087", fontStyle: "italic" },
+      { token: "keyword", foreground: "AD471C" },
+      { token: "string", foreground: "2E5AA8" },
+      { token: "number", foreground: "806034" },
+      { token: "type", foreground: "2E5AA8" },
+    ],
+    colors: {
+      "editor.background": "#F5F5F5",
+      "editor.foreground": "#2D3142",
+      "editorLineNumber.foreground": "#647087",
+      "editorLineNumber.activeForeground": "#AD471C",
+      "editor.lineHighlightBackground": "#FCF0E9",
+      "editor.selectionBackground": "#F7D5C4",
+      "editorIndentGuide.background1": "#DEDEE1",
+      "editorIndentGuide.activeBackground1": "#BFC0C0",
+    },
+  });
   monaco.editor.defineTheme("callgraph-halo", {
     base: "vs",
     inherit: true,

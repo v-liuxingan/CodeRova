@@ -93,7 +93,7 @@
         </section>
       </aside>
 
-      <main class="workspace">
+      <main class="workspace code-mode" data-workspace-view="code">
         <div class="toolbar" role="toolbar" aria-label="图谱操作">
           <div class="tool-group callgraph-only">
             <button class="tool active" data-focus="all">全图</button>
@@ -124,17 +124,9 @@
           </div>
         </div>
 
-        <nav id="view-context" class="view-context" aria-label="阅读层级" hidden>
-          <button id="scene-view-button" class="view-context-root" type="button">
-            <span aria-hidden="true">⌘</span>
-            场景地图
-          </button>
-          <span class="view-context-separator" aria-hidden="true">/</span>
-          <strong id="view-context-current">全局结构</strong>
-          <button id="full-callgraph-button" class="view-context-action" type="button">
-            查看完整调用图
-            <span aria-hidden="true">→</span>
-          </button>
+        <nav class="view-context" aria-label="页面导航">
+          <strong aria-current="page">调用图 · 源码工作台</strong>
+          <a id="scene-page-link" class="view-context-action" href="/scenes/index.html">场景地图 →</a>
         </nav>
 
         <nav class="source-stepper" aria-label="源码步进导航" aria-keyshortcuts="ArrowLeft ArrowRight">
@@ -182,22 +174,8 @@
             </button>
         </nav>
 
-        <section id="phase-navigator" class="phase-navigator" aria-label="用户场景拓扑" hidden></section>
-
         <section class="canvas-wrap" id="canvas-wrap" aria-label="调用图画布">
           <div class="canvas-grid"></div>
-          <button
-            id="phase-context-card"
-            class="phase-context-card"
-            type="button"
-            aria-pressed="false"
-            hidden
-          >
-            <span id="phase-context-card-kicker">SCENARIO PHASE</span>
-            <strong id="phase-context-card-title">—</strong>
-            <small id="phase-context-card-summary">—</small>
-            <em id="phase-context-card-status">点击恢复场景高亮</em>
-          </button>
           <svg id="graph-canvas" role="img" aria-label="源码调用链有向图"></svg>
           <div class="canvas-hint">滚轮缩放 · 拖动画布 · Shift 框选 · 拖动群组 · Esc 清除</div>
           <div id="empty-state" class="empty-state" hidden>

@@ -12,12 +12,12 @@ console.log("Catalog grouping: all assertions passed");
 
 function testKnownPriorityAndFallback() {
   const graphs = [
-    graph("tool", "工具执行"),
+    graph("tool", "让 Codex 操作项目"),
     graph("blank", "  "),
-    graph("overview", "全景流程"),
+    graph("overview", "先看这里"),
     graph("missing"),
-    graph("session", "会话运行"),
-    graph("context", "配置与上下文"),
+    graph("session", "提交与继续任务"),
+    graph("context", "设置与长对话"),
   ];
   const groups = groupGraphCatalog(graphs);
   assert.deepEqual(
@@ -40,13 +40,13 @@ function testCustomCategoryFirstAppearance() {
   const groups = groupGraphCatalog([
     graph("custom-z", "自定义乙"),
     graph("other", "其他"),
-    graph("known", "工具执行"),
+    graph("known", "让 Codex 操作项目"),
     graph("custom-a", "自定义甲"),
     graph("custom-z-2", "自定义乙"),
   ]);
   assert.deepEqual(
     groups.map((group) => group.category),
-    ["工具执行", "自定义乙", "其他", "自定义甲"],
+    ["让 Codex 操作项目", "自定义乙", "其他", "自定义甲"],
   );
   assert.deepEqual(
     groups[1].graphs.map((item) => item.slug),
@@ -56,10 +56,10 @@ function testCustomCategoryFirstAppearance() {
 
 function graph(slug, category) {
   const categoryIds = {
-    "全景流程": "overview",
-    "会话运行": "session",
-    "工具执行": "tools",
-    "配置与上下文": "context",
+    "先看这里": "overview",
+    "提交与继续任务": "session",
+    "让 Codex 操作项目": "tools",
+    "设置与长对话": "context",
     "其他": "other",
     "自定义乙": "custom-z",
     "自定义甲": "custom-a",

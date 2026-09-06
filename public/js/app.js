@@ -12,7 +12,6 @@ import { Inspector } from "./inspector.js";
 import { InspectorWorkbenchController } from "./inspector-workbench-controller.js";
 import { NarrativeLayout } from "./layouts/narrative-layout.js";
 import { LayoutPersistenceController } from "./layout-persistence-controller.js";
-import { PhaseNavigator } from "./phase-navigator.js";
 import { RendererRegistry } from "./renderer-registry.js";
 import { SvgRenderer } from "./renderers/svg-renderer.js";
 import { ResizablePanelController } from "./resizable-panel-controller.js";
@@ -48,16 +47,6 @@ const elements = {
   orientation: document.querySelector("#orientation"),
   themeSelect: document.querySelector("#theme-select"),
   sourceStepper: document.querySelector(".source-stepper"),
-  phaseNavigator: document.querySelector("#phase-navigator"),
-  viewContext: document.querySelector("#view-context"),
-  sceneViewButton: document.querySelector("#scene-view-button"),
-  viewContextCurrent: document.querySelector("#view-context-current"),
-  fullCallgraphButton: document.querySelector("#full-callgraph-button"),
-  phaseContextCard: document.querySelector("#phase-context-card"),
-  phaseContextCardKicker: document.querySelector("#phase-context-card-kicker"),
-  phaseContextCardTitle: document.querySelector("#phase-context-card-title"),
-  phaseContextCardSummary: document.querySelector("#phase-context-card-summary"),
-  phaseContextCardStatus: document.querySelector("#phase-context-card-status"),
   tracePrevious: document.querySelector("#trace-previous"),
   traceCallSite: document.querySelector("#trace-callsite"),
   traceBranchWrap: document.querySelector("#trace-branch-wrap"),
@@ -114,10 +103,6 @@ const layoutPersistence = new LayoutPersistenceController(api, {
     toast(message, true);
   },
 });
-const phaseNavigator = new PhaseNavigator(elements.phaseNavigator, {
-  onSelect: (phaseId) => enterPhase(phaseId),
-});
-
 let activeSlug = null;
 let activeGraph = null;
 let state = null;
@@ -126,8 +111,7 @@ let unsubscribe = null;
 let firstRender = true;
 let catalogGraphs = [];
 let categoryEditorSlug = null;
-let workspaceView = "code";
-let drilldownPhaseId = null;
+let graphLoadVersion = 0;
 
 initializeThemes();
 initializeRail();
@@ -144,6 +128,7 @@ renderer.setCallbacks({
   },
 });
 inspector.setCallbacks({
+  onSelect: selectGraphTarget,
   onOpen: openTarget,
   onHide: (nodeId) => state?.hideNode(nodeId),
   onCollapse: (nodeId) => state?.toggleCollapse(nodeId),
@@ -173,12 +158,22 @@ function initializeThemes() {
 
 async function bootstrap() {
   elements.status.textContent = "连接本地 Rust 服务";
-  const [health, graphs] = await Promise.all([api.health(), api.listGraphs()]);
+  const [health, graphs] = await Promise.all([
+    api.health(),
+    api.listGraphs(),
+  ]);
   catalogGraphs = graphs;
   updateHealth(health);
   const catalog = renderGraphList(graphs);
   if (!graphs.length) throw new Error("graphs 目录中没有调用图");
-  await activateGraph(catalog[0].graphs[0].slug);
+  const requestedSlug = new URL(window.location.href).searchParams.get("graph");
+  const initialSlug = graphs.some((graph) => graph.slug === requestedSlug)
+    ? requestedSlug
+    : catalog[0].graphs[0].slug;
+  await activateGraph(initialSlug);
+  if (requestedSlug && requestedSlug !== initialSlug) {
+    toast("链接中的调用图不存在，已打开目录中的首张图", true);
+  }
 }
 
 function updateHealth(health) {
@@ -399,30 +394,46 @@ function persistCollapsedCatalogCategories(categories) {
 }
 
 async function activateGraph(slug) {
-  await layoutPersistence.flush();
-  setStatus(`装载 ${slug}`);
-  const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug)]);
-  activeSlug = slug;
-  activeGraph = graph;
-  drilldownPhaseId = null;
-  firstRender = true;
-  unsubscribe?.();
-  state = new GraphState(graph, layout);
-  traceNavigator = new TraceNavigator(graph);
-  state.selected = { type: "node", id: graph.root };
-  unsubscribe = state.subscribe(render);
+  const version = ++graphLoadVersion;
+  try {
+    await layoutPersistence.flush();
+    if (version !== graphLoadVersion) return;
+    setStatus(`装载 ${slug}`);
+    const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug)]);
+    if (version !== graphLoadVersion) return;
+    const nextState = new GraphState(graph, layout);
+    const nextTrace = new TraceNavigator(graph);
+    activeSlug = slug;
+    const url = new URL(window.location.href);
+    url.searchParams.set("graph", slug);
+    window.history.replaceState(null, "", url);
+    activeGraph = graph;
+    firstRender = true;
+    unsubscribe?.();
+    state = nextState;
+    traceNavigator = nextTrace;
+    state.selected = { type: "node", id: graph.root };
+    unsubscribe = state.subscribe(render);
+    elements.search.value = "";
 
-  document.querySelectorAll(".graph-option").forEach((element) => {
-    element.classList.toggle("active", element.dataset.slug === slug);
-  });
-  elements.graphTitle.textContent = graph.title;
-  phaseNavigator.render(graph);
-  setWorkspaceView(phaseNavigator.hasPhases() ? "scene" : "code");
-  renderGraphOverview(graph);
-  elements.revision.textContent = `REVISION ${(graph.sourceRevision || "—").slice(0, 10)}`;
-  buildKindFilters();
-  render(state, "initial");
-  await validateActiveGraph();
+    document.querySelectorAll(".graph-option").forEach((element) => {
+      element.classList.toggle("active", element.dataset.slug === slug);
+    });
+    elements.graphTitle.textContent = graph.title;
+    renderGraphOverview(graph);
+    elements.revision.textContent = `REVISION ${(graph.sourceRevision || "—").slice(0, 10)}`;
+    buildKindFilters();
+    render(state, "initial");
+    await validateActiveGraph();
+  } catch (error) {
+    if (version !== graphLoadVersion) return;
+    if (!activeGraph) {
+      showFatal(error);
+      return;
+    }
+    setStatus(`无法装载 ${slug}，保留当前调用图`);
+    toast(error.message, true);
+  }
 }
 
 function render(currentState, reason) {
@@ -431,10 +442,6 @@ function render(currentState, reason) {
     new Set(visibleGraph.nodes.map((node) => node.id)),
   );
   renderer.render(visibleGraph, currentState);
-  phaseNavigator.setActive(currentState.activePhaseId);
-  if (workspaceView === "code" && phaseNavigator.hasPhases()) {
-    updateWorkspaceContext(drilldownPhaseId, currentState.activePhaseId);
-  }
   inspector.render(currentState.selected, currentState.graph);
   void sourcePreview.show(activeSlug, currentState.graph, currentState.selected);
   elements.visibleCount.textContent =
@@ -460,83 +467,6 @@ function render(currentState, reason) {
       ? `已选择 ${targetTypeLabel(currentState.selected.type)} ${currentState.selected.id}`
       : "图谱就绪",
   );
-}
-
-function activeViewportController() {
-  return workspaceView === "scene" ? phaseNavigator : renderer;
-}
-
-function enterPhase(phaseId) {
-  if (!state || !phaseNavigator.hasPhases()) return;
-  drilldownPhaseId = phaseId;
-  setWorkspaceView("code", phaseId);
-  state.setPhaseFocus(phaseId);
-  const phaseNodeIds = state.graph.nodes
-    .filter((node) => node.phaseId === phaseId)
-    .map((node) => node.id);
-  const phaseEntry = traceNavigator?.focusNodes(phaseNodeIds);
-  if (phaseEntry) state.select(phaseEntry);
-  requestAnimationFrame(() => renderer.centerNodes(phaseNodeIds));
-}
-
-function setWorkspaceView(view, phaseId = null) {
-  const hasSceneMap = phaseNavigator.hasPhases();
-  workspaceView = view === "scene" && hasSceneMap ? "scene" : "code";
-  elements.workspace.classList.toggle("has-scene-map", hasSceneMap);
-  elements.workspace.classList.toggle("scene-mode", workspaceView === "scene");
-  elements.workspace.classList.toggle("code-mode", workspaceView === "code");
-  document.documentElement.classList.toggle(
-    "scene-map-active",
-    workspaceView === "scene",
-  );
-  elements.workspace.dataset.workspaceView = workspaceView;
-  elements.viewContext.hidden = !hasSceneMap;
-  phaseNavigator.setVisible(workspaceView === "scene");
-  elements.sceneViewButton.setAttribute(
-    "aria-current",
-    workspaceView === "scene" ? "page" : "false",
-  );
-  elements.sourceStepper.setAttribute(
-    "aria-hidden",
-    String(workspaceView === "scene"),
-  );
-  elements.canvasWrap.setAttribute(
-    "aria-hidden",
-    String(workspaceView === "scene"),
-  );
-  if (phaseId) drilldownPhaseId = phaseId;
-  updateWorkspaceContext(drilldownPhaseId, state?.activePhaseId);
-}
-
-function updateWorkspaceContext(phaseId, activePhaseId) {
-  if (workspaceView === "scene") {
-    elements.viewContextCurrent.textContent = "全局结构";
-    elements.fullCallgraphButton.hidden = false;
-    elements.fullCallgraphButton.textContent = "查看完整调用图 →";
-    elements.phaseContextCard.hidden = true;
-    return;
-  }
-  const phase = activeGraph?.phases?.find(
-    (candidate) => candidate.id === phaseId,
-  );
-  elements.viewContextCurrent.textContent = phase?.title || "完整调用图";
-  elements.fullCallgraphButton.hidden = !phase;
-  elements.fullCallgraphButton.textContent = "退出阶段聚焦";
-  elements.phaseContextCard.hidden = !phase;
-  if (!phase) return;
-  const phaseIndex = activeGraph.phases.findIndex(
-    (candidate) => candidate.id === phase.id,
-  );
-  const highlighted = activePhaseId === phase.id;
-  elements.phaseContextCard.classList.toggle("active", highlighted);
-  elements.phaseContextCard.setAttribute("aria-pressed", String(highlighted));
-  elements.phaseContextCardKicker.textContent =
-    `SCENARIO PHASE · P${phaseIndex + 1}`;
-  elements.phaseContextCardTitle.textContent = phase.title;
-  elements.phaseContextCardSummary.textContent = phase.summary || phase.title;
-  elements.phaseContextCardStatus.textContent = highlighted
-    ? "当前场景已高亮"
-    : "高亮已取消 · 点击恢复";
 }
 
 function targetTypeLabel(type) {
@@ -575,25 +505,13 @@ function renderGraphOverview(graph) {
   elements.graphOverviewStart.title = start
     ? `${start.label} · ${start.id}`
     : graph.root || "";
-  const orderedPhases = [...(graph.phases || [])].sort(
-    (left, right) => left.order - right.order,
-  );
-  const terminalPhase = orderedPhases.at(-1);
-  if (terminalPhase) {
-    elements.graphOverviewEndLabel.textContent = "业务终点";
-    elements.graphOverviewEnd.textContent = terminalPhase.title;
-    elements.graphOverviewEnd.title = terminalPhase.summary || terminalPhase.title;
-    elements.graphOverviewSinksWrap.hidden = false;
-    elements.graphOverviewSinks.textContent = endpointText;
-    elements.graphOverviewSinks.title = endpointLabels.join("、");
-  } else {
-    elements.graphOverviewEndLabel.textContent = "结构终点";
-    elements.graphOverviewEnd.textContent = endpointText;
-    elements.graphOverviewEnd.title = endpointLabels.join("、");
-    elements.graphOverviewSinksWrap.hidden = true;
-    elements.graphOverviewSinks.textContent = "";
-    elements.graphOverviewSinks.title = "";
-  }
+  elements.graphOverviewEndLabel.textContent = "结构终点";
+  elements.graphOverviewEnd.textContent = endpointText;
+  elements.graphOverviewEnd.title =
+    `仅表示本图未记录出边，不保证运行时结束。${endpointLabels.join("、")}`;
+  elements.graphOverviewSinksWrap.hidden = true;
+  elements.graphOverviewSinks.textContent = "";
+  elements.graphOverviewSinks.title = "";
   elements.graphOverviewScale.textContent =
     `${graph.nodes.length} 节点 · ${graph.edges.length} 关系`;
 }
@@ -603,10 +521,14 @@ function nodeScenarioLabel(node) {
 }
 
 async function validateActiveGraph() {
+  const graphState = state;
+  const slug = activeSlug;
   elements.validation.className = "validation-badge";
   elements.validation.textContent = "源码校验中";
+  elements.validation.title = "";
   try {
-    const report = await api.validateGraph(activeSlug);
+    const report = await api.validateGraph(slug);
+    if (state !== graphState) return;
     elements.validation.classList.add(report.valid ? "valid" : "invalid");
     elements.validation.textContent = report.valid
       ? `${report.sourceLocations.length} 处源码有效`
@@ -614,6 +536,7 @@ async function validateActiveGraph() {
     elements.validation.title = [...report.errors, ...report.warnings].join("\n");
     if (!report.valid) toast("调用图存在无效源码位置", true);
   } catch (error) {
+    if (state !== graphState) return;
     elements.validation.classList.add("invalid");
     elements.validation.textContent = "校验失败";
     elements.validation.title = error.message;
@@ -648,28 +571,16 @@ function bindControls() {
   });
   document.querySelector("#zoom-in").addEventListener(
     "click",
-    () => activeViewportController().zoomBy(1.18),
+    () => renderer.zoomBy(1.18),
   );
   document.querySelector("#zoom-out").addEventListener(
     "click",
-    () => activeViewportController().zoomBy(0.84),
+    () => renderer.zoomBy(0.84),
   );
   document.querySelector("#fit-view").addEventListener(
     "click",
-    () => activeViewportController().fit(),
+    () => renderer.fit(),
   );
-  elements.sceneViewButton.addEventListener("click", () => {
-    if (phaseNavigator.hasPhases()) setWorkspaceView("scene");
-  });
-  elements.phaseContextCard.addEventListener("click", () => {
-    if (!drilldownPhaseId || state?.activePhaseId === drilldownPhaseId) return;
-    state?.setPhaseFocus(drilldownPhaseId);
-  });
-  elements.fullCallgraphButton.addEventListener("click", () => {
-    drilldownPhaseId = null;
-    state?.clearInteractionSelection();
-    setWorkspaceView("code");
-  });
   document.querySelector("#reset-view").addEventListener("click", () => state?.resetVisibility());
   document.querySelector("#reset-layout").addEventListener("click", () => {
     if (!state || !activeSlug) return;
@@ -709,7 +620,9 @@ function bindControls() {
     }
   });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "/" && document.activeElement !== elements.search) {
+    if (event.key === "/" && !event.defaultPrevented
+      && !event.ctrlKey && !event.metaKey && !event.altKey
+      && !isEditableTarget(event.target)) {
       event.preventDefault();
       elements.search.focus();
     }
@@ -742,17 +655,6 @@ function bindControls() {
 }
 
 function selectGraphTarget(target) {
-  if (workspaceView === "code" && drilldownPhaseId && target?.type === "node") {
-    const node = activeGraph?.nodes.find((candidate) => candidate.id === target.id);
-    if (node?.phaseId && node.phaseId !== drilldownPhaseId) {
-      const phase = activeGraph.phases?.find(
-        (candidate) => candidate.id === node.phaseId,
-      );
-      drilldownPhaseId = node.phaseId;
-      state?.setPhaseFocus(node.phaseId);
-      toast(`已切换到场景「${phase?.title || node.phaseId}」`);
-    }
-  }
   traceNavigator?.syncSelection(target);
   state?.select(target);
   if (clickNavigation.shouldOpen(activeGraph, target)) void openTarget(target);

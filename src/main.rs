@@ -29,6 +29,8 @@ enum Commands {
         config: PathBuf,
         #[arg(long, default_value = "graphs")]
         graphs: PathBuf,
+        #[arg(long, default_value = "scenarios")]
+        scenarios: PathBuf,
         #[arg(long, default_value = "public")]
         public: PathBuf,
         #[arg(long, default_value = "layouts")]
@@ -70,6 +72,7 @@ async fn main() -> ExitCode {
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
         config: PathBuf::from("callgraph.projects.json"),
         graphs: PathBuf::from("graphs"),
+        scenarios: PathBuf::from("scenarios"),
         public: PathBuf::from("public"),
         layouts: PathBuf::from("layouts"),
     }) {
@@ -78,11 +81,12 @@ async fn main() -> ExitCode {
             host,
             config,
             graphs,
+            scenarios,
             public,
             layouts,
         } => {
             let address = SocketAddr::new(host, port);
-            serve(address, public, graphs, layouts, config).await
+            serve(address, public, graphs, scenarios, layouts, config).await
         }
         Commands::Validate {
             graph,

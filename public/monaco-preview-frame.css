@@ -13,6 +13,11 @@
   --preview-accent: #c8f04a;
 }
 
+:root[data-theme="editorial"] {
+  color-scheme: light;
+  --preview-accent: #eb6c36;
+}
+
 html,
 body,
 #monaco-root,

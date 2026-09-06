@@ -4,20 +4,19 @@
   "categoryId": "project",
   "category": "项目自身",
   "title": "Callgraph Visualizer interactive exploration loop",
-  "description": "展示图谱激活后，场景拓扑、节点或边点击以及调用步进如何汇入同一个 GraphState 更新循环。状态层从真实节点和边计算可见结构与上下游焦点，明确排除 loop-back 对遍历的扩张；渲染器在叙事布局上重建图元但恢复原视口，只有从场景拓扑显式下钻时才居中目标阶段。",
-  "sourceRevision": "58b58f7d61a20cceda6572c13d47f0e2837497a4",
+  "description": "展示当前工作区中，调用图激活、节点或边点击以及调用步进如何汇入同一个 GraphState 更新循环。状态层从真实节点和边计算可见结构与上下游焦点，loop-back 不扩张遍历；渲染器重建图元但保留当前视口。独立场景页只通过普通链接跳转，不参与本图的交互状态。",
   "root": "interaction.activate-graph",
   "phases": [
     {
       "id": "initialize-view",
       "title": "建立探索工作区",
-      "summary": "完整图和布局进入状态、场景拓扑、调用步进器与 SVG 画布，形成后续交互共享的单一数据来源。",
+      "summary": "完整图和布局进入 GraphState、调用步进器与 SVG 画布，作为工作台交互的数据来源。",
       "order": 1
     },
     {
       "id": "choose-context",
       "title": "选择阅读上下文",
-      "summary": "用户可以从场景拓扑显式下钻，或直接点击节点和边；只有场景下钻会主动居中。",
+      "summary": "用户直接点击真实节点或边来选择阅读目标；选择保留当前视口，不触发跨页面状态同步。",
       "order": 2
     },
     {
@@ -29,7 +28,7 @@
     {
       "id": "derive-focus",
       "title": "推导可见与高亮链路",
-      "summary": "状态层应用折叠、隐藏和类型筛选，再从真实关系计算节点或边的上下游焦点与阶段焦点。",
+      "summary": "状态层应用折叠、隐藏和类型筛选，再从真实关系计算节点或边的上下游焦点。",
       "order": 4
     },
     {
@@ -54,108 +53,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 401,
-      "endLine": 426,
+      "line": 396,
+      "endLine": 437,
       "role": "探索会话初始化器",
-      "description": "加载图与个人布局后建立 GraphState 和 TraceNavigator，把根节点设为初始选择并订阅状态变化。场景拓扑和完整调用图从此共享同一个 CallGraph。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.phase-render",
-      "phaseId": "initialize-view",
-      "kind": "method",
-      "label": "PhaseNavigator::render",
-      "crate": "browser",
-      "module": "phase-navigator",
-      "file": "public/js/phase-navigator.js",
-      "line": 33,
-      "endLine": 72,
-      "role": "场景地图构建入口",
-      "description": "从图的 phases 和真实跨阶段边构建可缩放场景地图；没有阶段时保持隐藏，不另外维护作者声明的高亮路径。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.build-topology",
-      "phaseId": "initialize-view",
-      "kind": "function",
-      "label": "buildPhaseTopology",
-      "crate": "browser",
-      "module": "phase-navigator",
-      "file": "public/js/phase-navigator.js",
-      "line": 343,
-      "endLine": 445,
-      "role": "阶段关系投影器",
-      "description": "把节点 phaseId 和跨阶段真实边聚合为阶段关系，保留分支、汇合和回环信号，只隐藏没有控制意义的长距离普通捷径。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.topology-graph",
-      "phaseId": "choose-context",
-      "kind": "method",
-      "label": "PhaseNavigator::renderTopologyGraph",
-      "crate": "browser",
-      "module": "phase-navigator",
-      "file": "public/js/phase-navigator.js",
-      "line": 74,
-      "endLine": 229,
-      "role": "场景阶段交互表面",
-      "description": "绘制阶段关系和阶段卡片，并为鼠标、Enter 与空格注册同一个 onSelect 回调。它表达的是全局场景入口，不直接修改调用图状态。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.enter-phase",
-      "phaseId": "choose-context",
-      "kind": "function",
-      "label": "enterPhase",
-      "crate": "browser",
-      "module": "app",
-      "file": "public/js/app.js",
-      "line": 469,
-      "endLine": 480,
-      "role": "场景下钻协调器",
-      "description": "从场景地图进入调用图后设置阶段焦点、选择阶段入口，并在下一帧居中该阶段。普通节点高亮不会调用这个函数，因此不会无故移动视口。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.phase-focus",
-      "phaseId": "update-state",
-      "kind": "method",
-      "label": "GraphState::setPhaseFocus",
-      "crate": "browser",
-      "module": "graph-state",
-      "file": "public/js/graph-state.js",
-      "line": 101,
-      "endLine": 107,
-      "role": "阶段焦点状态更新",
-      "description": "只接受图中真实存在的阶段 ID，变化后通知订阅者。阶段焦点与节点链路焦点是独立投影，不改变 nodes 或 edges。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.focus-phase-entry",
-      "phaseId": "update-state",
-      "kind": "method",
-      "label": "TraceNavigator::focusNodes",
-      "crate": "browser",
-      "module": "trace-navigator",
-      "file": "public/js/trace-navigator.js",
-      "line": 64,
-      "endLine": 86,
-      "role": "阶段入口选择器",
-      "description": "在阶段节点中优先选择没有阶段内上游的可见节点，并按图声明顺序稳定兜底。它让 SOURCE WALK 与场景入口同步。",
-      "state": "expanded"
-    },
-    {
-      "id": "interaction.center-phase",
-      "phaseId": "choose-context",
-      "kind": "method",
-      "label": "SvgRenderer::centerNodes",
-      "crate": "browser",
-      "module": "svg-renderer",
-      "file": "public/js/renderers/svg-renderer.js",
-      "line": 545,
-      "endLine": 561,
-      "role": "显式阶段居中器",
-      "description": "计算阶段节点包围盒并只调整平移量，保留当前缩放比例。当前仅由场景拓扑下钻调用，普通选择和高亮不触发它。",
+      "description": "加载图与个人布局后，仅让最后一次选择建立 GraphState 和 TraceNavigator，把根节点设为初始选择并订阅状态变化。成功切换同步清空旧搜索词并更新 URL；失败保留当前图，供用户继续阅读或重新选择。",
       "state": "expanded"
     },
     {
@@ -169,7 +70,7 @@
       "line": 299,
       "endLine": 458,
       "role": "调用节点交互表面",
-      "description": "根据选择、链路焦点、阶段焦点和搜索状态绘制节点，并把点击与键盘激活转换为统一 node target 回调。拖拽后的抑制标记阻止误触选择。",
+      "description": "根据选择、链路焦点和搜索状态绘制节点，并把点击与键盘激活转换为统一 node target 回调。拖拽后的抑制标记阻止误触选择。",
       "state": "expanded"
     },
     {
@@ -194,10 +95,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 744,
-      "endLine": 759,
+      "line": 657,
+      "endLine": 661,
       "role": "图元选择协调器",
-      "description": "处理节点或边 target，必要时切换场景上下文，再同步调用游标和 GraphState。即时打开源码是可选策略，不影响默认的网页内阅读。",
+      "description": "处理节点或边 target，依次同步调用游标和 GraphState。即时打开源码是可选策略，默认保留网页内阅读；这里不切换场景或阶段。",
       "state": "expanded"
     },
     {
@@ -239,7 +140,7 @@
       "line": 49,
       "endLine": 51,
       "role": "状态变更广播器",
-      "description": "把状态对象和变更原因同步通知所有订阅者。主应用订阅 render，因此选择、阶段、筛选、折叠和位置变化共享同一刷新入口。",
+      "description": "把状态对象和变更原因同步通知所有订阅者。主应用订阅 render，因此选择、筛选、折叠和位置变化共享同一刷新入口。",
       "state": "expanded"
     },
     {
@@ -250,10 +151,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 428,
-      "endLine": 463,
+      "line": 439,
+      "endLine": 470,
       "role": "交互状态投影主干",
-      "description": "取得当前可见图并依次同步 TraceNavigator、SVG、场景上下文、详情、源码和步进控件。首次渲染定位入口，后续刷新保留用户当前视口。",
+      "description": "取得当前可见图并依次同步 TraceNavigator、SVG、详情、源码和步进控件。首次渲染定位入口，后续刷新保留用户当前视口。",
       "state": "expanded"
     },
     {
@@ -267,7 +168,7 @@
       "line": 200,
       "endLine": 279,
       "role": "可见图与焦点投影器",
-      "description": "应用类型筛选、隐藏、折叠和显式上下游模式，再从剩余真实节点和边计算选择焦点与阶段焦点。原始 graph 保持不变。",
+      "description": "应用类型筛选、隐藏、折叠和显式上下游模式，再从剩余真实节点和边计算选择焦点。原始 graph 保持不变；阶段焦点仅保留兼容能力，主应用不会设置它。",
       "state": "expanded"
     },
     {
@@ -321,7 +222,7 @@
       "module": "narrative-layout",
       "file": "public/js/layouts/narrative-layout.js",
       "line": 27,
-      "endLine": 130,
+      "endLine": 176,
       "role": "叙事结构布局器",
       "description": "选择控制主干、识别声明回环、计算前向层级和分支侧向位置，并叠加当前方向的手工坐标。节点数组顺序不被当作运行时顺序。",
       "state": "expanded"
@@ -334,8 +235,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 761,
-      "endLine": 801,
+      "line": 663,
+      "endLine": 703,
       "role": "调用步进控件投影器",
       "description": "根据当前游标显示上一步、调用位置、候选下游和下一步，并预取即将阅读的源码。分支选项来自真实出边，不维护额外路径配置。",
       "state": "expanded"
@@ -362,8 +263,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 918,
-      "endLine": 931,
+      "line": 820,
+      "endLine": 833,
       "role": "步进动作协调器",
       "description": "根据按钮或方向键动作调用 TraceNavigator；有效目标以 preserveFocusAnchor 方式重新选择，连续阅读不会丢失当前上下游走廊。",
       "state": "expanded"
@@ -385,128 +286,17 @@
   ],
   "edges": [
     {
-      "id": "interaction.activate-to-phase",
-      "from": "interaction.activate-graph",
-      "to": "interaction.phase-render",
-      "kind": "direct",
-      "order": 1,
-      "label": "生成场景地图",
-      "callSiteStatus": "exact",
-      "file": "public/js/app.js",
-      "line": 419,
-      "description": "完整图先投影为用户场景拓扑，为全局阅读提供入口。",
-      "evidence": "activateGraph 调用 phaseNavigator.render。",
-      "confidence": 1.0
-    },
-    {
       "id": "interaction.activate-to-render",
       "from": "interaction.activate-graph",
       "to": "interaction.app-render",
       "kind": "direct",
-      "order": 2,
+      "order": 1,
       "label": "生成调用图",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 424,
+      "line": 426,
       "description": "状态订阅建立后执行第一次完整调用图渲染。",
       "evidence": "activateGraph 调用 render(state, initial)。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.phase-to-build",
-      "from": "interaction.phase-render",
-      "to": "interaction.build-topology",
-      "kind": "direct",
-      "order": 1,
-      "label": "聚合阶段关系",
-      "callSiteStatus": "exact",
-      "file": "public/js/phase-navigator.js",
-      "line": 34,
-      "description": "场景地图从真实 phases、nodes 和 edges 计算阶段拓扑。",
-      "evidence": "PhaseNavigator::render 首先调用 buildPhaseTopology。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.phase-to-graph",
-      "from": "interaction.phase-render",
-      "to": "interaction.topology-graph",
-      "kind": "direct",
-      "order": 2,
-      "label": "绘制阶段卡片",
-      "callSiteStatus": "exact",
-      "file": "public/js/phase-navigator.js",
-      "line": 69,
-      "description": "拓扑计算完成后生成带点击和键盘回调的 SVG 场景地图。",
-      "evidence": "PhaseNavigator::render append(this.renderTopologyGraph())。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.topology-to-enter",
-      "from": "interaction.topology-graph",
-      "to": "interaction.enter-phase",
-      "kind": "callback",
-      "flowKind": "branch",
-      "condition": "用户点击阶段卡片或按 Enter/Space",
-      "label": "下钻阶段",
-      "callSiteStatus": "virtual-node",
-      "callSiteNote": "PhaseNavigator 在 public/js/phase-navigator.js:214-218 调用构造时注入的 onSelect；app.js:118 把该回调绑定到 enterPhase。",
-      "description": "显式场景选择进入阶段下钻路径；普通图元点击不会经过这里。",
-      "evidence": "public/js/app.js:117-119 和 phase-navigator.js:214-218。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.enter-to-phase-focus",
-      "from": "interaction.enter-phase",
-      "to": "interaction.phase-focus",
-      "kind": "direct",
-      "order": 1,
-      "label": "高亮阶段",
-      "callSiteStatus": "exact",
-      "file": "public/js/app.js",
-      "line": 473,
-      "description": "进入代码视图后先设置阶段焦点，让该阶段节点保持突出。",
-      "evidence": "enterPhase 调用 state.setPhaseFocus。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.enter-to-trace-focus",
-      "from": "interaction.enter-phase",
-      "to": "interaction.focus-phase-entry",
-      "kind": "direct",
-      "order": 2,
-      "label": "定位阶段入口",
-      "callSiteStatus": "exact",
-      "file": "public/js/app.js",
-      "line": 477,
-      "description": "阶段内节点集合交给 TraceNavigator，选择稳定的阶段阅读起点。",
-      "evidence": "enterPhase 调用 traceNavigator.focusNodes。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.enter-to-state-select",
-      "from": "interaction.enter-phase",
-      "to": "interaction.state-select",
-      "kind": "direct",
-      "order": 3,
-      "label": "选择入口节点",
-      "callSiteStatus": "exact",
-      "file": "public/js/app.js",
-      "line": 478,
-      "description": "找到阶段入口后把它设置为当前节点，详情、源码和步进随之同步。",
-      "evidence": "enterPhase 在 phaseEntry 存在时调用 state.select。",
-      "confidence": 1.0
-    },
-    {
-      "id": "interaction.enter-to-center",
-      "from": "interaction.enter-phase",
-      "to": "interaction.center-phase",
-      "kind": "callback",
-      "label": "下一帧居中",
-      "callSiteStatus": "exact",
-      "file": "public/js/app.js",
-      "line": 479,
-      "description": "只有场景下钻通过 requestAnimationFrame 居中阶段节点，并保留当前缩放。",
-      "evidence": "enterPhase 唯一调用 renderer.centerNodes。",
       "confidence": 1.0
     },
     {
@@ -518,7 +308,7 @@
       "label": "投影当前图",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 429,
+      "line": 440,
       "description": "每次刷新先从不可变原图和交互状态派生当前可见结构与焦点集合。",
       "evidence": "render 第一条业务语句调用 getVisibleGraph。",
       "confidence": 1.0
@@ -562,7 +352,7 @@
       "label": "刷新 SVG",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 433,
+      "line": 444,
       "description": "带焦点投影的可见图交给 SVG 渲染器；渲染器内部恢复原视口。",
       "evidence": "render 调用 renderer.render。",
       "confidence": 1.0
@@ -591,7 +381,7 @@
       "callSiteStatus": "exact",
       "file": "public/js/renderers/svg-renderer.js",
       "line": 91,
-      "description": "布局中的每条边按选择、控制流和阶段焦点状态绘制。",
+      "description": "布局中的每条边按选择与控制流语义绘制。",
       "evidence": "SvgRenderer::render 的 edges 循环调用 drawEdge。",
       "confidence": 1.0
     },
@@ -618,9 +408,9 @@
       "condition": "用户点击节点或键盘激活节点",
       "label": "选择节点",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "drawNode 在 svg-renderer.js:426 调用 onSelect；app.js:135-137 把回调注册为 selectGraphTarget。",
+      "callSiteNote": "drawNode 在 svg-renderer.js:426 调用 onSelect；app.js:119-121 把回调注册为 selectGraphTarget。",
       "description": "节点交互产生标准 node target，并进入统一选择协调器。",
-      "evidence": "public/js/renderers/svg-renderer.js:426-455 与 app.js:135-137。",
+      "evidence": "public/js/renderers/svg-renderer.js:426-455 与 app.js:119-121。",
       "confidence": 1.0
     },
     {
@@ -646,7 +436,7 @@
       "label": "同步调用游标",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 756,
+      "line": 658,
       "description": "先让 SOURCE WALK 游标与直接点击目标一致，随后更新高亮状态。",
       "evidence": "selectGraphTarget 先调用 syncSelection。",
       "confidence": 1.0
@@ -660,7 +450,7 @@
       "label": "更新高亮目标",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 757,
+      "line": 659,
       "description": "图元目标进入 GraphState，节点锚点和边选择语义在这里统一处理。",
       "evidence": "selectGraphTarget 调用 state.select。",
       "confidence": 1.0
@@ -679,19 +469,6 @@
       "confidence": 1.0
     },
     {
-      "id": "interaction.phase-focus-to-notify",
-      "from": "interaction.phase-focus",
-      "to": "interaction.notify",
-      "kind": "direct",
-      "label": "广播阶段变化",
-      "callSiteStatus": "exact",
-      "file": "public/js/graph-state.js",
-      "line": 106,
-      "description": "阶段焦点变化复用同一个状态通知机制，但不携带居中副作用。",
-      "evidence": "GraphState::setPhaseFocus 调用 notify(phase-focus)。",
-      "confidence": 1.0
-    },
-    {
       "id": "interaction.notify-to-render",
       "from": "interaction.notify",
       "to": "interaction.app-render",
@@ -700,9 +477,9 @@
       "condition": "任一订阅状态发生变化",
       "label": "重新投影视图",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "activateGraph 在 app.js:413 通过 state.subscribe(render) 注册监听；notify 在 graph-state.js:50 调用 listener。",
+      "callSiteNote": "activateGraph 在 app.js:416 通过 state.subscribe(render) 注册监听；notify 在 graph-state.js:50 调用 listener。",
       "description": "状态变化回到统一渲染主干，下一轮从最新可见结构、焦点和游标重新生成界面。",
-      "evidence": "public/js/app.js:413 与 graph-state.js:49-51。",
+      "evidence": "public/js/app.js:416 与 graph-state.js:49-51。",
       "confidence": 1.0
     },
     {
@@ -714,7 +491,7 @@
       "label": "刷新步进栏",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 451,
+      "line": 458,
       "description": "画布和详情同步后，用同一 TraceNavigator 状态刷新固定步进控件。",
       "evidence": "render 调用 renderTraceControls。",
       "confidence": 1.0
@@ -727,7 +504,7 @@
       "label": "读取当前位置",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 763,
+      "line": 665,
       "description": "步进栏一次读取当前、前驱、调用边、下一节点和候选分支快照。",
       "evidence": "renderTraceControls 调用 traceNavigator.snapshot。",
       "confidence": 1.0
@@ -741,9 +518,9 @@
       "condition": "用户点击上一步、调用位置、下一步或使用方向键",
       "label": "触发步进",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "bindControls 在 app.js:688-705 和 738 注册 navigateTrace；renderTraceControls 负责更新这些固定控件的可用状态。",
+      "callSiteNote": "bindControls 在 app.js:599-616 注册步进按钮，键盘处理器在 app.js:651 调用 navigateTrace；renderTraceControls 负责更新这些固定控件的可用状态。",
       "description": "用户从当前快照选择连续阅读动作，进入统一步进协调器。",
-      "evidence": "public/js/app.js:688-705、730-739。",
+      "evidence": "public/js/app.js:599-616、639-653。",
       "confidence": 1.0
     },
     {
@@ -755,9 +532,9 @@
       "condition": "action == stepForward",
       "label": "向下游前进",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "navigateTrace 在 app.js:919 通过动态属性 traceNavigator[action] 调用；这里展开 stepForward 代表下一步路径。",
+      "callSiteNote": "navigateTrace 在 app.js:821 通过动态属性 traceNavigator[action] 调用；这里展开 stepForward 代表下一步路径。",
       "description": "下一步动作让 TraceNavigator 决定先展示调用位置还是直接进入目标节点；其他动作复用同一动态分发。",
-      "evidence": "public/js/app.js:918-930 与 trace-navigator.js:172-182。",
+      "evidence": "public/js/app.js:820-832 与 trace-navigator.js:172-182。",
       "confidence": 1.0
     },
     {
@@ -768,7 +545,7 @@
       "label": "保留走廊选择",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 929,
+      "line": 831,
       "description": "步进结果以 preserveFocusAnchor 方式重新选择，随后通过 notify 回到同一渲染循环。",
       "evidence": "navigateTrace 调用 state.select(target, preserveFocusAnchor=true)。",
       "confidence": 1.0

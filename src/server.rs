@@ -17,17 +17,19 @@ use tower_http::trace::TraceLayer;
 use crate::graph_store::{FileGraphStore, GraphStore};
 use crate::layout_store::{FileLayoutStore, GraphLayout, LAYOUT_SCHEMA_VERSION, LayoutStore};
 use crate::model::{
-    CallGraph, GraphSummary, OpenRequest, OpenResponse, PreviewRequest, SourcePreview,
-    ValidationReport,
+    ArchitectureScenario, CallGraph, GraphSummary, OpenRequest, OpenResponse, PreviewRequest,
+    ScenarioSummary, SourcePreview, ValidationReport,
 };
 use crate::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
 use crate::project_catalog::{FileProjectCatalog, ProjectCatalog, ResolvedProject};
+use crate::scenario_store::{FileScenarioStore, ScenarioStore, validate_scenario_drilldowns};
 use crate::source_preview::{DEFAULT_CONTEXT_LINES, FileSourcePreviewer, SourcePreviewer};
 use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
 pub struct AppState {
     graph_store: Arc<dyn GraphStore>,
+    scenario_store: Arc<dyn ScenarioStore>,
     project_catalog: Arc<dyn ProjectCatalog>,
     source_link_builder: Arc<dyn SourceLinkBuilder>,
     source_previewer: Arc<dyn SourcePreviewer>,
@@ -37,6 +39,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         graph_store: Arc<dyn GraphStore>,
+        scenario_store: Arc<dyn ScenarioStore>,
         project_catalog: Arc<dyn ProjectCatalog>,
         source_link_builder: Arc<dyn SourceLinkBuilder>,
         source_previewer: Arc<dyn SourcePreviewer>,
@@ -44,6 +47,7 @@ impl AppState {
     ) -> Self {
         Self {
             graph_store,
+            scenario_store,
             project_catalog,
             source_link_builder,
             source_previewer,
@@ -85,6 +89,7 @@ pub async fn serve(
     address: SocketAddr,
     public_dir: PathBuf,
     graphs_dir: PathBuf,
+    scenarios_dir: PathBuf,
     layouts_dir: PathBuf,
     projects_config: PathBuf,
 ) -> Result<(), String> {
@@ -94,6 +99,7 @@ pub async fn serve(
     let project_catalog = FileProjectCatalog::from_file(&projects_config)?;
     let state = AppState::new(
         Arc::new(FileGraphStore::new(graphs_dir)),
+        Arc::new(FileScenarioStore::new(scenarios_dir)),
         Arc::new(project_catalog),
         Arc::new(VscodeUriLinkBuilder),
         Arc::new(FileSourcePreviewer::default()),
@@ -105,6 +111,8 @@ pub async fn serve(
         .route("/api/health", get(health))
         .route("/api/graphs", get(list_graphs))
         .route("/api/graphs/{slug}", get(get_graph))
+        .route("/api/scenarios", get(list_scenarios))
+        .route("/api/scenarios/{slug}", get(get_scenario))
         .route(
             "/api/graphs/{slug}/category",
             axum::routing::put(update_graph_category),
@@ -220,6 +228,39 @@ async fn get_graph(
     AxumPath(slug): AxumPath<String>,
 ) -> Result<Json<CallGraph>, AppError> {
     Ok(Json(read_graph(&state, &slug)?))
+}
+
+async fn list_scenarios(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ScenarioSummary>>, AppError> {
+    let mut summaries = state
+        .scenario_store
+        .list()
+        .map_err(scenario_store_error)?
+        .into_iter()
+        .map(|(slug, scenario)| ScenarioSummary {
+            slug,
+            title: scenario.title,
+            goal: scenario.goal,
+            participant_count: scenario.participants.len(),
+            step_count: scenario.steps.len(),
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| left.title.cmp(&right.title));
+    Ok(Json(summaries))
+}
+
+async fn get_scenario(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<ArchitectureScenario>, AppError> {
+    let scenario = state
+        .scenario_store
+        .load(&slug)
+        .map_err(scenario_store_error)?;
+    validate_scenario_drilldowns(&scenario, state.graph_store.as_ref())
+        .map_err(AppError::Internal)?;
+    Ok(Json(scenario))
 }
 
 #[derive(Debug, Deserialize)]
@@ -476,6 +517,16 @@ fn graph_store_error(error: String) -> AppError {
     }
 }
 
+fn scenario_store_error(error: String) -> AppError {
+    if error.starts_with("架构场景不存在") {
+        AppError::NotFound(error)
+    } else if error.contains("名称必须") {
+        AppError::BadRequest(error)
+    } else {
+        AppError::Internal(error)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +537,7 @@ mod tests {
             SocketAddr::from(([0, 0, 0, 0], 4317)),
             PathBuf::from("public"),
             PathBuf::from("graphs"),
+            PathBuf::from("scenarios"),
             PathBuf::from("layouts"),
             PathBuf::from("callgraph.projects.json"),
         )

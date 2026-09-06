@@ -1,0 +1,43 @@
+sequenceDiagram
+    participant turn as 回合编排
+    participant history as 会话历史
+    participant model as 模型服务
+    participant tools as 工具运行时
+    Note over turn,tools: 前提：普通回合任务已开始。本图展开正常采样与续跑；准备期可能先压缩历史。取消、不可重试错误、传输重试与具体工具的审批协议另见调用图。
+    turn->>history: 准备并记录本轮输入 / 上下文
+    loop 回合仍有后续工作，且未被取消或错误终止
+        turn->>history: 取当前历史，构造本次模型输入
+        history-->>turn: 可用于 prompt 的历史
+        turn->>model: 提交模型请求
+        loop 按模型流逐项处理；工具可与后续流事件交错执行
+            model-->>turn: 输出项 / 文本增量
+            alt 输出项可归一化为工具调用
+                turn->>history: 先记录工具调用项
+                turn-)tools: 路由工具，派发执行 future
+            else 文本等非工具输出
+                turn->>history: 处理文本 / 输出项，按类型记录历史
+                Note over turn,tools: 不同输出项的入库与界面事件时机不同；不是所有流事件都变成一条历史记录。
+            end
+        end
+        model-->>turn: ResponseEvent::Completed · 本次模型响应结束
+        opt 有在途工具 future：等待其完成，再结束本次采样
+            tools-->>turn: 工具结果（执行可并发）
+            turn->>history: drain_in_flight · 将结果写入历史
+        end
+        Note over turn,tools: 判定 needs_follow_up：工具调用 / 模型要求继续，或队列中仍有待处理输入。工具完成不会直接宣布整个回合完成；结果进入后续模型输入。
+        alt needs_follow_up = true
+            opt 请求新上下文窗口，或 token 达到阈值
+                turn->>history: run_auto_compact · 整理并替换上下文
+                history-->>turn: 压缩成功后继续；失败进入错误处理
+            end
+            Note over turn,tools: 进入 LOOP 下一次迭代，使用更新后的历史。
+        else needs_follow_up = false
+            turn->>turn: 运行停止钩子与收尾检查
+            Note over turn,tools: 停止钩子阻断且提供了继续提示：记录提示后再循环。只有阻断却没有提示：发出警告并继续退出检查。
+            opt 停止钩子阻断，并给出继续提示；否则退出检查后结束循环
+                turn->>history: 记录继续提示，进入下一次循环
+            end
+        end
+    end
+    turn->>turn: 正常任务返回 → on_task_finished 汇总状态
+    Note over turn,tools: 任务收尾后发布 TurnComplete 事件，再由 App Server 和 TUI 通知路径呈现最终回合状态。

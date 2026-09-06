@@ -14,7 +14,7 @@ const graph = JSON.parse(
 const topology = buildPhaseTopology(graph);
 
 assert.equal(topology.phases.length, 8);
-assert.equal(topology.relations.length, 14);
+assert.equal(topology.relations.length, 15);
 assert.equal(topology.displayRelations.length, 10);
 assert.equal(topology.columns, 4);
 assert.equal(topology.rows, 2);

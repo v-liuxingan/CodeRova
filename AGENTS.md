@@ -111,6 +111,13 @@ not commit them unless the user explicitly asks to publish a curated layout.
 
 ## Callgraph content
 
+For independent scene generation, read `docs/scenario-authoring.md` and
+`scenes/AGENTS.md`. Author `scenes/*.mmd` with matching JSON metadata (or complete scene JSON); the shared renderer builds
+`public/scenes/*.html` and the catalog with `npm run build:scenes`.
+Do not hand-edit generated scene pages or ask the model to supply geometry.
+Scene data and `schema/sequence-scene.schema.json` are shared integration scope.
+The unified generation entry point is `docs/graph-authoring.md`.
+
 Before creating or editing `graphs/**/*.json`, read
 `docs/callgraph-content-standard.md`, `docs/control-flow-semantics.md`, and the
 scoped instructions in `graphs/AGENTS.md`. Graph descriptions are learning

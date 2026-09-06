@@ -5,6 +5,7 @@ import {
   edgeFlowKindLabel,
 } from "./edge-semantics.js";
 import { SourcePreviewView } from "./source-preview-view.js";
+import { edgeReadingNotes, nodeExecutionContext, renderExecutionContext } from "./execution-context.js";
 
 export class Inspector {
   constructor(emptyElement, contentElement, sourceBodyElement) {
@@ -13,6 +14,7 @@ export class Inspector {
     this.sourceBodyElement = sourceBodyElement;
     this.callbacks = {};
     this.targetKey = "";
+    this.graph = null;
     this.sourcePreviewView = new SourcePreviewView();
   }
 
@@ -33,14 +35,28 @@ export class Inspector {
     if (!item) return this.render(null, graph);
 
     const nextTargetKey = targetKey(target);
-    const targetChanged = this.targetKey !== nextTargetKey;
+    const targetChanged = this.graph !== graph || this.targetKey !== nextTargetKey;
+    const contextOpen = !targetChanged && Boolean(this.contentElement.querySelector(".execution-context")?.open);
     this.targetKey = nextTargetKey;
+    this.graph = graph;
     if (targetChanged) this.renderSourcePreviewLoading(target);
     this.emptyElement.hidden = true;
     this.contentElement.hidden = false;
     this.contentElement.className =
       `inspect-content ${target.type === "node" ? "node-detail" : "edge-detail"}`;
     this.contentElement.innerHTML = targetTemplate(target, item, graph);
+    if (target.type === "node") {
+      const context = renderExecutionContext(nodeExecutionContext(item, graph), this.callbacks.onSelect, { open: contextOpen });
+      this.contentElement.querySelector(".inspect-actions").before(context);
+    } else {
+      const notes = edgeReadingNotes(item);
+      if (notes.length) {
+        const readingNote = document.createElement("p");
+        readingNote.className = "execution-reading-note edge-reading-note";
+        readingNote.textContent = notes.join(" ");
+        this.contentElement.querySelector(".inspect-facts").before(readingNote);
+      }
+    }
     this.contentElement.querySelector("[data-open]")?.addEventListener("click", () => {
       this.callbacks.onOpen?.(target);
     });
@@ -120,7 +136,6 @@ function nodeTemplate(node) {
         <span class="inspect-type">NODE / ${escapeHtml(node.kind).toUpperCase()}</span>
         <h2>${escapeHtml(node.label)}</h2>
       </div>
-      <div class="inspect-id">${escapeHtml(node.id)}</div>
     </div>
     <section class="node-purpose" aria-label="节点职责">
       <span class="node-purpose-kicker">节点职责 / WHY IT MATTERS</span>
@@ -139,7 +154,9 @@ function nodeTemplate(node) {
 }
 
 function edgeTemplate(edge, graph) {
-  const percent = Math.round(edge.confidence * 100);
+  const confidence = typeof edge.confidence === "number" && Number.isFinite(edge.confidence)
+    ? `${Math.round(edge.confidence * 100)}% CONFIDENCE`
+    : "置信度未标注";
   const callSite = resolveEdgeCallSite(edge);
   const from = graph.nodes.find((node) => node.id === edge.from);
   const to = graph.nodes.find((node) => node.id === edge.to);
@@ -172,7 +189,7 @@ function edgeTemplate(edge, graph) {
         <span class="inspect-type">EDGE / ${escapeHtml(edge.kind).toUpperCase()}</span>
         <h2>${escapeHtml(edge.label || "调用关系")}</h2>
       </div>
-      <div class="inspect-confidence">${percent}% CONFIDENCE</div>
+      <div class="inspect-confidence">${confidence}</div>
     </div>
     <div class="inspect-route">
       <span>${escapeHtml(from?.label || edge.from)}</span>

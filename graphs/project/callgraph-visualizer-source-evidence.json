@@ -4,8 +4,7 @@
   "categoryId": "project",
   "category": "项目自身",
   "title": "Callgraph Visualizer validation and source evidence",
-  "description": "展示一张图激活后，前端如何并行启动结构/源码校验，并为当前节点或连线请求受限源码预览。后端始终从已加载图中解析 projectId 和目标位置，再把相对路径限制在配置根目录内；缓存、不可定位目标和请求错误形成清晰分支，不会绕过证据边界读取任意文件。",
-  "sourceRevision": "58b58f7d61a20cceda6572c13d47f0e2837497a4",
+  "description": "展示当前工作区中，一张调用图激活后，前端如何启动结构与源码校验，并为当前节点或连线请求受限源码预览。后端始终从已加载图中解析 projectId 和目标位置，再把相对路径限制在配置根目录内；缓存、不可定位目标和请求错误形成清晰分支，不会绕过证据边界读取任意文件。",
   "root": "evidence.activate-graph",
   "phases": [
     {
@@ -54,10 +53,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 401,
-      "endLine": 426,
+      "line": 396,
+      "endLine": 437,
       "role": "图谱激活编排器",
-      "description": "并行加载图数据和个人布局，建立 GraphState 与 TraceNavigator 并选择根节点。它先把图交给界面，再请求后端校验，保证用户能看到内容但也能明确知道证据是否可信。",
+      "description": "并发读取调用图和保存布局，仅让最后一次选择建立新的 GraphState 与调用游标。成功后更新 URL 并渲染根节点；切图失败保留已有工作区并提示原因。",
       "state": "expanded"
     },
     {
@@ -68,10 +67,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 428,
-      "endLine": 463,
+      "line": 439,
+      "endLine": 470,
       "role": "界面状态投影器",
-      "description": "从 GraphState 取得可见图并刷新画布、场景状态、详情、源码预览和步进控件。每次选择变化都会复用这条路径，因此预览始终跟随当前目标。",
+      "description": "从 GraphState 取得可见图并刷新画布、详情、源码预览和步进控件。每次选择变化都会复用这条路径，因此预览始终跟随当前目标。",
       "state": "expanded"
     },
     {
@@ -82,10 +81,10 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 605,
-      "endLine": 621,
+      "line": 523,
+      "endLine": 544,
       "role": "页面证据状态协调器",
-      "description": "请求当前 slug 的校验报告，并把有效源码数量、错误和警告映射到顶部徽标与提示。报告失败不会被静默吞掉。",
+      "description": "为当前 GraphState 请求源码校验报告，返回时再次检查工作区身份。切图后迟到的成功或失败结果都会丢弃，避免把上一张图的证据状态显示到当前图。",
       "state": "expanded"
     },
     {
@@ -96,8 +95,8 @@
       "crate": "browser",
       "module": "api",
       "file": "public/js/api.js",
-      "line": 38,
-      "endLine": 40,
+      "line": 46,
+      "endLine": 48,
       "role": "图谱校验 HTTP 客户端",
       "description": "把当前图 slug 编码到 validation 端点并通过统一 fetch 包装器读取 JSON 报告。",
       "state": "expanded"
@@ -110,8 +109,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 352,
-      "endLine": 362,
+      "line": 393,
+      "endLine": 403,
       "role": "校验端点处理器",
       "description": "重新加载图谱并依据 projectId 解析本机源码根目录，然后运行统一结构和源码校验。客户端不能在请求中注入任意根路径。",
       "state": "expanded"
@@ -124,8 +123,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 461,
-      "endLine": 463,
+      "line": 502,
+      "endLine": 504,
       "role": "可信图文档读取器",
       "description": "根据服务端图谱目录和 slug 加载 CallGraph，不接受前端直接提交的图内容。校验和预览因此都以已经落盘的同一份证据文档为准。",
       "state": "expanded"
@@ -194,7 +193,7 @@
       "crate": "browser",
       "module": "api",
       "file": "public/js/api.js",
-      "line": 54,
+      "line": 62,
       "endLine": 69,
       "role": "源码预览 HTTP 客户端",
       "description": "只发送图 slug、目标类型、目标 ID、上下文行数和范围模式，不发送任意本地文件路径。",
@@ -208,8 +207,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 388,
-      "endLine": 410,
+      "line": 429,
+      "endLine": 452,
       "role": "受限源码预览端点",
       "description": "从图文档解析目标位置和项目根，规范化路径后调用 SourcePreviewer。返回前把绝对路径替换回图中相对路径，减少本机信息泄露。",
       "state": "expanded"
@@ -222,8 +221,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 419,
-      "endLine": 459,
+      "line": 460,
+      "endLine": 500,
       "role": "图内目标位置解析器",
       "description": "节点使用声明的起止行，边只有 callSiteStatus=exact 时才提供调用位置。虚拟节点或省略中间节点会返回明确的不可跳转原因。",
       "state": "expanded"
@@ -264,8 +263,8 @@
       "crate": "browser",
       "module": "inspector",
       "file": "public/js/inspector.js",
-      "line": 55,
-      "endLine": 62,
+      "line": 71,
+      "endLine": 78,
       "role": "源码证据展示入口",
       "description": "只在返回结果仍属于当前目标时挂载源码工作台，并把上下文、整文件切换和提示回调接回控制器。",
       "state": "expanded"
@@ -278,8 +277,8 @@
       "crate": "browser",
       "module": "inspector",
       "file": "public/js/inspector.js",
-      "line": 80,
-      "endLine": 82,
+      "line": 96,
+      "endLine": 98,
       "role": "证据不可用说明",
       "description": "当节点或边没有精确源码位置时清空旧预览并展示原因，防止用户把上一目标的代码误认为当前证据。",
       "state": "expanded"
@@ -292,8 +291,8 @@
       "crate": "browser",
       "module": "inspector",
       "file": "public/js/inspector.js",
-      "line": 72,
-      "endLine": 78,
+      "line": 88,
+      "endLine": 94,
       "role": "源码读取错误说明",
       "description": "前景预览失败时保留当前目标语境并展示服务端错误，使路径越界、文件变化或格式问题可以被定位，而不是显示空白代码块。",
       "state": "expanded"
@@ -309,8 +308,8 @@
       "label": "先展示图谱",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 424,
-      "description": "状态和导航器建立后立即渲染根节点、场景拓扑与工作台。",
+      "line": 426,
+      "description": "状态和导航器建立后立即渲染根节点与源码工作台。",
       "evidence": "activateGraph 在 validateActiveGraph 之前调用 render。",
       "confidence": 1.0
     },
@@ -323,9 +322,9 @@
       "label": "随后校验证据",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 425,
+      "line": 427,
       "description": "初始界面出现后等待后端校验报告，避免把未验证状态误标为有效。",
-      "evidence": "activateGraph 最后一行 await validateActiveGraph。",
+      "evidence": "activateGraph 在成功提交并 render 当前图后 await validateActiveGraph。",
       "confidence": 1.0
     },
     {
@@ -336,7 +335,7 @@
       "label": "请求报告",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 609,
+      "line": 530,
       "description": "页面把当前 activeSlug 交给 API 客户端，并等待机器可读 ValidationReport。",
       "evidence": "validateActiveGraph 调用 api.validateGraph。",
       "confidence": 1.0
@@ -348,9 +347,9 @@
       "kind": "remote",
       "label": "GET validation",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "api.js:39 调用统一 request/fetch；Axum 在 src/server.rs:116 注册 validate_graph_source，中间浏览器和路由节点未展开。",
+      "callSiteNote": "api.js:47 调用统一 request/fetch；Axum 在 src/server.rs:124 注册 validate_graph_source，中间浏览器和路由节点未展开。",
       "description": "浏览器通过同源 HTTP 获取校验报告；服务端根据路由 slug 重新读取图，而不信任前端缓存内容。",
-      "evidence": "public/js/api.js:38-40 与 src/server.rs:116。",
+      "evidence": "public/js/api.js:46-48 与 src/server.rs:124。",
       "confidence": 1.0
     },
     {
@@ -362,7 +361,7 @@
       "label": "读取待校验图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 356,
+      "line": 397,
       "description": "校验始终针对服务端当前图文件，而不是页面可能过期的对象。",
       "evidence": "validate_graph_source 首先调用 read_graph。",
       "confidence": 1.0
@@ -376,7 +375,7 @@
       "label": "解析项目根",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 359,
+      "line": 400,
       "description": "从已加载图的 projectId 解析可信根目录，未知项目直接返回 BadRequest。",
       "evidence": "validate_graph_source 调用 project_catalog.resolve_root。",
       "confidence": 1.0
@@ -390,7 +389,7 @@
       "label": "执行统一校验",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 361,
+      "line": 402,
       "description": "图结构和已解析源码根一起进入统一校验函数，结果直接序列化为 HTTP JSON。",
       "evidence": "validate_graph_source 返回 Json(validate_graph(...))。",
       "confidence": 1.0
@@ -430,7 +429,7 @@
       "label": "同步当前目标",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 439,
+      "line": 446,
       "description": "每次渲染把 activeSlug、完整图和当前选择交给预览控制器；控制器负责避免旧请求覆盖新选择。",
       "evidence": "render 调用 sourcePreview.show。",
       "confidence": 1.0
@@ -502,9 +501,9 @@
       "kind": "remote",
       "label": "POST preview",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "api.js 通过统一 request/fetch POST /api/preview，Axum 在 src/server.rs:118 注册 preview_source。",
+      "callSiteNote": "api.js 通过统一 request/fetch POST /api/preview，Axum 在 src/server.rs:126 注册 preview_source。",
       "description": "HTTP 请求只携带图和目标标识；本地路径解析全部留在服务端可信边界。",
-      "evidence": "public/js/api.js:54-69 与 src/server.rs:118。",
+      "evidence": "public/js/api.js:62-69 与 src/server.rs:126。",
       "confidence": 1.0
     },
     {
@@ -516,7 +515,7 @@
       "label": "读取证据图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 392,
+      "line": 433,
       "description": "预览端点先从 slug 读取图，确保后续位置来自服务端文档。",
       "evidence": "preview_source 首先调用 read_graph。",
       "confidence": 1.0
@@ -530,7 +529,7 @@
       "label": "解析目标位置",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 393,
+      "line": 434,
       "description": "节点或边 ID 必须在图中存在，且边必须声明精确调用位置。",
       "evidence": "preview_source 调用 resolve_target_location。",
       "confidence": 1.0
@@ -544,7 +543,7 @@
       "label": "解析项目根",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 396,
+      "line": 437,
       "description": "projectId 来自已加载图，前端无法借预览请求切换到未登记目录。",
       "evidence": "preview_source 调用 project_catalog.resolve_root。",
       "confidence": 1.0
@@ -558,7 +557,7 @@
       "label": "限制真实路径",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 398,
+      "line": 439,
       "description": "图内相对路径规范化后必须仍位于项目根目录。",
       "evidence": "preview_source 调用 resolve_source_path。",
       "confidence": 1.0
@@ -572,7 +571,7 @@
       "label": "读取受限文本",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 401,
+      "line": 442,
       "description": "解析完成的绝对路径和范围预算交给 SourcePreviewer，默认分发到文件实现。",
       "evidence": "preview_source 调用 state.source_previewer.preview。",
       "confidence": 1.0
@@ -587,7 +586,7 @@
       "callSiteStatus": "omitted-nodes",
       "callSiteNote": "SourcePreview 经 Axum JSON、fetch 和 SourcePreviewController::remember 返回浏览器，随后在 public/js/source-preview-controller.js:49 调用 Inspector。",
       "description": "成功预览跨 HTTP 返回并写入缓存；只有请求版本仍是当前目标时才更新工作台。",
-      "evidence": "src/server.rs:399-410 与 public/js/source-preview-controller.js:47-50。",
+      "evidence": "src/server.rs:440-452 与 public/js/source-preview-controller.js:47-50。",
       "confidence": 1.0
     }
   ]

@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "1.0",
+  "title": "用户消息如何穿过 Codex 并回到界面",
+  "goal": "理解一次用户消息如何跨越 TUI、App Server、Core 和事件通道，并定位每段实现证据。",
+  "description": "这是一条架构级因果链：消息提交不是直接调用渲染器；Core 先发布事件，App Server 转换并经线程事件通道回到当前界面。",
+  "participants": [
+    {
+      "id": "user",
+      "kind": "user",
+      "label": "用户",
+      "description": "在终端界面输入并提交一条消息。"
+    },
+    {
+      "id": "tui",
+      "kind": "application",
+      "label": "Codex TUI",
+      "description": "把交互意图转换为 app-server 请求，并消费回来的线程通知。"
+    },
+    {
+      "id": "app-server",
+      "kind": "application",
+      "label": "App Server",
+      "description": "接收客户端请求、提交给 Core，并把 Core 事件转为对外通知。"
+    },
+    {
+      "id": "core",
+      "kind": "application",
+      "label": "Codex Core",
+      "description": "创建并执行 Agent 回合，完成后向内部事件流发布状态。"
+    },
+    {
+      "id": "thread-events",
+      "kind": "broker",
+      "label": "Thread 事件通道",
+      "description": "按 thread 路由并缓存通知；它不是 Core 对 ChatWidget 的直接调用。"
+    }
+  ],
+  "steps": [
+    {
+      "id": "user-submit",
+      "participantId": "user",
+      "kind": "entry",
+      "label": "提交消息",
+      "summary": "用户确认输入，开始本次有界场景。"
+    },
+    {
+      "id": "tui-submit",
+      "participantId": "tui",
+      "kind": "operation",
+      "label": "TUI 形成 turn/start",
+      "summary": "界面归一化输入并把用户操作交给 app-server-client。",
+      "drilldowns": [
+        {
+          "projectId": "codex",
+          "graphSlug": "codex-end-to-end-agent-loop",
+          "targetIds": ["e2e.user-submit", "e2e.turn-start-client"],
+          "purpose": "验证用户输入如何变成客户端的 turn/start 请求。"
+        }
+      ]
+    },
+    {
+      "id": "server-submit",
+      "participantId": "app-server",
+      "kind": "handler",
+      "label": "接收并提交 Core Op",
+      "summary": "请求处理器校验并把用户输入提交给当前 CodexThread。",
+      "drilldowns": [
+        {
+          "projectId": "codex",
+          "graphSlug": "codex-turn-lifecycle",
+          "targetIds": ["app-server.turn-start", "app-server.turn-start-inner", "core.codex-thread-submit-input"],
+          "purpose": "验证服务端请求如何进入 Core 的提交队列。"
+        }
+      ]
+    },
+    {
+      "id": "core-run-turn",
+      "participantId": "core",
+      "kind": "operation",
+      "label": "执行 Agent 回合",
+      "summary": "Core 消费提交内容，创建任务并运行模型、工具与回合收尾逻辑。",
+      "drilldowns": [
+        {
+          "projectId": "codex",
+          "graphSlug": "codex-end-to-end-agent-loop",
+          "targetIds": ["e2e.submission-loop", "e2e.run-turn"],
+          "purpose": "验证提交如何在 Core 中变成实际的 Agent 回合。"
+        }
+      ]
+    },
+    {
+      "id": "core-publish-event",
+      "participantId": "core",
+      "kind": "message",
+      "label": "发布 Core EventMsg",
+      "summary": "回合状态或增量输出写入 Core 事件通道；发布者不直接渲染 TUI。",
+      "drilldowns": [
+        {
+          "projectId": "codex",
+          "graphSlug": "codex-end-to-end-agent-loop",
+          "targetIds": ["e2e.core-send-event"],
+          "purpose": "验证 Core 事件从何处离开 Session。"
+        }
+      ]
+    },
+    {
+      "id": "thread-route-event",
+      "participantId": "thread-events",
+      "kind": "message",
+      "label": "按 Thread 路由通知",
+      "summary": "App Server 转换事件后，通知按 thread 路由；非活动线程可缓存后再回放。"
+    },
+    {
+      "id": "tui-render-event",
+      "participantId": "tui",
+      "kind": "outcome",
+      "label": "当前界面消费并渲染",
+      "summary": "活动 Thread 立即消费通知并更新 ChatWidget；这才是用户看到的结果。",
+      "drilldowns": [
+        {
+          "projectId": "codex",
+          "graphSlug": "codex-end-to-end-agent-loop",
+          "targetIds": ["e2e.server-event-adapter", "e2e.app-server-event", "e2e.chat-notification"],
+          "purpose": "验证 Core EventMsg 如何被转换、路由并最终更新界面。"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "id": "intent-to-request",
+      "from": "user-submit",
+      "to": "tui-submit",
+      "kind": "request",
+      "label": "提交意图",
+      "summary": "用户输入先被 UI 解释为请求，不会直接进入 Core。"
+    },
+    {
+      "id": "client-to-server",
+      "from": "tui-submit",
+      "to": "server-submit",
+      "kind": "request",
+      "label": "turn/start",
+      "summary": "客户端将请求交给 App Server。"
+    },
+    {
+      "id": "server-to-core",
+      "from": "server-submit",
+      "to": "core-run-turn",
+      "kind": "call",
+      "label": "提交 Op",
+      "summary": "App Server 将用户输入提交给当前 Core Thread。"
+    },
+    {
+      "id": "core-to-event",
+      "from": "core-run-turn",
+      "to": "core-publish-event",
+      "kind": "publish",
+      "label": "产生 EventMsg",
+      "summary": "执行结果进入内部事件流，发布与 UI 渲染解耦。"
+    },
+    {
+      "id": "event-to-thread-route",
+      "from": "core-publish-event",
+      "to": "thread-route-event",
+      "kind": "route",
+      "label": "转换并路由",
+      "summary": "App Server listener 将 Core 事件转换为面向客户端的通知。"
+    },
+    {
+      "id": "thread-route-to-tui",
+      "from": "thread-route-event",
+      "to": "tui-render-event",
+      "kind": "deliver",
+      "label": "投递 / 回放",
+      "summary": "活动线程立即消费，非活动线程保留到切换时回放。"
+    }
+  ]
+}

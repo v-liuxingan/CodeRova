@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant tui as TUI 界面
+    participant server as App Server
+    participant core as Codex Core
+    participant routing as TUI 线程路由
+    Note over tui,routing: 前提：已连接服务、Thread 可用，且当前输入要启动一个新回合。
+    tui->>tui: 用户提交新消息
+    tui->>server: turn/start · 用户输入与回合配置
+    server-)core: 提交用户 Op 到当前 Thread
+    par 请求回复与执行事件独立；上下两区不表示严格先后
+        server-->>tui: TurnStartResponse · status = InProgress
+        Note over tui,routing: 请求已被接收，仍需通过事件了解执行进展与最终结果。
+    and Core 任务异步执行，持续产生回合与输出事件
+        core->>core: 运行 Agent 回合
+        loop 对本页范围内的每个线程通知：开始、输出、工具状态、完成
+            core-)server: 发布 EventMsg
+            server->>server: 转换为 ServerNotification
+            server-)routing: TUI 接收通知并按 threadId 入队
+            alt 通知属于活动线程
+                routing-)tui: 消费通知 · 更新 ChatWidget
+            else 通知属于非活动线程
+                Note over tui,routing: 保留在线程事件存储中，暂不更新当前 ChatWidget。
+                opt 后续切换到该线程
+                    routing-)tui: 根据线程快照与缓存回放界面
+                end
+            end
+        end
+    end

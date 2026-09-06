@@ -73,7 +73,7 @@ main
 {
   "schemaVersion": "0.2",
   "projectId": "codex",
-  "title": "TUI authorization call graph",
+  "title": "启动 Codex 后，模型请求如何获得登录凭据",
   "root": "cli.main",
   "nodes": [
     {
@@ -82,8 +82,8 @@ main
       "label": "main",
       "crate": "codex-cli",
       "file": "codex-rs/cli/src/main.rs",
-      "line": 956,
-      "endLine": 962,
+      "line": 958,
+      "endLine": 964,
       "role": "CLI 程序入口",
       "description": "启动 CLI 并进入异步命令分发流程",
       "state": "expanded"

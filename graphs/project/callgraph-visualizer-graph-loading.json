@@ -4,8 +4,7 @@
   "categoryId": "project",
   "category": "项目自身",
   "title": "Callgraph Visualizer graph discovery and loading",
-  "description": "展示本地 Rust 服务如何建立可替换的图谱与布局存储边界，并通过 Axum 路由响应目录、完整图谱和布局请求。目录路径递归扫描所有分类文件，单图加载按全局 slug 重新定位文件；布局缺失时返回空布局，因此语义图与个人位置可以独立演进。",
-  "sourceRevision": "58b58f7d61a20cceda6572c13d47f0e2837497a4",
+  "description": "基于当前工作区源码，展示本地 Rust 服务如何建立可替换的图谱与布局存储边界，并通过 Axum 路由响应目录、完整图谱和布局请求。目录路径递归扫描所有分类文件，单图加载按全局 slug 重新定位文件；布局缺失时返回空布局，因此语义图与个人位置可以独立演进。",
   "root": "loading.main",
   "phases": [
     {
@@ -48,8 +47,8 @@
       "crate": "callgraph-visualizer",
       "module": "main",
       "file": "src/main.rs",
-      "line": 59,
-      "endLine": 107,
+      "line": 61,
+      "endLine": 111,
       "role": "进程命令入口",
       "description": "解析 serve、validate 或 open 子命令，并把默认启动参数转换为服务地址和存储目录。本图沿 serve 分支继续，另外两个 CLI 分支由证据校验图解释。",
       "state": "expanded"
@@ -62,8 +61,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 84,
-      "endLine": 148,
+      "line": 88,
+      "endLine": 156,
       "role": "本地 HTTP 组装器",
       "description": "拒绝非 loopback 地址，加载项目目录并组装文件图谱、布局、源码导航和预览实现。随后注册 API 与静态资源路由并进入带优雅退出的 Axum 服务循环。",
       "state": "expanded"
@@ -76,8 +75,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 38,
-      "endLine": 52,
+      "line": 40,
+      "endLine": 56,
       "role": "运行时依赖容器",
       "description": "把 GraphStore、LayoutStore、ProjectCatalog、源码链接和预览接口收拢为共享状态。HTTP 层只依赖这些边界，因此以后可以替换数据库或远程图源而不改前端协议。",
       "state": "expanded"
@@ -90,8 +89,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 199,
-      "endLine": 216,
+      "line": 207,
+      "endLine": 224,
       "role": "图谱目录处理器",
       "description": "响应 GET /api/graphs，读取全部图文档后只保留 slug、标题、分类、项目和规模信息。排序后的摘要让前端构建目录，而不必先传输所有节点和边。",
       "state": "expanded"
@@ -188,8 +187,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 218,
-      "endLine": 223,
+      "line": 226,
+      "endLine": 231,
       "role": "完整图谱处理器",
       "description": "响应 GET /api/graphs/{slug}，通过共享读取函数加载唯一图文档并序列化完整 CallGraph。它不混入个人布局，避免语义内容与交互位置相互覆盖。",
       "state": "expanded"
@@ -202,8 +201,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 461,
-      "endLine": 463,
+      "line": 502,
+      "endLine": 504,
       "role": "HTTP 图谱读取适配器",
       "description": "把 GraphStore 的字符串错误映射为 HTTP 错误，并让单图、布局、校验、跳转和预览接口共享同一种 slug 解析行为。",
       "state": "expanded"
@@ -230,8 +229,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 244,
-      "endLine": 255,
+      "line": 285,
+      "endLine": 296,
       "role": "布局读取处理器",
       "description": "响应 GET /api/graphs/{slug}/layout，先确认图谱存在，再读取独立布局文档。缺失布局会降级为空布局，已有布局则在返回前过滤不存在的节点和异常坐标。",
       "state": "expanded"
@@ -272,8 +271,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 318,
-      "endLine": 349,
+      "line": 359,
+      "endLine": 391,
       "role": "失效布局清理器",
       "description": "校验布局版本和图 slug，并删除已不存在节点或非有限、越界坐标。它允许图结构更新后继续使用仍然有效的用户位置。",
       "state": "expanded"
@@ -290,9 +289,9 @@
       "label": "启动服务",
       "callSiteStatus": "exact",
       "file": "src/main.rs",
-      "line": 85,
+      "line": 89,
       "description": "CLI 把解析后的地址、静态目录、图谱目录、布局目录和项目配置交给本地服务。",
-      "evidence": "src/main.rs:68-86 的 Serve match 分支直接 await serve。",
+      "evidence": "src/main.rs:70-90 的 Serve match 分支直接 await serve。",
       "confidence": 1.0
     },
     {
@@ -304,9 +303,9 @@
       "label": "组装依赖",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 95,
-      "description": "服务把五个可替换实现装入共享 AppState，之后所有 HTTP 处理器通过状态访问它们。",
-      "evidence": "src/server.rs:94-101 构造 FileProjectCatalog 和 AppState。",
+      "line": 100,
+      "description": "服务把图谱、场景、布局、项目目录、源码导航和预览实现装入共享 AppState，之后所有 HTTP 处理器通过状态访问它们。",
+      "evidence": "src/server.rs:99-107 构造 FileProjectCatalog 和 AppState。",
       "confidence": 1.0
     },
     {
@@ -318,9 +317,9 @@
       "condition": "GET /api/graphs",
       "label": "目录请求",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "serve 在 src/server.rs:106 把 list_graphs 注册为 Axum handler；实际调用由框架路由完成。",
+      "callSiteNote": "serve 在 src/server.rs:112 把 list_graphs 注册为 Axum handler；实际调用由框架路由完成。",
       "description": "收到目录路径时，Axum 从共享状态调用目录处理器；这条路径与单图和布局请求互斥。",
-      "evidence": "src/server.rs:104-118 的 Router 路由注册。",
+      "evidence": "src/server.rs:110-126 的 Router 路由注册。",
       "confidence": 1.0
     },
     {
@@ -332,9 +331,9 @@
       "condition": "GET /api/graphs/{slug}",
       "label": "单图请求",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "serve 在 src/server.rs:107 注册 get_graph；实际调用由 Axum 根据路径参数完成。",
+      "callSiteNote": "serve 在 src/server.rs:113 注册 get_graph；实际调用由 Axum 根据路径参数完成。",
       "description": "完整图谱请求进入单图处理器，slug 从 HTTP 路径解析后再交给存储边界。",
-      "evidence": "src/server.rs:107 的路由注册和 src/server.rs:218-223 的 handler。",
+      "evidence": "src/server.rs:113 的路由注册和 src/server.rs:226-231 的 handler。",
       "confidence": 1.0
     },
     {
@@ -346,9 +345,9 @@
       "condition": "GET /api/graphs/{slug}/layout",
       "label": "布局请求",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "serve 在 src/server.rs:112-115 注册 get_graph_layout；实际调用由 Axum 完成。",
+      "callSiteNote": "serve 在 src/server.rs:120-123 注册 get_graph_layout；实际调用由 Axum 完成。",
       "description": "布局请求走独立处理器，使用户坐标不会污染模型生成的调用关系。",
-      "evidence": "src/server.rs:112-115 的布局路由注册。",
+      "evidence": "src/server.rs:120-123 的布局路由注册。",
       "confidence": 1.0
     },
     {
@@ -359,7 +358,7 @@
       "label": "列举全部图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 200,
+      "line": 208,
       "description": "HTTP 层通过 GraphStore 接口读取目录，默认运行时分发到 FileGraphStore。",
       "evidence": "AppState.graph_store 类型为 Arc<dyn GraphStore>，serve 注入 FileGraphStore。",
       "confidence": 1.0
@@ -439,7 +438,7 @@
       "label": "按 slug 读取",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 222,
+      "line": 230,
       "description": "单图处理器把 HTTP slug 交给共享读取适配器，并把成功结果序列化为 JSON。",
       "evidence": "get_graph 直接调用 read_graph。",
       "confidence": 1.0
@@ -452,7 +451,7 @@
       "label": "加载唯一图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 462,
+      "line": 503,
       "description": "共享适配器通过 GraphStore::load 分发到文件实现，并统一映射存储错误。",
       "evidence": "read_graph 调用 state.graph_store.load。",
       "confidence": 1.0
@@ -493,7 +492,7 @@
       "label": "先确认图存在",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 248,
+      "line": 289,
       "description": "读取布局前先加载对应图，避免为不存在的 slug 暴露或创建布局。",
       "evidence": "get_graph_layout 首先调用 read_graph。",
       "confidence": 1.0
@@ -506,7 +505,7 @@
       "label": "再读取节点位置",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 251,
+      "line": 292,
       "description": "处理器通过 LayoutStore 接口读取与 slug 对应的独立布局文件。",
       "evidence": "get_graph_layout 调用 state.layout_store.load。",
       "confidence": 1.0
@@ -521,7 +520,7 @@
       "label": "没有保存布局",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 253,
+      "line": 294,
       "description": "没有个人位置时创建空布局，让前端自动排版继续工作，而不是返回 404。",
       "evidence": "get_graph_layout 使用 unwrap_or_else(GraphLayout::empty)。",
       "confidence": 1.0
@@ -534,9 +533,9 @@
       "flowKind": "merge",
       "label": "校验已有位置",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "LayoutStore::load 返回 Option 后，由 get_graph_layout 在 src/server.rs:254 调用 sanitize_loaded_layout。",
+      "callSiteNote": "LayoutStore::load 返回 Option 后，由 get_graph_layout 在 src/server.rs:295 调用 sanitize_loaded_layout。",
       "description": "已有布局返回处理器后进入统一清理步骤，删除对当前图已经失效的位置。",
-      "evidence": "src/server.rs:249-254 的 load、fallback 和 sanitize 组合。",
+      "evidence": "src/server.rs:290-295 的 load、fallback 和 sanitize 组合。",
       "confidence": 1.0
     },
     {
@@ -547,9 +546,9 @@
       "flowKind": "merge",
       "label": "校验默认布局",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "GraphLayout::empty 返回 get_graph_layout 后，由 src/server.rs:254 传给 sanitize_loaded_layout。",
+      "callSiteNote": "GraphLayout::empty 返回 get_graph_layout 后，由 src/server.rs:295 传给 sanitize_loaded_layout。",
       "description": "空布局与已有布局在同一清理点汇合，随后返回统一 GraphLayout 响应。",
-      "evidence": "src/server.rs:253-254。",
+      "evidence": "src/server.rs:294-295。",
       "confidence": 1.0
     }
   ]

@@ -15,6 +15,14 @@ export class CallgraphApi {
     return request(`/api/graphs/${encodeURIComponent(slug)}`);
   }
 
+  listScenarios() {
+    return request("/api/scenarios");
+  }
+
+  loadScenario(slug) {
+    return request(`/api/scenarios/${encodeURIComponent(slug)}`);
+  }
+
   updateGraphCategory(slug, categoryId, category) {
     return request(`/api/graphs/${encodeURIComponent(slug)}/category`, {
       method: "PUT",

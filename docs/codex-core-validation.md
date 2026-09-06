@@ -3,7 +3,7 @@
 ## 验证基线
 
 - 源码仓库：本地 `codex`
-- 提交：`23899f7cb63a1510e53fddd68740dfc325853e3b`
+- 提交：`a68d0a74bd38ddc01361ce42262da689b788afce`
 - 验证方式：逐层阅读真实调用点，以函数定义和调用表达式的相对路径、行号作为证据
 - 范围：选择能跨越 CLI/TUI、App Server、Core、模型传输、工具系统、审批沙箱和持久化存储的代表性主链
 
@@ -15,16 +15,16 @@ Trait 分发、回调、远程协议和跨阶段数据流；无法从调用表�
 
 | 调用图 | 核心问题 | 主要模块 | 节点/边 |
 | --- | --- | --- | --- |
-| `codex-end-to-end-agent-loop` | 一条用户输入如何完成上下文、模型、工具、回写和压缩闭环 | TUI、App Server、Core、Model Client、Tool Runtime、Compact | 49 / 68 |
+| `codex-end-to-end-agent-loop` | 一条用户输入如何完成上下文、模型、工具、回写和压缩闭环 | TUI、App Server、Core、Model Client、Tool Runtime、Compact | 53 / 73 |
 | `tui-authorization` | 模型请求如何获得认证 | CLI、TUI、App Server、Core | 23 / 23 |
 | `codex-turn-lifecycle` | 用户输入如何成为模型采样回合 | TUI、App Server、Core、Model Client | 20 / 21 |
 | `codex-shell-tool-execution` | 模型工具调用如何经过审批与沙箱执行 | Stream、Tool Router、Exec Policy、Sandbox | 21 / 22 |
 | `codex-thread-resume` | 持久化会话如何恢复成运行线程 | App Server、ThreadStore、Core Session | 16 / 18 |
 | `codex-config-resolution` | 系统、用户、项目与运行时配置如何合并 | Core Config、Config Loader、Requirements | 10 / 13 |
-| `codex-mcp-tool-call` | MCP 工具如何经过审批并到达远程 server | Tool Router、MCP Policy、Connection Manager、RMCP | 15 / 15 |
+| `codex-mcp-tool-call` | MCP 工具如何经过审批并到达远程 server | Tool Router、MCP Policy、Prepared Call Binding、RMCP | 15 / 15 |
 | `codex-context-compaction` | 上下文超限时如何压缩并安装新历史 | Turn、Compact、Model Client、Session History | 17 / 17 |
 
-合计 171 个节点、197 条边和 333 个经过校验的节点/调用点源码位置。
+合计 175 个节点、202 条边和 338 个经过校验的节点/调用点源码位置。
 
 ## 0. 端到端 Agent 回合与上下文闭环
 
@@ -35,8 +35,8 @@ ChatWidget user input
   -> RegularTask::run
   -> run_turn
      -> context updates + skills/plugins + user input history
-     -> ContextManager::for_prompt
-     -> build tools + build_prompt
+     -> capture step context + build tools
+     -> ContextManager::for_prompt + build_prompt
      -> ModelClientSession::stream
         -> Responses HTTP/SSE or WebSocket
      -> handle_output_item_done
@@ -174,8 +174,7 @@ ResponseItem
   -> handle_mcp_tool_call
      -> maybe_request_mcp_tool_approval
      -> handle_approved_mcp_tool_call
-  -> execute_mcp_tool_call
-  -> McpConnectionManager::call_tool
+  -> PreparedMcpCall::call_with_preparation
   -> ManagedClient::call_tool
   -> MCP server tools/call
 ```
@@ -186,8 +185,9 @@ ResponseItem
   handler 后进入 MCP 专属策略。
 - 审批同时考虑 permission profile、MCP tool annotations、App policy、会话/持久化记忆、
   permission hook、Guardian 和用户输入；并非所有 MCP 调用都会弹窗。
-- `execute_mcp_tool_call` 会附加 thread id、沙箱状态和 rollout trace 元数据；连接管理器随后
-  再执行 server/tool 过滤和超时控制。
+- `handle_approved_mcp_tool_call` 会附加 thread id、沙箱状态和 rollout trace 元数据；
+  `PreparedMcpCall` 随后校验工具目录版本，并使用审批时绑定的客户端、工具与超时执行，
+  避免审批对象和真正执行对象发生漂移。
 - OAuth 刷新、参数形状校验和真正的 `tools/call` 协议请求位于 `ManagedClient`，Core 不直接
   操纵传输。
 

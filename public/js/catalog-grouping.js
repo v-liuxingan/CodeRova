@@ -1,8 +1,8 @@
 export const GRAPH_CATEGORY_PRIORITY = [
-  "全景流程",
-  "会话运行",
-  "工具执行",
-  "配置与上下文",
+  "先看这里",
+  "提交与继续任务",
+  "让 Codex 操作项目",
+  "设置与长对话",
 ];
 
 export const DEFAULT_CATEGORY_ID = "uncategorized";

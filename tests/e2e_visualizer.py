@@ -79,7 +79,17 @@ with sync_playwright() as playwright:
     assert page.locator("#instant-open-toggle").get_attribute("aria-pressed") == "false"
     assert page.locator("#instant-open-toggle").inner_text() == "点击跳转：关"
     assert page.locator("#theme-select").input_value() == "halo"
-    assert page.locator("#theme-select option").count() == 3
+    assert set(page.locator("#theme-select option").evaluate_all(
+        "options => options.map(option => option.value)"
+    )) == {"halo", "aether", "signal", "editorial"}
+    page.locator("#theme-select").select_option("editorial")
+    assert page.locator("html").get_attribute("data-theme") == "editorial"
+    assert page.evaluate(
+        "getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim()"
+    ) == "#f5f5f5"
+    page.reload()
+    page.wait_for_selector(".graph-option")
+    assert page.locator("#theme-select").input_value() == "editorial"
     page.locator("#theme-select").select_option("aether")
     assert page.locator("html").get_attribute("data-theme") == "aether"
     page.locator("#theme-select").select_option("signal")
@@ -106,6 +116,7 @@ with sync_playwright() as playwright:
     expected_slugs = {
         "codex-config-resolution",
         "codex-context-compaction",
+        "codex-turn-context-continuity",
         "codex-end-to-end-agent-loop",
         "codex-exec-lifecycle",
         "codex-apply-patch-lifecycle",
@@ -121,24 +132,24 @@ with sync_playwright() as playwright:
     }
     assert {graph["slug"] for graph in graph_summaries} == expected_slugs
     assert Counter(graph["projectId"] for graph in graph_summaries) == {
-        "codex": 11,
+        "codex": 12,
         "callgraph-visualizer": 3,
     }
-    assert sum(graph["nodeCount"] for graph in graph_summaries) == 289
-    assert sum(graph["edgeCount"] for graph in graph_summaries) == 343
-    assert page.locator(".graph-option").count() == 14
+    assert sum(graph["nodeCount"] for graph in graph_summaries) == 326
+    assert sum(graph["edgeCount"] for graph in graph_summaries) == 382
+    assert page.locator(".graph-option").count() == 15
     expected_category_counts = {
-        "全景流程": 1,
-        "会话运行": 3,
-        "工具执行": 5,
-        "配置与上下文": 2,
+        "先看这里": 1,
+        "提交与继续任务": 3,
+        "让 Codex 操作项目": 5,
+        "设置与长对话": 3,
         "项目自身": 3,
     }
     expected_category_id_counts = {
         "overview": 1,
         "session": 3,
         "tools": 5,
-        "context": 2,
+        "context": 3,
         "project": 3,
     }
     assert Counter(
@@ -209,7 +220,7 @@ with sync_playwright() as playwright:
     catalog_slugs = page.locator(".graph-option").evaluate_all(
         "buttons => buttons.map(button => button.dataset.slug)"
     )
-    assert len(catalog_slugs) == len(set(catalog_slugs)) == 14
+    assert len(catalog_slugs) == len(set(catalog_slugs)) == 15
     category_by_slug = {
         graph["slug"]: graph["category"] for graph in graph_summaries
     }
@@ -380,8 +391,8 @@ with sync_playwright() as playwright:
     )
     assert expanded_preview.ok
     expanded_preview_body = expanded_preview.json()
-    assert expanded_preview_body["focusLine"] == 956
-    assert expanded_preview_body["focusEndLine"] == 962
+    assert expanded_preview_body["focusLine"] == 958
+    assert expanded_preview_body["focusEndLine"] == 964
     assert expanded_preview_body["contextLines"] == 24
     assert sum(line["focus"] for line in expanded_preview_body["lines"]) == 7
     assert expanded_preview_body["language"] == "rust"
@@ -410,20 +421,21 @@ with sync_playwright() as playwright:
     assert injected_path.status == 422
 
     expected_graphs = {
-        "Codex layered configuration resolution": (10, 23),
-        "Codex automatic context compaction": (17, 34),
-        "Codex end-to-end agent turn and context loop": (53, 96),
-        "Codex non-interactive exec task lifecycle": (20, 34),
-        "Codex apply_patch safety and file mutation lifecycle": (16, 31),
-        "Codex Code Mode script orchestration and nested tool concurrency": (19, 29),
-        "Codex MCP tool call lifecycle": (15, 30),
-        "Codex shell tool approval and sandbox execution": (21, 41),
-        "Codex persisted thread resume": (16, 33),
-        "Codex interactive turn lifecycle": (20, 37),
+        "修改配置后，Codex 最终会采用什么设置": (10, 23),
+        "对话太长时，Codex 如何压缩上下文并继续": (17, 34),
+        "Codex Turn：一次连续工作的上下文生命周期": (16, 35),
+        "发送一条消息后，Codex 如何完成这一轮任务": (68, 122),
+        "在脚本或 CI 中运行一次 Codex 任务": (20, 34),
+        "当 Codex 修改文件时，补丁如何被安全落盘": (16, 31),
+        "当 Codex 用脚本并发调用多个工具时会发生什么": (19, 29),
+        "当 Codex 调用外部 MCP 工具时会发生什么": (15, 30),
+        "当 Codex 运行终端命令时，审批和沙箱如何介入": (21, 41),
+        "重新打开历史任务后，Codex 如何接着工作": (16, 33),
+        "提交或追加消息后，Codex 如何推进当前任务": (33, 59),
         "Callgraph Visualizer graph discovery and loading": (17, 32),
         "Callgraph Visualizer validation and source evidence": (18, 35),
-        "Callgraph Visualizer interactive exploration loop": (24, 46),
-        "TUI authorization call graph": (23, 44),
+        "Callgraph Visualizer interactive exploration loop": (17, 31),
+        "启动 Codex 后，模型请求如何获得登录凭据": (23, 44),
     }
     for title, (node_count, source_location_count) in expected_graphs.items():
         graph_button = page.locator(".graph-option", has_text=title)
@@ -445,32 +457,15 @@ with sync_playwright() as playwright:
             "(text) => document.querySelector('#validation-badge')?.textContent === text",
             arg=f"{source_location_count} 处源码有效",
         )
-        expansion_artifact = {
-            "Codex non-interactive exec task lifecycle": "codex-exec-scenario-map.png",
-            "Codex apply_patch safety and file mutation lifecycle": (
-                "codex-apply-patch-scenario-map.png"
-            ),
-            "Codex Code Mode script orchestration and nested tool concurrency": (
-                "codex-code-mode-scenario-map.png"
-            ),
-        }.get(title)
-        if expansion_artifact:
-            page.locator("#fit-view").click()
-            assert (
-                page.locator(".workspace").get_attribute("data-workspace-view")
-                == "scene"
-            )
-            assert page.locator(".phase-node").count() == 6
-            page.evaluate(
-                """() => document.querySelector("#toast-region")?.replaceChildren()"""
-            )
-            page.locator(".workspace").screenshot(
-                path=str(ARTIFACTS / expansion_artifact)
-            )
-        if title == "Codex automatic context compaction":
+        assert page.locator(".workspace").get_attribute("data-workspace-view") == "code"
+        assert page.locator("#phase-navigator").count() == 0
+        assert page.locator(".source-stepper").is_visible()
+        assert page.locator("#scene-page-link").get_attribute("href") == "/scenes/index.html"
+        if title == "对话太长时，Codex 如何压缩上下文并继续":
             long_description = (
-                "原子替换活动历史，更新 WorldState 基线，持久化 "
-                "Compacted/TurnContext 项并安排 compact session-start hook。"
+                "在“安装精简历史并继续任务”阶段，原子替换活动历史，更新 "
+                "WorldState 基线，持久化 Compacted/TurnContext 项并安排"
+                "压缩后的会话启动扩展钩子。"
             )
             page.locator('[data-node-id="compact.replace-history"]').evaluate(
                 "element => element.dispatchEvent("
@@ -640,7 +635,7 @@ with sync_playwright() as playwright:
             assert dark_style["copy"] != dark_style["background"]
             page.locator("#theme-select").select_option("halo")
             assert page.locator("html").get_attribute("data-theme") == "halo"
-        if title == "Codex layered configuration resolution":
+        if title == "修改配置后，Codex 最终会采用什么设置":
             page.locator("#fit-view").click()
             assert page.locator("#graph-canvas").get_attribute(
                 "data-layout-mode"
@@ -765,248 +760,18 @@ with sync_playwright() as playwright:
             assert keyboard_focus["focusVisible"], keyboard_focus
             assert keyboard_focus["stroke"] != "none", keyboard_focus
             assert keyboard_focus["strokeWidth"] >= 2, keyboard_focus
-        if title == "Codex end-to-end agent turn and context loop":
+        if title == "发送一条消息后，Codex 如何完成这一轮任务":
             assert (
                 page.locator("#graph-overview-end-label").inner_text()
-                == "业务终点"
+                == "结构终点"
             )
-            assert page.locator("#graph-overview-end").inner_text() == "完成本轮"
-            assert page.locator("#graph-overview-sinks-wrap").is_visible()
+            assert page.locator("#graph-overview-sinks-wrap").is_hidden()
             assert "本轮完成事件" in page.locator(
-                "#graph-overview-sinks"
+                "#graph-overview-end"
             ).get_attribute("title")
-            page.locator("#fit-view").click()
-            assert (
-                page.locator(".workspace").get_attribute("data-workspace-view")
-                == "scene"
-            )
-            assert page.locator("#phase-navigator").is_visible()
-            assert not page.locator(".source-stepper").is_visible()
-            assert not page.locator(".inspector").is_visible()
-            scene_bounds = page.locator("#phase-navigator").bounding_box()
-            assert scene_bounds["width"] > 900, scene_bounds
-            assert scene_bounds["height"] > 500, scene_bounds
-            assert page.locator(".phase-node").count() == 8
-            assert page.locator(".phase-node-title").all_text_contents() == [
-                "用户提交指令",
-                "组装本轮上下文",
-                "请求模型生成下一步",
-                "解析响应并判断下一步",
-                "执行工具",
-                "记录结果并续跑",
-                "压缩上下文",
-                "完成本轮",
-            ]
-            assert page.locator(".phase-node-summary").count() == 8
-            assert "生成模型可见历史" in page.locator(
-                '.phase-node[data-phase-id="model-request"] .phase-node-summary'
-            ).text_content()
-            assert (
-                page.locator(".phase-navigator-heading small").inner_text()
-                == "主干 · 分支 · 回环"
-            )
-            phase_plane = page.locator(".phase-topology-plane")
-            assert phase_plane.get_attribute("data-total-relations") == "14"
-            assert phase_plane.get_attribute("data-visible-relations") == "10"
-            assert phase_plane.get_attribute("data-columns") == "4"
-            assert phase_plane.get_attribute("data-rows") == "2"
-            assert page.locator(".phase-relation").count() == 10
-            assert page.locator(".phase-relation-feedback").count() == 3
-            assert page.locator(
-                '.phase-relation-loop-back[data-from-phase-id="result-feedback"]'
-                '[data-to-phase-id="model-request"]'
-            ).count() == 1
-            assert page.locator(
-                '.phase-relation-branch[data-from-phase-id="output-routing"]'
-                '[data-to-phase-id="compact-or-finish"]'
-            ).count() == 1
-            assert page.locator(
-                '.phase-relation-loop-exit[data-from-phase-id="output-routing"]'
-                '[data-to-phase-id="turn-finish"]'
-            ).count() == 1
-            assert page.locator(
-                '.phase-node[data-phase-id="model-request"] .phase-node-route'
-            ).text_content() == "3 条回环在此重试"
-            assert page.locator(
-                '.phase-node[data-phase-id="tool-execution"] .phase-node-route'
-            ).text_content() == "模型请求工具"
-            assert page.locator(
-                '.phase-node[data-phase-id="compact-or-finish"] .phase-node-route'
-            ).text_content() == "上下文超限"
-            assert page.locator(
-                '.phase-node[data-phase-id="turn-finish"] .phase-node-route'
-            ).text_content() == "完成本轮"
-            output_tools_relation = page.locator(
-                '.phase-relation-branch[data-from-phase-id="output-routing"]'
-                '[data-to-phase-id="tool-execution"]'
-            )
-            assert output_tools_relation.count() == 1
-            assert output_tools_relation.get_attribute("data-edge-count") == "2"
-            assert page.locator(
-                '.phase-node-decision[data-phase-id="output-routing"]'
-            ).get_attribute("data-topology-role") == "decision"
-            assert page.locator(
-                '.phase-node-branch[data-phase-id="tool-execution"]'
-            ).get_attribute("data-topology-role") == "branch"
-            assert page.locator(
-                '.phase-node-loop[data-phase-id="result-feedback"]'
-            ).get_attribute("data-topology-role") == "loop"
-            assert page.locator(
-                '.phase-node-terminal[data-phase-id="turn-finish"]'
-            ).get_attribute("data-topology-role") == "terminal"
-            assert "WebSocket" in page.locator(
-                '.phase-node[data-phase-id="model-request"]'
-            ).get_attribute("title")
-            assert page.locator("#view-context-current").inner_text() == "全局结构"
-            scene_viewport = page.locator(".phase-map-viewport")
-            fitted_scene_transform = scene_viewport.get_attribute("transform")
-            assert page.evaluate(
-                """() => {
-                    const root = document.querySelector("#phase-navigator")
-                        .getBoundingClientRect();
-                    return [...document.querySelectorAll(".phase-node-box")].every(
-                        (box) => {
-                            const rect = box.getBoundingClientRect();
-                            return (
-                                rect.left >= root.left
-                                && rect.right <= root.right
-                                && rect.top >= root.top
-                                && rect.bottom <= root.bottom
-                            );
-                        },
-                    );
-                }"""
-            )
-            page.evaluate(
-                """() => document.querySelector(".toast-region")?.replaceChildren()"""
-            )
-            page.locator(".workspace").screenshot(
-                path=str(ARTIFACTS / "scenario-phase-map.png")
-            )
-            page.locator("#zoom-in").click()
-            zoomed_scene_transform = scene_viewport.get_attribute("transform")
-            assert zoomed_scene_transform != fitted_scene_transform
-            phase_viewport = page.locator(".graph-viewport")
-            before_phase_transform = phase_viewport.get_attribute("transform")
-            before_phase_scale = float(
-                before_phase_transform.split("scale(")[1].rstrip(")")
-            )
-            page.locator('.phase-node[data-phase-id="model-request"]').click()
-            page.wait_for_function(
-                """() =>
-                    document.querySelector(".workspace")?.dataset.workspaceView === "code"
-                    && document.querySelectorAll(".graph-node.phase-focused").length === 11
-                    && document.querySelectorAll(".graph-node.phase-dimmed").length === 42"""
-            )
-            assert page.locator("#phase-navigator").is_hidden()
-            assert page.locator(".source-stepper").is_visible()
             assert page.locator(".inspector").is_visible()
-            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
-            assert page.locator("#full-callgraph-button").inner_text() == "退出阶段聚焦"
-            assert page.locator("#phase-context-card").is_visible()
-            assert page.locator("#phase-context-card").get_attribute(
-                "aria-pressed"
-            ) == "true"
-            assert "生成模型可见历史" in page.locator(
-                "#phase-context-card-summary"
-            ).inner_text()
-            assert page.locator(".source-stepper").get_attribute(
-                "data-current-node"
-            ) == "e2e.run-sampling"
-            assert page.locator('[data-node-id="e2e.run-sampling"]').get_attribute(
-                "class"
-            ).find("selected") >= 0
-            overview_node = page.locator(
-                '[data-node-id="e2e.run-turn"]'
-            )
-            assert overview_node.locator(".node-role").is_visible()
-            assert not overview_node.locator(".node-label").is_visible()
-            assert page.locator(
-                '.phase-node[data-phase-id="model-request"]'
-            ).get_attribute("aria-pressed") == "true"
-            after_phase_transform = phase_viewport.get_attribute("transform")
-            after_phase_scale = float(
-                after_phase_transform.split("scale(")[1].rstrip(")")
-            )
-            assert after_phase_scale == before_phase_scale
-            assert after_phase_transform != before_phase_transform
-            page.locator("#graph-canvas").dispatch_event("click")
             assert page.locator(".graph-node.phase-focused").count() == 0
             assert page.locator(".graph-node.phase-dimmed").count() == 0
-            assert page.locator(
-                '.phase-node[data-phase-id="model-request"]'
-            ).get_attribute("aria-pressed") == "false"
-            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
-            assert page.locator("#phase-context-card").get_attribute(
-                "aria-pressed"
-            ) == "false"
-            assert "点击恢复" in page.locator(
-                "#phase-context-card-status"
-            ).inner_text()
-            page.evaluate(
-                """() => document.querySelector(".toast-region")?.replaceChildren()"""
-            )
-            page.locator(".app-shell").screenshot(
-                path=str(ARTIFACTS / "scenario-phase-drilldown.png")
-            )
-            page.locator("#phase-context-card").click()
-            assert page.locator(".graph-node.phase-focused").count() == 11
-            assert page.locator(".graph-node.phase-dimmed").count() == 42
-            assert page.locator("#phase-context-card").get_attribute(
-                "aria-pressed"
-            ) == "true"
-            before_cross_phase_selection = phase_viewport.get_attribute("transform")
-            page.locator('[data-node-id="e2e.shell-handler"]').evaluate(
-                "element => element.dispatchEvent("
-                "new MouseEvent('click', { bubbles: true }))"
-            )
-            assert page.locator("#view-context-current").inner_text() == "执行工具"
-            assert page.locator(".graph-node.phase-focused").count() == 8
-            assert page.locator(".source-stepper").get_attribute(
-                "data-current-node"
-            ) == "e2e.shell-handler"
-            assert "已切换到场景「执行工具」" in page.locator(
-                "#toast-region"
-            ).inner_text()
-            assert (
-                phase_viewport.get_attribute("transform")
-                == before_cross_phase_selection
-            )
-            page.locator('[data-node-id="e2e.run-sampling"]').evaluate(
-                "element => element.dispatchEvent("
-                "new MouseEvent('click', { bubbles: true }))"
-            )
-            assert (
-                page.locator("#view-context-current").inner_text()
-                == "请求模型生成下一步"
-            )
-            assert page.locator(".graph-node.phase-focused").count() == 11
-            assert (
-                phase_viewport.get_attribute("transform")
-                == before_cross_phase_selection
-            )
-            page.locator("#scene-view-button").click()
-            assert (
-                page.locator(".workspace").get_attribute("data-workspace-view")
-                == "scene"
-            )
-            assert page.locator("#phase-navigator").is_visible()
-            assert scene_viewport.get_attribute("transform") == zoomed_scene_transform
-            assert page.locator(
-                '.phase-node[data-phase-id="model-request"]'
-            ).get_attribute("aria-pressed") == "true"
-            assert phase_viewport.get_attribute("transform") == after_phase_transform
-            page.locator('.phase-node[data-phase-id="model-request"]').click()
-            assert page.locator(".graph-node.phase-focused").count() == 11
-            assert page.locator("#view-context-current").inner_text() == "请求模型生成下一步"
-            page.locator("#scene-view-button").click()
-            page.locator("#full-callgraph-button").click()
-            assert (
-                page.locator(".workspace").get_attribute("data-workspace-view")
-                == "code"
-            )
-            assert page.locator(".graph-node.phase-focused").count() == 0
-            assert phase_viewport.get_attribute("transform") == after_phase_transform
             page.locator("#fit-view").click()
             assert page.locator("#graph-canvas").get_attribute(
                 "data-layout-mode"
@@ -1258,7 +1023,7 @@ with sync_playwright() as playwright:
                 "element => element.dispatchEvent("
                 "new MouseEvent('click', { bubbles: true }))"
             )
-            assert page.locator(".graph-node").count() == 52
+            assert page.locator(".graph-node").count() == 67
             assert page.locator('[data-node-id="e2e.responses-http"]').count() == 0
             assert page.locator('[data-node-id="e2e.handle-output"]').count() == 1
             assert page.locator('[data-node-id="e2e.websocket-stream"]').count() == 1
@@ -1272,7 +1037,7 @@ with sync_playwright() as playwright:
                 "element => element.dispatchEvent("
                 "new MouseEvent('click', { bubbles: true }))"
             )
-            assert page.locator(".graph-node").count() == 53
+            assert page.locator(".graph-node").count() == 68
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
@@ -1289,7 +1054,7 @@ with sync_playwright() as playwright:
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
-            assert page.locator(".graph-node").count() == 53
+            assert page.locator(".graph-node").count() == 68
             assert "path-focused" in (
                 page.locator('[data-node-id="e2e.http-stream"]')
                 .get_attribute("class") or ""
@@ -1371,7 +1136,7 @@ with sync_playwright() as playwright:
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
-            assert page.locator(".graph-node").count() == 53
+            assert page.locator(".graph-node").count() == 68
             assert "path-focused" in (
                 page.locator('[data-node-id="e2e.mcp-remote"]')
                 .get_attribute("class") or ""
@@ -1536,7 +1301,7 @@ with sync_playwright() as playwright:
                     ".graph-node.path-focused, .graph-node.path-dimmed"
                 ).length === 0"""
             )
-            assert page.locator(".graph-node").count() == 53
+            assert page.locator(".graph-node").count() == 68
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == scenario_camera
@@ -1633,7 +1398,7 @@ with sync_playwright() as playwright:
             )
             page.locator("#orientation").click()
             assert page.locator("#orientation").inner_text() == "纵向布局"
-        if title == "Codex interactive turn lifecycle":
+        if title == "提交或追加消息后，Codex 如何推进当前任务":
             turn_camera = page.locator(".graph-viewport").get_attribute("transform")
             page.locator('[data-node-id="core.handle-output-item"]').evaluate(
                 "element => element.dispatchEvent("
@@ -1680,7 +1445,7 @@ with sync_playwright() as playwright:
             assert page.locator(".graph-viewport").get_attribute(
                 "transform"
             ) == turn_camera
-        if title == "Codex shell tool approval and sandbox execution":
+        if title == "当 Codex 运行终端命令时，审批和沙箱如何介入":
             stepper_positions = page.locator(
                 "#trace-previous, #trace-callsite, #trace-next"
             ).evaluate_all(
@@ -1792,7 +1557,10 @@ with sync_playwright() as playwright:
     page.wait_for_selector('[data-node-id="cli.main"]')
 
     assert page.locator(".graph-node").count() == 23
-    assert "TUI authorization" in page.locator("#graph-title").inner_text()
+    assert (
+        "启动 Codex 后，模型请求如何获得登录凭据"
+        in page.locator("#graph-title").inner_text()
+    )
     assert "44 处源码有效" in page.locator("#validation-badge").inner_text()
     assert page.locator(
         '.edge-callsite[data-callsite-status="exact"]'
@@ -1802,36 +1570,40 @@ with sync_playwright() as playwright:
     ).count() == 2
     assert page.locator(
         '.edge-callsite[data-edge-id="edge.client-runtime-start"]'
-    ).text_content() == "lib.rs:462"
+    ).text_content() == "lib.rs:464"
+    page.locator('[data-node-id="cli.main"]').evaluate(
+        "element => element.dispatchEvent("
+        "new MouseEvent('click', { bubbles: true }))"
+    )
     page.wait_for_selector(".source-workbench")
     page.wait_for_selector('.source-editor-host[data-source-surface="monaco"]')
     assert page.locator("#inspector-details-tab").count() == 0
     assert page.locator("#inspector-source-tab").count() == 0
     assert page.locator("#inspector-summary").is_visible()
     assert page.locator("#inspector-source-pane").is_visible()
-    assert "CLI 进程入口" in page.locator("#inspector-content").inner_text()
-    assert "arg0 分发器进入异步 cli_main" in page.locator(
+    assert "命令行进程入口" in page.locator("#inspector-content").inner_text()
+    assert "通过 arg0 分发器进入异步 cli_main" in page.locator(
         "#inspector-content"
     ).inner_text()
-    assert "从 Codex CLI 启动到模型请求鉴权" in page.locator(
+    assert "真正请求模型前" in page.locator(
         "#graph-overview-description"
     ).inner_text()
-    assert page.locator("#graph-overview-start").inner_text() == "CLI 进程入口"
-    assert "等 3 个" in page.locator("#graph-overview-end").inner_text()
+    assert page.locator("#graph-overview-start").inner_text() == "命令行进程入口"
     assert page.locator("#graph-overview-end-label").inner_text() == "结构终点"
     assert page.locator("#graph-overview-sinks-wrap").is_hidden()
+    assert "等 3 个" in page.locator("#graph-overview-end").inner_text()
     assert page.locator("#graph-overview-scale").inner_text() == "23 节点 · 23 关系"
     assert page.locator("#trace-next strong").inner_text() == "cli_main"
-    assert "RUST · 目标 956–962" in page.locator(".source-preview-stats").inner_text()
+    assert "RUST · 目标 958–964" in page.locator(".source-preview-stats").inner_text()
     assert page.locator(".source-engine-badge").inner_text() == "MONACO · READ ONLY"
-    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "956"
-    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "962"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "958"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "964"
     assert page.locator(".source-editor-host").get_attribute("data-read-only") == "true"
     monaco_frame = page.frame_locator(".monaco-source-frame")
     monaco_frame.locator(".monaco-editor").wait_for()
     assert monaco_frame.locator(".monaco-editor").count() == 1
     assert monaco_frame.locator(".monaco-source-focus").count() >= 1
-    assert "956" in monaco_frame.locator(".line-numbers").all_text_contents()
+    assert "958" in monaco_frame.locator(".line-numbers").all_text_contents()
     assert "/assets/cursors/canvas-pointer.svg" in page.locator(
         "#graph-canvas"
     ).evaluate("element => getComputedStyle(element.parentElement).cursor")
@@ -1934,7 +1706,7 @@ with sync_playwright() as playwright:
             && document.querySelector('.source-editor-host')?.dataset.sourceSurface === 'monaco'
             && document.querySelector('.source-editor-host')?.getAttribute('aria-busy') === 'false'"""
     )
-    assert page.locator(".source-editor-host").get_attribute("data-start-line") == "932"
+    assert page.locator(".source-editor-host").get_attribute("data-start-line") == "934"
     monaco_frame.locator(".codicon-folding-expanded").first.wait_for()
     codicon_status = monaco_frame.locator(".codicon-folding-expanded").first.evaluate(
         """async folding => {
@@ -1984,6 +1756,8 @@ with sync_playwright() as playwright:
         "() => document.querySelector('.source-density button.active')?.textContent === '标准'"
     )
 
+    page.locator("#inspector-collapse").click()
+    page.locator("#fit-view").click()
     draggable_node = page.locator('[data-node-id="cli.main"]')
     original_transform = draggable_node.get_attribute("transform")
     draggable_box = draggable_node.bounding_box()
@@ -2013,10 +1787,12 @@ with sync_playwright() as playwright:
 
     page.reload()
     page.wait_for_load_state("networkidle")
-    page.locator(".graph-option", has_text="TUI authorization call graph").click()
+    page.locator(".graph-option", has_text="启动 Codex 后，模型请求如何获得登录凭据").click()
     page.wait_for_function(
-        "() => document.querySelector('#graph-title')?.textContent === 'TUI authorization call graph'"
+        "() => document.querySelector('#graph-title')?.textContent === '启动 Codex 后，模型请求如何获得登录凭据'"
     )
+    if "inspector-collapsed" in (page.locator("html").get_attribute("class") or ""):
+        page.locator("#inspector-collapse").click()
     page.wait_for_selector('[data-node-id="cli.main"]')
     assert page.locator('[data-node-id="cli.main"]').get_attribute("transform") == moved_transform
     with page.expect_response(
@@ -2328,7 +2104,7 @@ with sync_playwright() as playwright:
     source_link_body = source_link.json()
     assert source_link_body["uri"].startswith("vscode://file/E:/")
     assert source_link_body["uri"].endswith(
-        "/codex/codex-rs/cli/src/main.rs:956:1"
+        "/codex/codex-rs/cli/src/main.rs:958:1"
     )
     unavailable_link = page.request.post(
         f"{BASE_URL}/api/open",
@@ -2402,9 +2178,9 @@ with sync_playwright() as playwright:
     ) == trace_camera
     assert "异步入口" in page.locator("#inspector-content h2").inner_text()
     assert "main.rs" in page.locator(".source-preview-path").inner_text()
-    assert "目标 959" in page.locator(".source-preview-stats").inner_text()
-    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "959"
-    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "959"
+    assert "目标 961" in page.locator(".source-preview-stats").inner_text()
+    assert page.locator(".source-editor-host").get_attribute("data-focus-line") == "961"
+    assert page.locator(".source-editor-host").get_attribute("data-focus-end-line") == "961"
 
     page.locator("#trace-next").click()
     assert page.locator(".source-stepper").get_attribute(
@@ -2427,7 +2203,7 @@ with sync_playwright() as playwright:
     assert page.locator("#trace-callsite").get_attribute(
         "data-trace-edge-id"
     ) == "edge.cli-main-interactive"
-    assert "从 Codex CLI 启动到模型请求鉴权" in page.locator(
+    assert "真正请求模型前" in page.locator(
         "#graph-overview-description"
     ).inner_text()
 
@@ -2800,8 +2576,51 @@ with sync_playwright() as playwright:
         - edge_label_before_selection["width"]
     ) < 0.01
     assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
+    active_slug = page.locator(".graph-option.active").get_attribute("data-slug")
+    active_graph = page.request.get(f"{BASE_URL}/api/graphs/{active_slug}").json()
+    relation = next(edge for edge in active_graph["edges"] if edge["id"] == "edge.client-runtime-start")
+    page.locator(f'.graph-node[data-node-id="{relation["from"]}"]').evaluate(
+        "node => node.dispatchEvent(new MouseEvent('click', { bubbles: true }))"
+    )
+    graph_before_context = page.locator("#graph-canvas").evaluate(
+        "svg => ({ nodes: svg.querySelectorAll('.graph-node').length, edges: svg.querySelectorAll('.graph-edge-group').length, viewport: svg.querySelector('.graph-viewport').getAttribute('transform') })"
+    )
+    page.locator("#inspector-content .execution-context-heading").click()
+    assert page.locator('#inspector-content [data-direction="outgoing"] .execution-relation').count() == sum(
+        edge["from"] == relation["from"] for edge in active_graph["edges"]
+    )
+    page.locator("#theme-select").select_option("editorial")
+    assert page.locator("#inspector-content .execution-context").get_attribute("open") is not None
+    assert graph_before_context == page.locator("#graph-canvas").evaluate(
+        "svg => ({ nodes: svg.querySelectorAll('.graph-node').length, edges: svg.querySelectorAll('.graph-edge-group').length, viewport: svg.querySelector('.graph-viewport').getAttribute('transform') })"
+    )
+    page.locator('#inspector-content [data-relation-id="edge.client-runtime-start"]').click()
+    page.wait_for_selector("#inspector-content.edge-detail")
+    assert "启动运行时" in page.locator("#inspector-content h2").inner_text()
+    page.wait_for_function(
+        "() => document.querySelector('.monaco-source-frame')?.contentDocument?.documentElement.dataset.theme === 'editorial'"
+    )
+    page.locator("#theme-select").select_option("halo")
     page.wait_for_timeout(3700)
     page.screenshot(path=str(ARTIFACTS / "callgraph-overview.png"), full_page=True)
+
+    scenarios = page.request.get(f"{BASE_URL}/api/scenarios")
+    assert scenarios.ok
+    scenario_summaries = scenarios.json()
+    assert scenario_summaries == [
+        {
+            "slug": "codex-user-turn-event-return",
+            "title": "用户消息如何穿过 Codex 并回到界面",
+            "goal": "理解一次用户消息如何跨越 TUI、App Server、Core 和事件通道，并定位每段实现证据。",
+            "participantCount": 5,
+            "stepCount": 7,
+        }
+    ]
+    scenario = page.request.get(f"{BASE_URL}/api/scenarios/codex-user-turn-event-return")
+    assert scenario.ok
+    assert scenario.json()["steps"][1]["drilldowns"][0]["graphSlug"] == (
+        "codex-end-to-end-agent-loop"
+    )
     assert not console_errors, f"browser console errors: {console_errors}"
     assert not page_errors, f"browser page errors: {page_errors}"
     browser.close()

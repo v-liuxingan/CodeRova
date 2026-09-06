@@ -15,7 +15,10 @@ export class ThemeRegistry {
   }
 
   initialize(defaultId) {
-    const storedId = localStorage.getItem(STORAGE_KEY);
+    let storedId = null;
+    try { storedId = localStorage.getItem(STORAGE_KEY); } catch {
+      // Browser storage is optional; blocked preferences must not stop startup.
+    }
     this.apply(this.themes.has(storedId) ? storedId : defaultId, false);
     return this.activeId;
   }
@@ -25,7 +28,11 @@ export class ThemeRegistry {
     if (!theme) throw new Error(`未注册主题：${id}`);
     this.activeId = id;
     this.root.dataset.theme = id;
-    if (persist) localStorage.setItem(STORAGE_KEY, id);
+    if (persist) {
+      try { localStorage.setItem(STORAGE_KEY, id); } catch {
+        // Keep applying the theme and notifying views if persistence is unavailable.
+      }
+    }
     for (const listener of this.listeners) listener(theme);
   }
 
@@ -40,6 +47,12 @@ export class ThemeRegistry {
 }
 
 export const themes = new ThemeRegistry()
+  .register({
+    id: "editorial",
+    label: "Editorial · 纸墨",
+    description: "烟白底 · 深墨文字 · 橙色焦点",
+    colorScheme: "light",
+  })
   .register({
     id: "halo",
     label: "Halo",
