@@ -1,4 +1,5 @@
 mod drafts;
+mod graph_creation;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -347,6 +348,18 @@ async fn check_entry(
     Json(input): Json<EntryCheck>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     same_origin(&headers)?;
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    if graph.analysis.is_none() {
+        return Err(AppError::BadRequest("当前图未配置 LSP 分析".into()));
+    }
+    check_project_entry(&state, slug, &graph.project_id, input).await
+}
+async fn check_project_entry(
+    state: &AppState,
+    slug: String,
+    project_id: &str,
+    input: EntryCheck,
+) -> Result<Json<serde_json::Value>, AppError> {
     {
         let jobs = state
             .analysis_jobs
@@ -364,19 +377,21 @@ async fn check_entry(
         }
     }
     let _guard = CheckGuard(state.entry_check_busy.clone());
-    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
-    if graph.analysis.is_none() {
-        return Err(AppError::BadRequest("当前图未配置 LSP 分析".into()));
-    }
     let root = state
         .project_catalog
-        .resolve_root(&graph.project_id)
+        .resolve_root(project_id)
         .map_err(AppError::BadRequest)?;
     let (file, text) =
         crate::analysis::entry::source(&root, &input.file_id).map_err(AppError::BadRequest)?;
-    let symbol = crate::analysis::entry::check(root, file, text.clone(), input.line)
-        .await
-        .map_err(AppError::BadRequest)?;
+    let symbol = crate::analysis::entry::check(
+        state.analysis_jobs.sessions.clone(),
+        root,
+        file,
+        text.clone(),
+        input.line,
+    )
+    .await
+    .map_err(AppError::BadRequest)?;
     let token = crate::analysis::stable_id(&format!(
         "{slug}:{}:{}",
         symbol.id,
@@ -564,6 +579,8 @@ async fn start_analysis(
         draft_id: state.analysis_draft_id.clone(),
         status: "running".into(),
         completed: 0,
+        added_nodes: 0,
+        added_edges: 0,
         pending: report.pending_nodes.len(),
         message: "正在初始化语言服务器…".into(),
     };
@@ -700,6 +717,18 @@ pub async fn serve(
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
     let app = Router::new()
+        .route(
+            "/api/projects/{project}/source-files",
+            get(graph_creation::files),
+        )
+        .route(
+            "/api/projects/{project}/source-files/{file}",
+            get(graph_creation::source),
+        )
+        .route(
+            "/api/projects/{project}/entry-check",
+            post(graph_creation::check),
+        )
         .route("/api/health", get(health))
         .route("/api/graphs/{slug}/source-files", get(list_entry_files))
         .route(
@@ -721,7 +750,7 @@ pub async fn serve(
                 .post(start_analysis)
                 .delete(stop_analysis),
         )
-        .route("/api/graphs", get(list_graphs))
+        .route("/api/graphs", get(list_graphs).post(graph_creation::create))
         .route("/api/graphs/{slug}", get(get_graph).delete(archive_graph))
         .route("/api/graph-trash", get(list_archived_graphs))
         .route(
@@ -761,14 +790,14 @@ pub async fn serve(
             HeaderValue::from_static("no-store"),
         ))
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(|error| format!("无法监听 {address}：{error}"))?;
     tracing::info!("visualizer running at http://{address}");
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(state.analysis_jobs.sessions.clone()))
         .await
         .map_err(|error| format!("服务异常退出：{error}"))
 }
@@ -804,8 +833,9 @@ async fn security_headers(request: Request, next: Next) -> Response {
     response
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(sessions: Arc<crate::analysis::session_cache::SessionCache>) {
     let _ = tokio::signal::ctrl_c().await;
+    sessions.shutdown().await;
 }
 
 #[derive(Serialize)]

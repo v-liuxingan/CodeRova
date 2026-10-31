@@ -39,8 +39,10 @@ await Promise.all([
 ]);
 
 await build({
-  entryPoints: [resolve(root, "frontend", "v2", "entry.js")],
-  outfile: resolve(root, "public", "vendor", "v2", "workbench.js"),
+  entryPoints: [resolve(root, "frontend", "workbench", "entry.js")],
+  outfile: resolve(root, "public", "vendor", "workbench", "workbench.js"),
   bundle: true, format: "esm", minify: true, target: "es2022", legalComments: "linked", external: ["/vendor/monaco/*"],
 });
-await copyFile(resolve(root, "node_modules", "@antv", "g6", "LICENSE"), resolve(root, "public", "vendor", "v2", "G6-LICENSE.txt"));
+await copyFile(resolve(root, "node_modules", "@antv", "g6", "LICENSE"), resolve(root, "public", "vendor", "workbench", "G6-LICENSE.txt"));
+
+await build({entryPoints:[resolve(root,"frontend","workbench","new-graph.js")],outfile:resolve(root,"public","vendor","workbench","new-graph.js"),bundle:true,format:"esm",minify:true,target:"es2022"});

@@ -51,10 +51,10 @@ G6 默认按调用路径展示。不同调用者共享的方法分别显示为�
 
 ## 实现与性能边界
 
-- `frontend/v2/graph-index.js`：节点/边索引、双向邻接表和循环安全的上下游遍历。
-- `frontend/v2/graph-window.js`：显示窗口、分批/分层展开、搜索路径和层级坐标。
-- `frontend/v2/path-window.js`：路径引用、原始 ID 映射、重复子树按需展开与递归终止。
-- `frontend/v2/entry.js`：展示范围控制、G6 更新、视口锚定和状态差分。
+- `frontend/workbench/graph-index.js`：节点/边索引、双向邻接表和循环安全的上下游遍历。
+- `frontend/workbench/graph-window.js`：显示窗口、分批/分层展开、搜索路径和层级坐标。
+- `frontend/workbench/path-window.js`：路径引用、原始 ID 映射、重复子树按需展开与递归终止。
+- `frontend/workbench/entry.js`：展示范围控制、G6 更新、视口锚定和状态差分。
 - 节点卡片保留简明字段，额外标记未展示的直接下游数量。
 - 边界说明折叠时不创建列表，打开后分批展示；避免为一万多条说明创建隐藏 DOM。
 - 高亮用邻接表代替每个节点反复扫描全量边；状态值未变化的元素不重复提交。
@@ -67,13 +67,13 @@ G6 默认按调用路径展示。不同调用者共享的方法分别显示为�
 ## 验证
 
 ```powershell
-node frontend/v2/graph-window.test.mjs
-python frontend/v2/progressive_e2e.py
+node frontend/workbench/graph-window.test.mjs
+python frontend/workbench/progressive_e2e.py
 python tests/v2_e2e.py
 python tests/v2_drag_e2e.py
 python tests/v2_highlight_e2e.py
-node frontend/v2/path-window.test.mjs
-python frontend/v2/path_e2e.py
+node frontend/workbench/path-window.test.mjs
+python frontend/workbench/path_e2e.py
 ```
 
 单元验证覆盖宽分支分页、共享目标、回环、未展示节点搜索和双向同层对齐；浏览器验证
@@ -134,8 +134,8 @@ python frontend/v2/path_e2e.py
 验证增加：
 
 ```powershell
-node frontend/v2/render-window.test.mjs
-python frontend/v2/demand_e2e.py
+node frontend/workbench/render-window.test.mjs
+python frontend/workbench/demand_e2e.py
 ```
 
 覆盖跨视口连线、平行/反向边、搜索补入、拖动坐标恢复、概览简化与恢复、符号分页、
@@ -165,8 +165,8 @@ python frontend/v2/demand_e2e.py
 
 理解目标是暂时移开已读分支，集中阅读当前流程，同时能恢复并核对证据。验证包含
 共享分支隔离、回环、重新展开与搜索、真实 Codex 根节点收起到 1 个引用并恢复至
-2974 个引用，以及视口锚点不漂移。单元入口：`node frontend/v2/collapse.test.mjs`；
-浏览器覆盖在 `python frontend/v2/demand_e2e.py`。理解效果仍按 10 分钟任务评估。
+2974 个引用，以及视口锚点不漂移。单元入口：`node frontend/workbench/collapse.test.mjs`；
+浏览器覆盖在 `python frontend/workbench/demand_e2e.py`。理解效果仍按 10 分钟任务评估。
 
 
 ## 缩略图导航
@@ -197,7 +197,7 @@ python frontend/v2/demand_e2e.py
 连线，收起其下游。复用节点收起语义，其他路径引用或关系视图中的共享分支不受误删。
 没有可独立收起的下游时禁用菜单项。右键本身不选择或高亮边；收起导致原选中内容消失时
 清空选择。菜单支持 Escape、外部点击、平移、切换图谱时关闭，位置限制在窗口内。
-验证入口：`python frontend/v2/edge-menu_e2e.py`，通过真实曲线命中检查菜单和分支隔离。
+验证入口：`python frontend/workbench/edge-menu_e2e.py`，通过真实曲线命中检查菜单和分支隔离。
 
 节点与连线共用“分支操作”右键菜单：节点右键以自身为入口，连线右键以目标节点为入口。左键仍用于选择与源码查看，右键不改变高亮。节点实点回归覆盖收起、叶节点禁用与 Escape 关闭。
 

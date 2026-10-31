@@ -1,6 +1,6 @@
 ---
 name: callgraph-workbench
-description: 使用 Callgraph Visualizer V2 分析本地源码、生成和审阅调用图，操作 LSP 续采、人工异步入口、分支整理及草稿保存。用于平台操作和产出验收，不代替平台代码开发规范。
+description: 使用 Callgraph Visualizer 分析本地源码、生成和审阅调用图，操作 LSP 续采、人工异步入口、分支整理及草稿保存。用于平台操作和产出验收，不代替平台代码开发规范。
 ---
 
 # Callgraph 工作台
@@ -10,7 +10,7 @@ description: 使用 Callgraph Visualizer V2 分析本地源码、生成和审阅
 ## 先确认工作对象
 
 - 定位平台仓库，读取 `callgraph.projects.json`，确认源码项目、任务场景和入口。不要把平台仓库误当作待分析项目。
-- 服务地址优先取当前页面或用户指定值，通过 `/api/health`、`/api/graphs` 核实。端口不是固定的；V2 页面为 `/v2/?graph=<真实 slug>`。
+- 服务地址优先取当前页面或用户指定值，通过 `/api/health`、`/api/graphs` 核实。端口不是固定的；工作台页面为 `/?graph=<真实 slug>`。
 - 复用已有服务，不为读图或写文档重启服务。不要在验收中修改用户的真实图。
 - 用户仅要求评估/预览时停在草稿；要求生成并交付结果时，在既有授权范围内核验后保存，无需重复确认。未授权的回收站永久删除不属于整理图的隐含范围。
 
@@ -39,4 +39,4 @@ description: 使用 Callgraph Visualizer V2 分析本地源码、生成和审阅
 
 ## 随项目维护
 
-本目录是操作手册的版本化源。界面动作改变时更新 `references/workbench.md`；数据操作和持久化语义改变时更新 `references/analysis.md` 及 `docs/ai-operations.md`。不要把经典工作台能力直接当成 V2 能力。验证请求格式与当前实现一致；示例预算只是示例，不是全局完整度上限。
+本目录是操作手册的版本化源。界面动作改变时更新 `references/workbench.md`；数据操作和持久化语义改变时更新 `references/analysis.md` 及 `docs/ai-operations.md`。退役界面的能力不代表当前产品能力。验证请求格式与当前实现一致；示例预算只是示例，不是全局完整度上限。

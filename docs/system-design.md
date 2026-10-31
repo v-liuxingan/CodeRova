@@ -1,3 +1,5 @@
+> 当前入口与实现已统一：`/` 为项目主页，`/?graph=<slug>` 为唯一 G6 工作台；源码位于 `frontend/workbench`。经典界面与 Atlas 实验入口已退役。下文旧版本章节保留设计历史，操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准。
+
 # 当前系统设计
 
 更新日期：2026-10-31。本文描述当前工作区已经实现的系统，规划和验收状态见
@@ -35,7 +37,7 @@ flowchart TB
   Graph --> Server
   Pages --> Server
   Server --> Classic[经典工作台 /]
-  Server --> V2[G6 阅读器 /v2/]
+  Server --> V2[G6 阅读器 /]
   Server --> Atlas[Atlas 实验阅读器]
   Classic --> Evidence[定义与调用点证据]
   V2 --> Evidence
@@ -48,8 +50,8 @@ flowchart TB
 | 领域与存储 | `src/model.rs`、`src/graph_store.rs`、`src/layout_store.rs`、`src/scenario_store.rs` | 图契约、目录发现、分类、归档恢复、布局与旧场景存储 |
 | 源码证据 | `src/project_catalog.rs`、`src/source_preview.rs`、`src/navigation.rs`、`src/validation.rs` | 项目根解析、路径校验、源码范围、编辑器链接、内容校验 |
 | 浏览器 API 边界 | `public/js/api.js` | 集中封装 HTTP 请求，避免各视图自行拼接文件路径 |
-| V2 交互 | `frontend/v2/entry.js` | G6 图装配、布局、选择、主题、导航与源码联动 |
-| V2 组件 | `frontend/v2/execution-node.js`、`frontend/v2/library-tree.js` | Canvas 节点卡片、项目文件树及回收站 |
+| V2 交互 | `frontend/workbench/entry.js` | G6 图装配、布局、选择、主题、导航与源码联动 |
+| V2 组件 | `frontend/workbench/execution-node.js`、`frontend/workbench/library-tree.js` | Canvas 节点卡片、项目文件树及回收站 |
 | 经典阅读器 | `public/js/`、`public/js/renderers/` | SVG、场景阅读、源码工作台、布局存储与调用步进 |
 | 构建 | `scripts/build_frontend.mjs`、`scripts/build_scenes.mjs` | 本地前端依赖打包、共享场景页面生成 |
 
@@ -58,7 +60,7 @@ React/React Flow/ELK 属于 Atlas 实验实现，不是 V2 的渲染栈。
 
 ## 3. 三个前端入口的边界
 
-| 能力 | 经典工作台 `/` | V2 `/v2/` | Atlas |
+| 能力 | 经典工作台 `/` | V2 `/` | Atlas |
 | --- | --- | --- | --- |
 | 定位 | 当前完整阅读能力的保留入口 | 新版调用图阅读与目录交互 | 保留兼容的实验实现 |
 | 调用图渲染 | 自研 SVG | G6 Canvas，自定义节点 | React Flow / ELK |

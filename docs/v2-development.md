@@ -1,3 +1,5 @@
+> 当前入口与实现已统一：`/` 为项目主页，`/?graph=<slug>` 为唯一 G6 工作台；源码位于 `frontend/workbench`。经典界面与 Atlas 实验入口已退役。下文旧版本章节保留设计历史，操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准。
+
 # V2 源码分析与 G6 阅读器
 
 日常操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准；本文的阶段记录用于开发背景。
@@ -24,7 +26,7 @@ npm run build:frontend
 cargo run -- serve --port 4322
 ```
 
-访问 `http://127.0.0.1:4322/v2/`。经典工作台顶部也有 V2 入口。
+访问 `http://127.0.0.1:4322/`。经典工作台顶部也有 V2 入口。
 项目列表、图选择、Canvas 和源码面板在同一页；支持图链接、历史前进后退与符号查找。
 首次打开默认亮色，右上角可切换亮色/深色并保存偏好；切换只刷新样式，保留选择和视口。
 默认不选择符号、不高亮链路；选择节点或关系后才突出相关路径。单击画布空白处清除选择和源码预览；拖拽（包括拖出再回到起点）不取消选择。切图与刷新回到未选择状态。
@@ -60,7 +62,7 @@ Rust 适配依赖 rust-analyzer 的索引就绪通知；Java 已接入 Eclipse J
 - `src/analysis/mod.rs`：项目内路径解析、调用点收集、环去重、深度/请求预算和导出。
 - `CallGraph.analysis`：提供者、分析范围、预算、已查询/待查询符号、范围与失败说明。
 - `static-call`：分析器报告的静态关系，机制未分类；不自动填条件、执行顺序或业务职责。
-- `frontend/v2/entry.js`：G6 适配和阅读交互；`CallgraphApi` 仍是浏览器 API 边界。
+- `frontend/workbench/entry.js`：G6 适配和阅读交互；`CallgraphApi` 仍是浏览器 API 边界。
 
 静态查询返回空数组只表示服务器未报告下游。跨项目目标记录为边界说明，不伪造节点；
 不同调用点分别保留为边。节点身份在相同源码快照上稳定，修改行列后可能改变。

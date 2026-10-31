@@ -5,6 +5,7 @@ mod lsp;
 pub mod provider;
 pub mod resume;
 mod semantics;
+pub(crate) mod session_cache;
 
 use crate::{
     model::{CallGraph, GraphEdge, GraphNode},

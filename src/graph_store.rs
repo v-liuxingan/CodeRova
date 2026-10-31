@@ -15,6 +15,9 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// A database, remote catalog, or generated graph source can implement this
 /// trait without changing the HTTP or rendering layers.
 pub trait GraphStore: Send + Sync {
+    fn create(&self, _slug: &str, _graph: &CallGraph) -> Result<(), String> {
+        Err("当前存储不支持新建图".into())
+    }
     fn checkpoint(
         &self,
         _slug: &str,
@@ -99,6 +102,34 @@ impl FileGraphStore {
 }
 
 impl GraphStore for FileGraphStore {
+    fn create(&self, slug: &str, graph: &CallGraph) -> Result<(), String> {
+        use std::io::Write;
+        validate_slug(slug)?;
+        let _guard = self.operation_lock.lock().map_err(|e| e.to_string())?;
+        if self.index()?.contains_key(slug) || self.archived_index()?.contains_key(slug) {
+            return Err("调用图名称已存在".into());
+        }
+        fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
+        let content = serde_json::to_vec_pretty(graph).map_err(|e| e.to_string())?;
+        let path = self.root.join(format!("{slug}.json"));
+        let seq = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary = self
+            .root
+            .join(format!(".{slug}.{}.{seq}.tmp", std::process::id()));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|e| e.to_string())?;
+        let result = file.write_all(&content).and_then(|_| file.sync_all());
+        drop(file);
+        // Publish a complete file without replacing an existing destination.
+        let result = result.and_then(|_| fs::hard_link(&temporary, &path));
+        let _ = fs::remove_file(&temporary);
+        result.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     fn checkpoint(&self, slug: &str, before: &CallGraph, after: &CallGraph) -> Result<(), String> {
         let _guard = self.operation_lock.lock().map_err(|e| e.to_string())?;
         let path = self.index()?.remove(slug).ok_or("图已移动或删除")?;
@@ -475,6 +506,25 @@ fn validate_slug(slug: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn creation_does_not_overwrite_active_or_archived_graphs() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileGraphStore::new(dir.path().to_path_buf());
+        write_graph(dir.path(), "existing.json", "analysis", "Original");
+        let graph = store.load("existing").unwrap();
+        assert!(store.create("../escape", &graph).is_err());
+        assert!(store.create("existing", &graph).is_err());
+        store.create("new", &graph).unwrap();
+        assert_eq!(store.load("new").unwrap().title, "Original");
+        store.set_archived("new", true).unwrap();
+        assert!(store.create("new", &graph).is_err());
+        assert!(
+            !collect_all_files(dir.path())
+                .iter()
+                .any(|p| p.extension().is_some_and(|e| e == "tmp"))
+        );
+    }
 
     #[test]
     fn rejects_unsafe_graph_slug() {

@@ -1,3 +1,5 @@
+> 当前入口与实现已统一：`/` 为项目主页，`/?graph=<slug>` 为唯一 G6 工作台；源码位于 `frontend/workbench`。经典界面与 Atlas 实验入口已退役。下文旧版本章节保留设计历史，操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准。
+
 # 架构与扩展点
 
 ## 依赖方向
@@ -131,7 +133,7 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 源码导航；`virtual-node` 与 `omitted-nodes` 边仍只展示不可用说明。该判断封装在
 `ClickNavigationPolicy` 中，SVG 渲染器只上报选中目标，不持有跳转模式。
 
-V2 同样复用该策略，由 `frontend/v2/source-navigation.js` 管理外部跳转，独立于预览与 G6。
+V2 同样复用该策略，由 `frontend/workbench/source-navigation.js` 管理外部跳转，独立于预览与 G6。
 右侧“在编辑器打开”用于显式跳转；“点击跳转”默认关闭，仅真实图元点击触发自动跳转。
 路径引用还原为原始 sourceId。取消选择或切图后到达的旧响应不能打开编辑器。
 草稿跳转走服务端草稿 open，尚未保存的源码入口也无需先落盘。服务端必须拒绝未知请求字段。
@@ -180,9 +182,9 @@ V2 同样复用该策略，由 `frontend/v2/source-navigation.js` 管理外部�
 
 ### V2 左右侧栏宽度
 
-`frontend/v2/sidebar-widths.js` 独立管理两侧边界拖拽、键盘方向键、Home/双击复位，
+`frontend/workbench/sidebar-widths.js` 独立管理两侧边界拖拽、键盘方向键、Home/双击复位，
 以 CSS 变量驱动现有网格。更新按动画帧合并，释放后才保存本地偏好；取消或失焦恢复起始宽度。
 窗口缩小时只限制实际宽度，不覆盖桌面偏好；保持画布最小宽度，收起时禁用对应拖拽条。
 窄屏详情栏位于底部，不提供横向调宽；手机堆叠布局隐藏两侧拖拽条。
 现有画布 ResizeObserver 调整画布尺寸，不重建图、不调用适应画布，不改变选中节点。
-浏览器回归：`python -X utf8 frontend/v2/sidebar-widths_e2e.py`。
+浏览器回归：`python -X utf8 frontend/workbench/sidebar-widths_e2e.py`。

@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='java-lsp-', dir=ROOT/'target') as tmp:
             assert stopped['status']=='stopped',stopped
             assert output.read_bytes()==saved
             op(draft,'discard')
-            page.goto(base+'/v2/?graph=java'); page.wait_for_load_state('networkidle')
+            page.goto(base+'/?graph=java'); page.wait_for_load_state('networkidle')
             expect(page.locator('#fit')).to_be_enabled()
             page.locator('#symbols').select_option(seed)
             expect(page.locator('#source-location')).to_contain_text('Main.java')

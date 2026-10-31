@@ -19,6 +19,11 @@ async function request(path, options) {
   return body;
 }
 export class CallgraphApi {
+  projectFiles(project) { return request(`/api/projects/${encodeURIComponent(project)}/source-files`); }
+  projectSource(project, file) { return request(`/api/projects/${encodeURIComponent(project)}/source-files/${encodeURIComponent(file)}`); }
+  checkProjectEntry(project, fileId, line) { return request(`/api/projects/${encodeURIComponent(project)}/entry-check`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line})}); }
+  createGraph(data) { return request('/api/graphs', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
+
   constructor({ drafts = false } = {}) {
     this.useDrafts = drafts;
     this.drafts = new Map();
@@ -89,6 +94,7 @@ export class CallgraphApi {
     return request("/api/graphs");
   }
 
+  // Status includes addedNodes/addedEdges for this task, updated after each checkpoint.
   async analysisTask(slug, method = 'GET', requestBudget, nodeId) {
     if(this.useDrafts) {
       if(method==='GET'&&!this.drafts.has(slug))return {status:'idle',completed:0,pending:0,message:''};

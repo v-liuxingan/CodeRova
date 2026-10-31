@@ -18,6 +18,13 @@ window.addEventListener("message", async (event) => {
       document.documentElement.dataset.theme = event.data.theme || "halo";
       runtime = new MonacoEditorRuntime();
       await runtime.mount(document.querySelector("#monaco-root"), event.data.preview);
+      if(event.data.preview.selectable) {
+        let previousLine=1;
+        runtime.editor.onDidChangeCursorSelection(({selection})=>{
+          if(selection.startLineNumber===previousLine)return;
+          previousLine=selection.startLineNumber;reply({type:"selection",line:previousLine});
+        });
+      }
     } else if (type === "search") {
       result = runtime?.search(event.data.query, event.data.direction) || {
         current: 0,

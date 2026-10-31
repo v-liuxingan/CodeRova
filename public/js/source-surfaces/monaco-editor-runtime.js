@@ -47,7 +47,7 @@ export class MonacoEditorRuntime {
       model: this.model,
       theme: themeName(),
       readOnly: true,
-      domReadOnly: true,
+      domReadOnly: !preview.selectable,
       readOnlyMessage: { value: "调用链源码预览为只读模式" },
       ariaLabel: `${preview.path} 只读源码预览`,
       automaticLayout: true,
@@ -62,7 +62,8 @@ export class MonacoEditorRuntime {
       foldingStrategy: "indentation",
       unfoldOnClickAfterEndOfLine: true,
       renderLineHighlight: "all",
-      renderWhitespace: "selection",
+      renderWhitespace: "none",
+      renderLineHighlightOnlyWhenFocus: false,
       fontFamily: '"Cascadia Code", "SFMono-Regular", Consolas, monospace',
       fontLigatures: true,
       fontSize: this.fontSize,
@@ -75,18 +76,19 @@ export class MonacoEditorRuntime {
       overviewRulerLanes: 0,
       hideCursorInOverviewRuler: true,
       occurrencesHighlight: "off",
-      selectionHighlight: true,
+      selectionHighlight: !preview.selectable,
       bracketPairColorization: { enabled: true },
       guides: { bracketPairs: true, indentation: true },
       wordWrap: "off",
       mouseWheelZoom: true,
-      smoothScrolling: true,
+      smoothScrolling: false,
+      cursorSmoothCaretAnimation: "off",
       cursorBlinking: "solid",
     });
 
     const focusStart = clampLine(preview.focusLine - preview.startLine + 1, this.model);
     const focusEnd = clampLine(preview.focusEndLine - preview.startLine + 1, this.model);
-    this.decorations = this.editor.createDecorationsCollection([
+    this.decorations = this.editor.createDecorationsCollection(preview.selectable ? [] : [
       {
         range: new monaco.Range(focusStart, 1, focusEnd, this.model.getLineMaxColumn(focusEnd)),
         options: {
@@ -142,6 +144,7 @@ export class MonacoEditorRuntime {
 
   async run(action) {
     if (!this.editor) return {};
+    if (action === "find") await this.editor.getAction("actions.find")?.run();
     if (action === "foldAll") await this.editor.getAction("editor.foldAll")?.run();
     if (action === "unfoldAll") await this.editor.getAction("editor.unfoldAll")?.run();
     if (action === "toggleWrap") {
@@ -187,7 +190,8 @@ function clampLine(line, model) {
 }
 
 function themeName() {
-  return `callgraph-${document.documentElement.dataset.theme || "halo"}`;
+  const theme=document.documentElement.dataset.theme;
+  return `callgraph-${theme==='dark'?'aether':theme==='light'?'halo':theme||'halo'}`;
 }
 
 function themeAccent() {

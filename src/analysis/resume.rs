@@ -24,6 +24,8 @@ pub struct Status {
     pub draft_id: Option<String>,
     pub status: String,
     pub completed: usize,
+    pub added_nodes: usize,
+    pub added_edges: usize,
     pub pending: usize,
     pub message: String,
 }
@@ -33,6 +35,8 @@ impl Default for Status {
             draft_id: None,
             status: "idle".into(),
             completed: 0,
+            added_nodes: 0,
+            added_edges: 0,
             pending: 0,
             message: String::new(),
         }
@@ -40,6 +44,7 @@ impl Default for Status {
 }
 #[derive(Default)]
 pub struct Jobs {
+    pub(crate) sessions: Arc<super::session_cache::SessionCache>,
     pub state: Mutex<(String, Status)>,
     pub cancel: AtomicBool,
 }
@@ -75,10 +80,20 @@ async fn run_inner(
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let language =
         Language::from_provider(&graph.analysis.as_ref().ok_or("图缺少分析报告")?.provider)?;
-    let mut session = language.start(&root, None)?;
-    language
-        .initialize(&mut session, &root, &graph.project_id)
-        .await?;
+    let initial_nodes = graph.nodes.len();
+    let initial_edges = graph.edges.len();
+    let started = std::time::Instant::now();
+    jobs.state.lock().map_err(|e| e.to_string())?.1.message = "检查源码并准备语言服务器…".into();
+    let mut lease =
+        super::session_cache::Lease::acquire(jobs.sessions.clone(), &root, language).await?;
+    let reused = lease.reused;
+    jobs.state.lock().map_err(|e| e.to_string())?.1.message = if reused {
+        "复用语言服务器，准备查询…"
+    } else {
+        "语言服务器已启动，等待项目索引…"
+    }
+    .into();
+    let mut items = HashMap::<String, CallHierarchyItem>::new();
     let pruned: HashSet<_> = graph
         .analysis
         .as_ref()
@@ -157,14 +172,10 @@ async fn run_inner(
                 return Err("采集期间源码发生变化，请重新分析".into());
             }
         } else {
-            session
-                .notify(
-                    "textDocument/didOpen",
-                    json!({"textDocument":{"uri":uri,"languageId":language.id(),"version":1,"text":text}}),
-                )
-                .await?;
+            lease.session.open(&uri, language, &text).await?;
             opened.insert(uri.clone(), text.clone());
         }
+        let session = &mut lease.session.transport;
         if !ready {
             session.wait_ready(600).await?;
             ready = true;
@@ -181,8 +192,11 @@ async fn run_inner(
             .split('(')
             .next()
             .unwrap_or(&caller.label);
-        let mut selected = None;
+        let mut selected = items.remove(&id);
         for (column, _) in line.match_indices(name) {
+            if selected.is_some() {
+                break;
+            }
             let result=session.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":{"line":caller.line-1,"character":line[..column].encode_utf16().count()}}),language.query_timeout()).await?;
             let items: Vec<CallHierarchyItem> = serde_json::from_value(result).unwrap_or_default();
             for item in items {
@@ -201,10 +215,7 @@ async fn run_inner(
                 caller.label
             ));
         };
-        if let Err(e) = semantics
-            .describe(&mut session, &root, &item, &mut caller)
-            .await
-        {
+        if let Err(e) = semantics.describe(session, &root, &item, &mut caller).await {
             graph
                 .analysis
                 .as_mut()
@@ -215,7 +226,7 @@ async fn run_inner(
         attempted += 1;
         jobs.state.lock().map_err(|e| e.to_string())?.1.message =
             format!("正在采集 {} · 本轮请求 {attempted}/{budget}", caller.label);
-        let result = language.outgoing(&mut session, &item).await;
+        let result = language.outgoing(session, &item).await;
         let before = graph.clone();
         let calls: Result<Vec<CallHierarchyOutgoingCall>, String> = match result {
             Ok(v) if v.is_null() => Err("返回 null，仍待采集".into()),
@@ -242,10 +253,7 @@ async fn run_inner(
                 if let Some(n) = graph.nodes.iter_mut().find(|n| n.id == id) {
                     n.symbol = caller.symbol.clone();
                 }
-                match semantics
-                    .candidates(&mut session, &root, &item, &caller)
-                    .await
-                {
+                match semantics.candidates(session, &root, &item, &caller).await {
                     Ok(candidates) => {
                         // Count before pruning: deleting alternatives is not evidence
                         // that the language server found only one implementation.
@@ -254,11 +262,12 @@ async fn run_inner(
                             let super::semantics::ImplementationCandidate {
                                 node: target,
                                 edge,
-                                ..
+                                item: target_item,
                             } = candidate;
                             if pruned.contains(&target.id) {
                                 continue;
                             }
+                            items.insert(target.id.clone(), target_item);
                             if follow && queued.insert(target.id.clone()) {
                                 queue.push_back(target.id.clone());
                             }
@@ -306,7 +315,7 @@ async fn run_inner(
                         }
                     };
                     if let Err(e) = semantics
-                        .describe(&mut session, &root, &call.to, &mut target)
+                        .describe(session, &root, &call.to, &mut target)
                         .await
                     {
                         graph
@@ -329,6 +338,7 @@ async fn run_inner(
                             .push(target.id.clone());
                         graph.nodes.push(target.clone());
                     }
+                    items.insert(target.id.clone(), call.to.clone());
                     if queued.insert(target.id.clone()) {
                         queue.push_back(target.id.clone());
                     }
@@ -375,8 +385,16 @@ async fn run_inner(
         store.checkpoint(&slug, &before, &graph)?;
         let mut state = jobs.state.lock().map_err(|e| e.to_string())?;
         state.1.completed = attempted;
+        state.1.added_nodes = graph.nodes.len().saturating_sub(initial_nodes);
+        state.1.added_edges = graph.edges.len().saturating_sub(initial_edges);
         state.1.pending = graph.analysis.as_ref().unwrap().pending_nodes.len();
     }
-    session.stop().await;
+    tracing::info!(
+        elapsed_ms = started.elapsed().as_millis(),
+        warm_session = reused,
+        completed = attempted,
+        "LSP collection finished"
+    );
+    lease.release().await;
     Ok(())
 }

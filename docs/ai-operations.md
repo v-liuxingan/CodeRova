@@ -20,7 +20,7 @@
    保存说明必须准确表达推断依据；虚线是人工关联，不是 LSP 证明的直接调用。
 5. 对明确不属于目标场景的节点先预览减枝范围，再提交版本。不要仅为了图小就删除真实分支。
 6. 自动续采，读取 validation、pendingNodes、prunedNodeIds、issues；报告未解析边界、排除范围
-   和源码版本限制，最后交付 `/v2/?graph=<slug>`。预算耗尽时不能宣称已完整分析。
+   和源码版本限制，最后交付 `/?graph=<slug>`。预算耗尽时不能宣称已完整分析。
 
 ## 不依赖浏览器的客户端
 
@@ -132,3 +132,14 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 `{"graph":"当前 slug","targetType":"node 或 edge","id":"原始节点或边 ID"}`。
 返回 result.uri/path/line/column；open 是只读操作，不将草稿标记为修改，不保存图。
 路径只能由图和服务端项目目录解析，禁止传 path 等额外字段；非精确边返回错误而不猜测位置。
+
+## 创建调用图
+
+1. `GET /api/health` 选择已配置且 `rootExists=true` 的项目。
+2. `GET /api/projects/{projectId}/source-files` 获取文件 ID；`GET /api/projects/{projectId}/source-files/{fileId}` 读取源文件。
+3. `POST /api/projects/{projectId}/entry-check`，请求 `{ "fileId": "服务器返回的 ID", "line": 1 }`；行号从 1 开始，必须位于可采集函数中。
+4. `POST /api/graphs`，请求 `{ "projectId": "项目 ID", "candidateId": "校验返回的令牌", "title": "流程名称" }`。
+   返回 `{ "slug": "新图 ID", "nodeId": "根符号 ID" }`。该动作明确保存一张只有根节点的图，成功后令牌失效。
+5. 使用现有草稿采集接口配置预算，从返回的根符号开始采集。采集不会因创建而自动启动；采纳/保存仍是独立动作。
+
+不得使用浏览器提供的任意绝对路径代替项目与文件 ID。校验失败或源码变化时重新选行校验，不能自行构造候选令牌。

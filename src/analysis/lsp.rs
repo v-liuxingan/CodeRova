@@ -18,6 +18,10 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn is_alive(&mut self) -> Result<bool, String> {
+        Ok(self.usable && self.child.try_wait().map_err(|e| e.to_string())?.is_none())
+    }
+
     pub fn start(server: &Path, args: &[String], root: &Path) -> Result<Self, String> {
         let mut child = Command::new(server)
             .args(args)
@@ -154,7 +158,8 @@ impl Session {
         self.id += 1;
         let id = self.id;
         let deadline = Instant::now() + Duration::from_secs(seconds);
-        timeout_at(deadline, async {
+        let started = Instant::now();
+        let result = timeout_at(deadline, async {
             self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
                 .await?;
             loop {
@@ -173,11 +178,19 @@ impl Session {
             }
         })
         .await
-        .map_err(|_| format!("{method} 超时（{seconds}s），此次会话不可继续"))?
+        .map_err(|_| format!("{method} 超时（{seconds}s），此次会话不可继续"))?;
+        tracing::debug!(
+            method,
+            elapsed_ms = started.elapsed().as_millis(),
+            ok = result.is_ok(),
+            "LSP request"
+        );
+        result
     }
 
     pub async fn wait_ready(&mut self, seconds: u64) -> Result<(), String> {
-        timeout_at(Instant::now() + Duration::from_secs(seconds), async {
+        let started = Instant::now();
+        let result = timeout_at(Instant::now() + Duration::from_secs(seconds), async {
             while !self.ready {
                 let value = self.read().await?;
                 self.handle(&value).await?;
@@ -185,7 +198,13 @@ impl Session {
             Ok(())
         })
         .await
-        .map_err(|_| "等待语言服务器索引完成超时".to_owned())?
+        .map_err(|_| "等待语言服务器索引完成超时".to_owned())?;
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            ok = result.is_ok(),
+            "LSP readiness wait"
+        );
+        result
     }
 
     pub async fn stop(mut self) {

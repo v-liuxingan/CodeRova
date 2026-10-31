@@ -22,7 +22,7 @@
 - 语言服务器：`rust-analyzer 1.95.0 (59807616 2026-04-14)`；本机 Windows，build scripts 和 proc macros 关闭。
 - 机器：AMD Ryzen 7 7800X3D，8 核/16 线程，约 31.65 GiB 可见物理内存。
 - 浏览器：Playwright Chromium 145.0.7632.6，headless，1500×950，默认亮色。
-- 阅读服务：`http://127.0.0.1:4322/v2/`，真实 Rust API。
+- 阅读服务：`http://127.0.0.1:4322/`，真实 Rust API。
 
 以“普通 `codex` 启动至交互首帧/事件循环”为主要场景，补充 npm 包启动、子命令分流、
 resume/fork、远程/内嵌服务、引导取消、启动失败与退出行为。

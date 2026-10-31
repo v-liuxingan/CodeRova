@@ -1,198 +1,43 @@
-import os
-import shutil
-import socket
-import subprocess
-import sys
-import time
+"""Current workbench gate; mutations use isolated graph directories."""
+import json, os, socket, subprocess, sys, tempfile, time
 from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parents[1]
-TEMP_LAYOUTS = ROOT / "tests" / ".tmp-layouts"
-TEMP_GRAPHS = ROOT / "tests" / ".tmp-graphs"
-TEMP_SCENARIOS = ROOT / "tests" / ".tmp-scenarios"
-TARGET_DIR = Path(
-    os.environ.get("CALLGRAPH_E2E_TARGET_DIR", ROOT / "target" / "frontend-e2e")
-)
-SERVER = TARGET_DIR / "debug" / (
-    "callgraph-visualizer.exe" if sys.platform == "win32" else "callgraph-visualizer"
-)
-
-
-def wait_for_port(port: int, expected_open: bool, timeout: float = 15) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.25):
-                is_open = True
-        except OSError:
-            is_open = False
-        if is_open == expected_open:
-            return
-        time.sleep(0.1)
-    state = "打开" if expected_open else "释放"
-    raise RuntimeError(f"端口 {port} 未在超时前{state}")
-
-
-def find_free_port() -> int:
-    with socket.socket() as candidate:
-        candidate.bind(("127.0.0.1", 0))
-        return candidate.getsockname()[1]
-
-
-def main() -> int:
-    npm = "npm.cmd" if sys.platform == "win32" else "npm"
-    subprocess.run(["node", str(ROOT / "tests" / "content_check_test.mjs")], cwd=ROOT, check=True)
-    subprocess.run(["node", str(ROOT / "tests" / "project_navigation_test.mjs")], cwd=ROOT, check=True)
-    subprocess.run(["node", str(ROOT / "tests" / "edge_routing_test.mjs")], cwd=ROOT, check=True)
-    subprocess.run([sys.executable, str(ROOT / "tests" / "qoreon_acceptance.py")], cwd=ROOT, check=True)
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "mermaid_scene_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "scene_render_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "project_evidence_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "execution_context_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "narrative_layout_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "selection_focus_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "trace_navigator_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "edge_semantics_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "graph_state_collapse_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "node_multiselect_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "catalog_grouping_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    subprocess.run(
-        ["node", str(ROOT / "tests" / "phase_topology_test.mjs")],
-        cwd=ROOT,
-        check=True,
-    )
-    if (ROOT / "node_modules" / "monaco-editor").is_dir():
-        subprocess.run([npm, "run", "build:frontend"], cwd=ROOT, check=True)
-    subprocess.run(
-        ["cargo", "build", "--quiet", "--target-dir", str(TARGET_DIR)],
-        cwd=ROOT,
-        check=True,
-    )
-    analysis_environment = os.environ.copy()
-    analysis_environment["CALLGRAPH_TEST_BINARY"] = str(SERVER)
-    subprocess.run([sys.executable, str(ROOT / "tests" / "lsp_analysis_test.py")], cwd=ROOT, env=analysis_environment, check=True)
-    shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
-    shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
-    shutil.rmtree(TEMP_SCENARIOS, ignore_errors=True)
-    shutil.copytree(ROOT / "graphs", TEMP_GRAPHS)
-    shutil.copytree(ROOT / "scenarios", TEMP_SCENARIOS)
-    port = find_free_port()
-    server = subprocess.Popen(
-        [
-            str(SERVER),
-            "serve",
-            "--layouts",
-            str(TEMP_LAYOUTS),
-            "--graphs",
-            str(TEMP_GRAPHS),
-            "--scenarios",
-            str(TEMP_SCENARIOS),
-            "--port",
-            str(port),
-        ],
-        cwd=ROOT,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+from urllib.request import urlopen
+ROOT=Path(__file__).resolve().parents[1]
+def main():
+ env=os.environ.copy();env['PYTHONUTF8']='1'
+ def run(*args):subprocess.run(args,cwd=ROOT,env=env,check=True)
+ run('node','--test',*map(str,(ROOT/'frontend/workbench').glob('*.test.mjs')))
+ for name in ['content_check_test.mjs','mermaid_scene_test.mjs','scene_render_test.mjs']:run('node',str(ROOT/'tests'/name))
+ run('npm.cmd' if os.name=='nt' else 'npm','run','build:frontend')
+ target=Path(env.get('CALLGRAPH_E2E_TARGET_DIR',ROOT/'target/workbench-e2e'))
+ run('cargo','build','--quiet','--target-dir',str(target))
+ binary=(target/'debug'/('callgraph-visualizer.exe' if os.name=='nt' else 'callgraph-visualizer')).resolve()
+ env['CALLGRAPH_TEST_BINARY']=str(binary)
+ run(sys.executable,str(ROOT/'tests/lsp_analysis_test.py'))
+ run(sys.executable,str(ROOT/'tests/lsp_session_test.py'))
+ with tempfile.TemporaryDirectory(prefix='workbench-gate-',dir=ROOT/'target') as tmp:
+  root=Path(tmp);source=root/'source';source.mkdir();(source/'main.rs').write_text('fn main() { child(); }\nfn child() {}\n',encoding='utf-8')
+  (source/'Cargo.toml').write_text('[package]\nname="fixture"\nversion="0.1.0"\nedition="2021"\n[[bin]]\nname="fixture"\npath="main.rs"\n',encoding='utf-8')
+  graphs=root/'graphs';graphs.mkdir();config=root/'projects.json'
+  config.write_text(json.dumps({'schemaVersion':'0.1','projects':[{'id':id,'name':id,'root':str(source)} for id in ['alpha','beta']]}),encoding='utf-8')
+  for slug,pid in [('sample','alpha'),('other','beta')]:
+   graph={'schemaVersion':'0.4','projectId':pid,'title':slug,'root':'root','nodes':[{'id':'root','kind':'function','label':'main','file':'main.rs','line':1,'role':'entry'},{'id':'child','kind':'function','label':'child','file':'main.rs','line':2,'role':'work'}],'edges':[{'id':'call','from':'root','to':'child','kind':'static-call','file':'main.rs','line':1}]}
+   (graphs/f'{slug}.json').write_text(json.dumps(graph),encoding='utf-8')
+  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+  env['CALLGRAPH_TEST_URL']=f'http://127.0.0.1:{port}'
+  server=subprocess.Popen([str(binary),'serve','--port',str(port),'--config',str(config),'--graphs',str(graphs),'--public',str(ROOT/'public'),'--layouts',str(root/'layouts')],cwd=ROOT,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  try:
+   for _ in range(100):
     try:
-        wait_for_port(port, True)
-        environment = os.environ.copy()
-        environment["CALLGRAPH_TEST_URL"] = f"http://127.0.0.1:{port}"
-        environment["CALLGRAPH_TEST_GRAPHS"] = str(TEMP_GRAPHS)
-        subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "renderer_interaction_e2e.py")],
-            cwd=ROOT, env=environment, check=True,
-        )
-        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_e2e.py")], cwd=ROOT, env=environment, check=True)
-        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_drag_e2e.py")], cwd=ROOT, env=environment, check=True)
-        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_highlight_e2e.py")], cwd=ROOT, env=environment, check=True)
-        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_library_e2e.py")], cwd=ROOT, env=environment, check=True)
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "e2e_visualizer.py")],
-            cwd=ROOT,
-            env=environment,
-            check=False,
-        )
-        if result.returncode:
-            return result.returncode
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "navigation_e2e.py")],
-            cwd=ROOT,
-            env=environment,
-            check=False,
-        )
-        if result.returncode:
-            return result.returncode
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "project_navigation_e2e.py")],
-            cwd=ROOT, env=environment, check=False,
-        )
-        if result.returncode:
-            return result.returncode
-        return subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "scenes_e2e.py")],
-            cwd=ROOT,
-            env=environment,
-            check=False,
-        ).returncode
-    finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
-        wait_for_port(port, False)
-        shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
-        shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
-        shutil.rmtree(TEMP_SCENARIOS, ignore_errors=True)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+     with urlopen(env['CALLGRAPH_TEST_URL']+'/api/health',timeout=1):break
+    except OSError:time.sleep(.1)
+   run(sys.executable,str(ROOT/'tests/e2e_visualizer.py'))
+  finally:
+   if os.name=='nt':subprocess.run(['taskkill','/PID',str(server.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   else:server.terminate()
+   try:server.wait(timeout=10)
+   except subprocess.TimeoutExpired:server.kill();server.wait()
+ for name in ['drafts_e2e.py','group-delete_e2e.py']:run(sys.executable,str(ROOT/'frontend/workbench'/name))
+ print('Current workbench gate PASS')
+ return 0
+if __name__=='__main__':raise SystemExit(main())

@@ -99,7 +99,8 @@ fn enclosing(symbols: &[Value], line: u32, out: &mut Vec<Value>) {
         }
     }
 }
-pub async fn check(
+pub(crate) async fn check(
+    sessions: std::sync::Arc<super::session_cache::SessionCache>,
     root: PathBuf,
     file: String,
     text: String,
@@ -114,24 +115,56 @@ pub async fn check(
         .map_err(|_| "文件 URI 无效")?
         .to_string();
     let language = Language::for_file(&file)?;
-    let mut session = language.start(&root, None)?;
-    let result=async {
-        language.initialize(&mut session,&root,"entry-check").await?;
-        session.notify("textDocument/didOpen",json!({"textDocument":{"uri":uri,"languageId":language.id(),"version":1,"text":text}})).await?;
+    let mut lease = super::session_cache::Lease::acquire(sessions, &root, language).await?;
+    lease.session.open(&uri, language, &text).await?;
+    let session = &mut lease.session.transport;
+    let result = async {
         session.wait_ready(600).await?;
-        let symbols=session.request("textDocument/documentSymbol",json!({"textDocument":{"uri":uri}}),language.query_timeout()).await?;
-        let mut candidates=vec![];enclosing(symbols.as_array().ok_or("服务器未返回可定位的符号列表")?,line-1,&mut candidates);
-        candidates.sort_by_key(|s|s["range"]["end"]["line"].as_u64().unwrap_or(0)-s["range"]["start"]["line"].as_u64().unwrap_or(0));
-        let symbol=candidates.first().ok_or("该行不在可采集函数或方法内，请选择函数定义或函数体内的一行")?;
-        let items=session.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":symbol["selectionRange"]["start"]}),30).await?;
-        let items:Vec<lsp_types::CallHierarchyItem>=serde_json::from_value(items).map_err(|_|"LSP 无法为该位置准备调用层级")?;
-        if items.len()!=1{return Err("该行未匹配唯一可采集符号，请选择更明确的位置".into());}
-        let mut result=node(&root,&items[0],&mut HashMap::new())?;
-        super::semantics::Semantics::new(language).describe(&mut session,&root,&items[0],&mut result).await?;
-        if result.file!=file || !matches!(result.kind.as_str(),"function"|"method"){return Err("解析到的符号不属于所选文件中的函数/方法".into());}
+        let symbols = session
+            .request(
+                "textDocument/documentSymbol",
+                json!({"textDocument":{"uri":uri}}),
+                language.query_timeout(),
+            )
+            .await?;
+        let mut candidates = vec![];
+        enclosing(
+            symbols.as_array().ok_or("服务器未返回可定位的符号列表")?,
+            line - 1,
+            &mut candidates,
+        );
+        candidates.sort_by_key(|s| {
+            s["range"]["end"]["line"].as_u64().unwrap_or(0)
+                - s["range"]["start"]["line"].as_u64().unwrap_or(0)
+        });
+        let symbol = candidates
+            .first()
+            .ok_or("该行不在可采集函数或方法内，请选择函数定义或函数体内的一行")?;
+        let items = session
+            .request(
+                "textDocument/prepareCallHierarchy",
+                json!({"textDocument":{"uri":uri},"position":symbol["selectionRange"]["start"]}),
+                30,
+            )
+            .await?;
+        let items: Vec<lsp_types::CallHierarchyItem> =
+            serde_json::from_value(items).map_err(|_| "LSP 无法为该位置准备调用层级")?;
+        if items.len() != 1 {
+            return Err("该行未匹配唯一可采集符号，请选择更明确的位置".into());
+        }
+        let mut result = node(&root, &items[0], &mut HashMap::new())?;
+        super::semantics::Semantics::new(language)
+            .describe(session, &root, &items[0], &mut result)
+            .await?;
+        if result.file != file || !matches!(result.kind.as_str(), "function" | "method") {
+            return Err("解析到的符号不属于所选文件中的函数/方法".into());
+        }
         Ok(result)
-    }.await;
-    session.stop().await;
+    }
+    .await;
+    if result.is_ok() {
+        lease.release().await;
+    }
     result
 }
 

@@ -7,17 +7,11 @@
     "build:scenes": "node scripts/build_scenes.mjs",
     "check:scenes": "node scripts/build_scenes.mjs --check",
     "check:content": "node scripts/check_content.mjs",
-    "evidence:snapshot": "node scripts/check_content.mjs --snapshot",
-    "build:atlas": "node scripts/build_atlas.mjs"
+    "evidence:snapshot": "node scripts/check_content.mjs --snapshot"
   },
   "dependencies": {
     "@antv/g6": "5.1.1",
-    "@dagrejs/dagre": "^1.1.8",
-    "@xyflow/react": "^12.11.2",
-    "elkjs": "^0.11.1",
-    "monaco-editor": "0.51.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "monaco-editor": "0.51.0"
   },
   "devDependencies": {
     "esbuild": "0.28.1"

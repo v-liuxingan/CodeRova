@@ -1,3 +1,5 @@
+> 当前入口与实现已统一：`/` 为项目主页，`/?graph=<slug>` 为唯一 G6 工作台；源码位于 `frontend/workbench`。经典界面与 Atlas 实验入口已退役。下文旧版本章节保留设计历史，操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准。
+
 # 当前开发进度
 
 状态日期：**2026-10-31**。范围是当前工作区实现，包含尚未提交的迭代，

@@ -106,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix='java-lsp-', dir=ROOT/'target') as tmp:
             assert unique_id not in unique_preview['analysis']['pendingNodes']
             assert json.loads((graphs/'unique.json').read_bytes())==limited
             op(unique_draft,'discard',slug='unique')
-            page.goto(base+'/v2/?graph=java'); page.wait_for_load_state('networkidle')
+            page.goto(base+'/?graph=java'); page.wait_for_load_state('networkidle')
             expect(page.locator('#fit')).to_be_enabled()
             page.locator('#symbols').select_option(declaration['id'])
             expect(page.locator('#source-location')).to_contain_text('Main.java')
