@@ -8,6 +8,7 @@ import "monaco-editor/esm/vs/editor/contrib/fontZoom/browser/fontZoom.js";
 import "monaco-editor/esm/vs/editor/contrib/readOnlyMessage/browser/contribution.js";
 import "monaco-editor/esm/vs/basic-languages/go/go.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/java/java.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/python/python.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/rust/rust.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution.js";

@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='path-view-test-') as d:
   page.on('request',lambda r: requests.append(r.post_data_json) if r.url.endswith('/api/preview') else None)
   page.route('**/vendor/v2/workbench.js',lambda r:r.fulfill(path=str(bundle),content_type='application/javascript'))
   page.goto(BASE+'/v2/?graph=codex-end-to-end-agent-loop');expect(page.locator('#fit')).to_be_enabled()
-  expect(page.locator('#view-mode')).to_have_value('paths')
+  expect(page.locator('#view-mode')).to_have_count(0)
   ref=page.evaluate("window.__testGraph.getNodeData().find(n=>n.data.pathReference && n.data.more && !n.data.pathCycle)")
   assert ref
   valid=page.evaluate('''() => {const g=window.__testGraph; return g.getNodeData().every(n=>new Set(g.getEdgeData().filter(e=>e.target===n.id).map(e=>e.source)).size<=1)}''');assert valid
@@ -26,9 +26,6 @@ with tempfile.TemporaryDirectory(prefix='path-view-test-') as d:
   expect(page.locator('#relations')).to_contain_text('顺序')
   assert requests[-1]['targetType']=='edge' and not requests[-1]['id'].startswith('["view-edge"'),requests[-1]
   page.locator('#direction input[value=LR]').check();expect(page.locator('#apply-window')).to_be_enabled()
-  page.select_option('#view-mode','relations');expect(page.locator('#apply-window')).to_be_enabled()
-  assert page.evaluate('window.__testGraph.getNodeData().length')==68
-  expect(page.locator('#canvas')).to_have_attribute('data-selection','')
   assert not errors,errors
-  print('Path browser: one parent per reference, real symbol/call-site source IDs, explicit subtree expansion, orientation, original relation view PASS')
+  print('Path browser: one parent per reference, real symbol/call-site source IDs, explicit subtree expansion, orientation, single path view PASS')
   browser.close()

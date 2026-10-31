@@ -302,6 +302,7 @@ mod tests {
             phases: Vec::new(),
             nodes: vec![
                 GraphNode {
+                    symbol: None,
                     id: "a".into(),
                     phase_id: String::new(),
                     kind: "function".into(),
@@ -316,6 +317,7 @@ mod tests {
                     state: "expanded".into(),
                 },
                 GraphNode {
+                    symbol: None,
                     id: "b".into(),
                     phase_id: String::new(),
                     kind: "method".into(),

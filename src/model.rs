@@ -36,6 +36,8 @@ pub struct GraphPhase {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphNode {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<SymbolInfo>,
     pub id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub phase_id: String,
@@ -54,6 +56,18 @@ pub struct GraphNode {
     pub description: String,
     #[serde(default = "default_node_state")]
     pub state: String,
+}
+
+/// Language-neutral presentation facts; language adapters own extraction.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SymbolInfo {
+    pub owner_kind: String,
+    pub owner_name: String,
+    #[serde(default)]
+    pub modifiers: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 fn default_node_state() -> String {
@@ -230,7 +244,7 @@ pub struct SourceLocationStatus {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenRequest {
     pub graph: String,
     pub target_type: String,

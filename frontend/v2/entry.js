@@ -1,3 +1,10 @@
+import { sidebarWidths } from './sidebar-widths.js';
+import { sourceNavigation } from './source-navigation.js';
+import { relationList } from './relation-list.js';
+import { collectionDialog } from './collection-dialog.js';
+import { editSession } from './edit-session.js';
+import { entryPicker } from './entry-picker.js';
+import { resumePanel } from './resume-panel.js';
 import { callReading, callMeaning } from './call-reading.js';
 import { Graph } from '@antv/g6';
 import './window-minimap.js';
@@ -8,22 +15,34 @@ import { stablePositions } from './stable-positions.js';
 import { edgeMenu } from './edge-menu.js';
 import { LibraryTree } from './library-tree.js';
 import { executionCards, branchAction } from './execution-node.js';
-import { GraphWindow, layerPositions } from './graph-window.js';
+import { layerPositions } from './graph-window.js';
 import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
 import { RenderWindow, viewportBounds, containsBounds } from './render-window.js';
-import { CallgraphApi } from '../../public/js/api.js';
+import { CallgraphApi, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
-const api = new CallgraphApi();
+const api = new CallgraphApi({drafts:true});
 const $ = (id) => document.getElementById(id);
+const sourceNavigationController = sourceNavigation({api, toggle:$('click-source'), button:$('open-source'), editor:$('source-editor'), notify:status});
+const resume = resumePanel(api, async slug => {
+  activeSlug = undefined;
+  await navigate(slug, false);
+  if (activeSlug !== slug || wantedSlug !== slug || !renderer) throw new Error('结果未加载，请重试。');
+});
+const collection = collectionDialog(task => resume.started(task));
 let catalog = [], names = new Map(), current, renderer, activeSlug, wantedSlug;
 let loading = false, routeVersion = 0, sourceRequest, graphIndex, graphWindow, visibleGraph;
 let drawing = false, elementStates = new Map();
 let mountedDetail = true;
 let renderedEdge = new Map(), edgeMembers = new Map();
 let paintWindow, mountedIds = new Set(), paintedBounds, viewportFrame, mountBusy = false, mountPromise = Promise.resolve(), mountAgain = false, draggingNode = false;
-const contextMenu = edgeMenu(id => changeBranch(id, 'collapse'));
+const contextMenu = edgeMenu(id => changeBranch(id, 'collapse'), collectNode, addEntry, pruneNode, hideNode);
+let focusAfterLoad=null;
+const picker=entryPicker(api,(slug,id)=>{if(wantedSlug===slug){focusAfterLoad=id;activeSlug=undefined;navigate(slug,false);}});
+const hiddenNodes = new Map();
+let changingVisibility = false;
+const edits=editSession(api,()=>wantedSlug,()=>{const slug=wantedSlug;activeSlug=undefined;navigate(slug,false);});
 $('canvas').tabIndex = 0;
 let gesture = null;
 // Measure total excursion, not just release displacement (a drag may return to its origin).
@@ -52,7 +71,7 @@ function graphAppearance() {
       fill: d => color(`card-${d.data.tone}-bg`),
       stroke: d => color(`card-${d.data.tone}-line`), lineWidth: 1,
       shadowColor: color('card-shadow'), shadowBlur: 0, shadowOffsetY: 0,
-      cardTitle: d => d.data.label, cardCategory: d => d.data.category,
+      cardBadge: d => d.data.badge, cardTitle: d => d.data.label, cardCategory: d => d.data.category,
       cardPurpose: d => d.data.purpose, cardClass: d => d.data.className,
       cardDirection: () => $('direction').querySelector('input:checked').value, cardControlFill: color('panel'),
       cardMore: d => d.data.more || '', cardExpand: d => d.data.canExpand, cardCollapse: d => d.data.canCollapse,
@@ -89,7 +108,7 @@ const tree = new LibraryTree({
   onRemoved: (slug, graphs) => {
     if (slug !== wantedSlug) return;
     const next = graphs.find(g => g.projectId === current?.projectId) || graphs[0];
-    if (next) { navigate(next.slug); return; }
+    if (next) return navigate(next.slug);
     wantedSlug = undefined; activeSlug = undefined; routeVersion++;
     sourceRequest?.abort(); renderer?.destroy(); renderer = null; current = null;
     resetInspector(); $('symbols').replaceChildren(); $('title').textContent = '选择一个调用图';
@@ -100,7 +119,10 @@ const tree = new LibraryTree({
 });
 function renderCatalog() { tree.setData(catalog, names); tree.select(wantedSlug); }
 
-function navigate(slug, history = true) {
+async function navigate(slug, history = true) {
+  if(slug && wantedSlug && slug!==wantedSlug && !await edits.leave()) {
+    const url=new URL(location.href);url.searchParams.set('graph',wantedSlug);window.history.replaceState({},'',url);renderCatalog();return;
+  }
   contextMenu.close();
   if (!slug || (slug === activeSlug && slug === wantedSlug && renderer && !loading)) return;
   wantedSlug = slug; routeVersion++;
@@ -110,7 +132,7 @@ function navigate(slug, history = true) {
     window.history.pushState({}, '', url);
   }
   renderCatalog();
-  void drain();
+  return drain();
 }
 
 async function drain() {
@@ -126,16 +148,17 @@ async function drain() {
       if (version !== routeVersion) continue;
       renderer?.destroy(); renderer = null;
       elementStates = new Map();
-      current = data; graphWindow = createWindow(data);
+      paintWindow = null; current = data; graphWindow = createWindow(data);
       $('window-size').value = slug === 'codex-cli-startup-lsp' ? '10' : '50';
       $('window-unit').value = 'layers';
       graphWindow.reset(batchSize(), $('window-unit').value);
-      visibleGraph = graphWindow.snapshot(); graphIndex = indexGraph(visibleGraph); activeSlug = slug;
+      visibleGraph = visibleSnapshot(); graphIndex = indexGraph(visibleGraph); activeSlug = slug;
       gesture = null; resetInspector();
       $('title').textContent = data.title; $('summary').textContent = data.description;
       updateWindowStats();
       renderCoverage(api.analysisCoverage(data));
-      renderSymbols();
+      resume.setGraph(slug, data);
+      renderSymbols();edits.update();updateHidden();
       renderer = new Graph({
         container: $('canvas'), autoResize: false, animation: false, padding: 35,
         data: windowData(),
@@ -167,7 +190,7 @@ async function drain() {
         if (gesture?.moved) return;
         const action = branchAction(event);
         if (action) void changeBranch(event.target.id, action);
-        else void select('node', event.target.id);
+        else void select('node', event.target.id, false, true);
       });
       const openBranchMenu = event => {
         event.preventDefault();
@@ -175,12 +198,12 @@ async function drain() {
         const edge = graphIndex.edges.get(event.target.id);
         const target = event.targetType === 'node' ? graphIndex.nodes.get(event.target.id) : edge && graphIndex.nodes.get(edge.to);
         if (!target) return;
-        contextMenu.open({ id: target.id, label: target.label, enabled: graphWindow.collapsible(target.id),
+        contextMenu.open({ id: target.id, label: target.label, file:target.file, line:target.line, enabled: graphWindow.collapsible(target.id), isNode:event.targetType==='node',canCollect:canCollect(target.id),canAdd:Boolean(current.analysis),canPrune:(graphIndex.nodes.get(target.id)?.sourceId||target.id)!==current.root,
           x: event.client?.x ?? event.clientX ?? 0, y: event.client?.y ?? event.clientY ?? 0 });
       };
       renderer.on('edge:contextmenu', openBranchMenu);
       renderer.on('node:contextmenu', openBranchMenu);
-      renderer.on('edge:click', event => { if (!gesture?.moved) void select('edge', event.target.id); });
+      renderer.on('edge:click', event => { if (!gesture?.moved) void select('edge', event.target.id, false, true); });
       renderer.on('canvas:click', () => { if (!gesture?.moved) clearSelection(); });
       await renderer.render();
       updateWindowStats();
@@ -196,20 +219,134 @@ async function drain() {
         await renderer.focusElement(data.root, false);
       }
       $('fit').disabled = false;
-      status(data.analysis ? '已加载 · 金色边框表示尚未查询下游。静态关系不代表实际执行顺序。' : '已加载 · 从入口阅读，点击关系核对调用点。');
+      status('');
       clearSelection();
     }
   } catch (error) {
     status(`画布加载失败：${error.message}`, true);
     activeSlug = undefined;
-  } finally { loading = false; setControlsBusy(drawing); $('appearance').disabled = false; scheduleViewport(); }
+  } finally { loading = false; setControlsBusy(drawing); $('appearance').disabled = false; scheduleViewport(); if(focusAfterLoad){const id=focusAfterLoad;focusAfterLoad=null;void select('node',id,true);} }
+}
+
+function updateHidden(){const count=hiddenNodes.get(wantedSlug)?.size||0;$('restore-hidden').hidden=!count;$('restore-hidden').textContent=`恢复隐藏（${count}）`;edits.update();}
+function visibilityViewport(anchor = current.root) {
+  const point = paintWindow.data.nodes.find(n => n.id === anchor)?.style || {x:0,y:0};
+  const rect=$('canvas').getBoundingClientRect(), origin=renderer.getViewportByCanvas([point.x,point.y]);
+  return { view:renderer, version:routeVersion, anchor, screen:[origin[0]+rect.left,origin[1]+rect.top] };
+}
+async function refreshVisibility({view,version,screen,anchor}=visibilityViewport()) {
+  const selected = $('canvas').dataset.selection;
+  await redrawWindow(anchor, true);
+  if(view!==renderer || version!==routeVersion)return;
+  renderSymbols();
+  if (selected && !graphIndex.nodes.has(selected) && !graphIndex.edges.has(selected)) { clearSelection(); for (const key of elementStates.keys()) if (!graphIndex.nodes.has(key) && !graphIndex.edges.has(key)) elementStates.delete(key); }
+  else if (selected) await select(graphIndex.nodes.has(selected) ? 'node' : 'edge', selected);
+  updateHidden();
+  // Resize and flush the camera before compensating for the edit bar.
+  view.resize();
+  await view.draw();
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  if(view!==renderer || version!==routeVersion)return;
+  const point = paintWindow.data.nodes.find(n => n.id === anchor)?.style || {x:0,y:0};
+  const nextRect=$('canvas').getBoundingClientRect(), next=view.getViewportByCanvas([point.x,point.y]);
+  await view.translateBy([screen[0]-next[0]-nextRect.left,screen[1]-next[1]-nextRect.top],false);
+  scheduleViewport();
+}
+async function hideNode(id) {
+  if (changingVisibility || drawing || loading) return;
+  changingVisibility = true; setControlsBusy(true);
+  const slug=activeSlug, version=routeVersion, sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  try {
+    const plan=await api.pruneNode(slug,sourceId);
+    if(slug!==activeSlug || version!==routeVersion)return;
+    const removed = new Set(plan.removedNodeIds);
+    const ancestors = [id], seen = new Set(ancestors);
+    let anchor = current.root;
+    for (let i = 0; i < ancestors.length; i++) {
+      const candidate = graphIndex.nodes.get(ancestors[i]);
+      if (candidate && !removed.has(candidate.sourceId || candidate.id)) { anchor = candidate.id; break; }
+      for (const edge of graphIndex.incoming.get(ancestors[i]) || []) {
+        if (!seen.has(edge.from)) { seen.add(edge.from); ancestors.push(edge.from); }
+      }
+    }
+    const viewport = visibilityViewport(anchor);
+    const hidden=hiddenNodes.get(slug)||new Set();
+    plan.removedNodeIds.forEach(n=>hidden.add(n));hiddenNodes.set(slug,hidden);
+    await refreshVisibility(viewport);
+    status('已临时隐藏，画布位置与展开状态保留。');
+  } catch(error) { status(error.message,true); }
+  finally { changingVisibility=false; setControlsBusy(loading || drawing); }
+}
+$('restore-hidden').onclick=async()=>{
+  if(changingVisibility || drawing || loading)return;
+  changingVisibility=true; setControlsBusy(true);
+  try { hiddenNodes.delete(wantedSlug); await refreshVisibility(); status('已恢复隐藏节点，画布位置保持不变。'); }
+  finally { changingVisibility=false; setControlsBusy(loading || drawing); }
+};
+document.addEventListener('click',async event=>{
+  const anchor=event.target.closest('a[href]');if(!anchor||event.defaultPrevented||event.ctrlKey||event.metaKey||event.shiftKey||anchor.target==='_blank')return;
+  const url=new URL(anchor.href);if(url.hash && url.pathname===location.pathname && url.search===location.search)return;
+  if(!api.hasUnsaved(wantedSlug)&&!api.editBusy)return;
+  event.preventDefault();if(await edits.leave())location.assign(anchor.href);
+});
+let pruning = false;
+async function pruneNode(id) {
+  if(pruning)return;
+  pruning=true;
+  const slug=activeSlug, sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  try {
+    const plan=await api.pruneNode(slug,sourceId);
+    if(slug!==activeSlug)return;
+    if(!window.confirm(`将从图数据中移除该方法的所有调用位置及其独占下游：${plan.removedNodeIds.length} 个节点、${plan.removedEdgeIds.length} 条连线。保留 ${plan.preservedSharedNodeIds.length} 个共享下游节点。不影响源码，点击“保存”后写入图文件。确定删除？`))return;
+    await api.pruneNode(slug,sourceId,plan.revision);
+    if(slug===activeSlug){activeSlug=undefined;navigate(slug,false);}
+  }catch(error){status(error.message,true);}finally{pruning=false;}
+}
+function canCollect(id) {
+  const sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  return current?.analysis?.pendingNodes.includes(sourceId) && !current.edges.some(e=>e.from===sourceId);
+}
+let startingCollection = false;
+async function collectNode(id) {
+  if(startingCollection || resume.isRunning()){status('已有采集任务运行，请停止或等待结束后再提交。',true);return;}
+  if(!canCollect(id)){status('只能采集没有已知下游的待采叶子节点。',true);return;}
+  const sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  const slug=activeSlug, version=routeVersion;
+  collection.open(graphIndex.nodes.get(id), async budget => {
+    if(version!==routeVersion || slug!==activeSlug || !canCollect(id))throw new Error('节点状态已变化，请重新选择。');
+    if(startingCollection || resume.isRunning())throw new Error('已有采集任务运行，请等待结束或先停止。');
+    startingCollection=true;
+    try{return await api.analysisTask(slug,'POST',budget,sourceId);}
+    finally{startingCollection=false;}
+  });
+}
+function addEntry(id) {
+  if(!current?.analysis)return;
+  void picker.open(activeSlug,graphIndex.nodes.get(id)?.sourceId||id);
+}
+for(const [button,panel,cls] of [['toggle-library','project-library','library-collapsed'],['toggle-inspector','source-inspector','inspector-collapsed']]) {
+  const label = panel === 'project-library' ? '项目栏' : '详情栏';
+  const apply = collapsed => {
+    document.querySelector('.workspace').classList.toggle(cls, collapsed);
+    $(button).setAttribute('aria-expanded', String(!collapsed));
+    $(button).setAttribute('aria-label', `${collapsed ? '展开' : '收起'}${label}`);
+    $(button).title = `${collapsed ? '展开' : '收起'}${label}`;
+    $(panel).inert = collapsed;
+    try { localStorage.setItem(cls, String(collapsed)); } catch {}
+  };
+  let initial = false;
+  try { initial = localStorage.getItem(cls) === 'true'; } catch {}
+  apply(initial);
+  $(button).addEventListener('click', () => apply($(button).getAttribute('aria-expanded') === 'true'));
 }
 
 function renderCoverage(analysis) {
+  $('graph-details').open = false;
+  $('analysis-brief').textContent = analysis ? '静态关系 · 非运行轨迹' : '说明与采集状态';
   $('coverage').hidden = !analysis; $('coverage-issues').replaceChildren();
   if (!analysis) return;
-  $('coverage-title').textContent = `静态分析范围：已查询 ${analysis.queriedNodes.length} 个符号 · ${analysis.pendingNodes.length} 个待查询 · ${analysis.issues.length} 项边界说明`;
-  $('coverage-scope').textContent = `${analysis.provider}。深度预算 ${analysis.maxDepth}，请求预算 ${analysis.requestBudget}。仅当前项目内静态关系；未证明业务链路完整。`;
+  $('coverage-title').textContent = `静态分析范围：已查询 ${analysis.queriedNodes.length} 个符号 · ${analysis.pendingNodes.length} 个待查询 · ${analysis.issues.length} 项边界说明${analysis.prunedNodeIds?.length ? ` · 已减枝 ${analysis.prunedNodeIds.length} 个符号` : ''}`;
+  $('coverage-scope').textContent = `${analysis.provider}。初次采集深度 ${analysis.maxDepth}，初次请求预算 ${analysis.requestBudget}；页面续采按本轮预算继续。仅当前项目内静态关系，历史边界说明保留供核对；未证明业务链路完整。`;
   $('coverage').open = false;
 }
 
@@ -220,28 +357,40 @@ function appendSymbols() {
     if ([...$('symbols').options].some(option => option.value === item.id)) continue;
     const option = node('option', item.label); option.title = `${item.file}:${item.line}`; option.value = item.id; fragment.append(option);
   }
-  symbolOffset += 100; $('symbols').append(fragment);
+  symbolOffset = Math.min(symbolOffset + 100, symbolMatches.length); $('symbols').append(fragment);
   $('symbols-more').hidden = symbolOffset >= symbolMatches.length;
-  $('symbols-more').textContent = `继续加载符号（共 ${symbolMatches.length} 个匹配）`;
+  $('symbols-more').textContent = `加载更多选项（${symbolOffset} / ${symbolMatches.length}）`;
+  $('symbols-more').title = '加载到上方节点列表，不改变画布';
 }
 function renderSymbols() {
   const query = $('symbol-filter').value.trim().toLowerCase();
-  symbolMatches = (current?.nodes || []).filter(item => `${item.label} ${item.file} ${item.id}`.toLowerCase().includes(query));
+  symbolMatches = (current?.nodes || []).filter(item => !hiddenNodes.get(wantedSlug)?.has(item.id)).filter(item => `${item.label} ${item.file} ${item.id}`.toLowerCase().includes(query));
   symbolOffset = 0;
-  const placeholder = node('option', '选择符号…'); placeholder.value = '';
+  $('symbol-load-status').textContent = '';
+  const placeholder = node('option', '选择节点…'); placeholder.value = '';
   $('symbols').replaceChildren(placeholder); appendSymbols();
 }
-$('symbols-more').addEventListener('click', appendSymbols);
+$('symbols-more').addEventListener('click', () => {
+  appendSymbols();
+  $('symbol-load-status').textContent = `已加载 ${symbolOffset} / ${symbolMatches.length}，请在上方列表选择`;
+  if ($('symbols-more').hidden) $('symbols').focus();
+});
 
 function resetInspector() {
+  sourceNavigationController.clear();
   sourceRequest?.abort(); sourceRequest = null;
   $('canvas').dataset.selection = '';
   $('symbols').value = '';
-  $('selection-title').textContent = '选择符号或调用关系';
-  $('selection-description').textContent = '选中后高亮链路，并在这里核对源码。单击画布空白处取消选择。';
+  $('inspector-heading').textContent='详情';
+  $('selection-title').textContent = '未选择节点';
+  $('node-actions-panel').replaceChildren();
+  $('source').hidden=true;
+  $('selection-notes').hidden=true;
+  $('selection-notes').open=false;
+  $('selection-description').textContent = '';
   $('relations').replaceChildren();
   $('source-location').textContent = '';
-  $('source').textContent = '等待选择';
+  $('source').textContent = '';
 
 }
 
@@ -253,7 +402,17 @@ function clearSelection() {
   applyStates(view, states);
 }
 
-async function select(type, id, focus = false) {
+async function openCall(parent, callId) {
+  if (loading || drawing) return;
+  const version = routeVersion, view = renderer;
+  const edgeId = graphWindow.revealCall(parent, callId);
+  if (!edgeId) return;
+  if (!graphIndex.edges.has(edgeId)) await redrawWindow(parent, true);
+  if (version !== routeVersion || view !== renderer) return;
+  await select('edge', edgeId, true);
+}
+
+async function select(type, id, focus = false, clicked = false) {
   const data = current, slug = activeSlug, version = routeVersion, view = renderer;
   if (!data || slug !== wantedSlug || drawing) return;
   if (type === 'node' && !graphWindow.visible.has(id)) {
@@ -283,8 +442,14 @@ async function select(type, id, focus = false) {
   sourceRequest?.abort(); sourceRequest = new AbortController();
   const request = sourceRequest;
   $('canvas').dataset.selection = id;
+  $('inspector-heading').textContent=type==='node'?'节点详情':item.kind==='trait-dispatch'?'多态关系':'调用详情';
+  $('source').hidden=false;
+  $('node-actions-panel').replaceChildren();
+  $('selection-notes').open=false;
   $('selection-title').textContent = type === 'node' ? item.label : `${graphIndex.nodes.get(item.from)?.label || item.from} → ${graphIndex.nodes.get(item.to)?.label || item.to}`;
   $('selection-description').textContent = (item.pathCycle ? '回环引用：递归或已标注的回环关系，不再向下复制。' : item.pathReference ? '共享方法在当前路径中的引用，与其他引用对应同一份源码。' : '') + (item.description || item.role || item.evidence || '');
+  if (type === 'node') { const facts = symbolPresentation(item); if(facts.type) $('selection-description').textContent = [facts.type, facts.detail, $('selection-description').textContent].filter(Boolean).join(' · '); }
+  $('selection-notes').hidden=!$('selection-description').textContent.trim();
   $('relations').replaceChildren();
 
   const selectedNodes = new Set(type === 'node' ? [id] : [item.from, item.to]);
@@ -305,26 +470,56 @@ async function select(type, id, focus = false) {
       const option = node('option', item.label); option.value = sourceId; $('symbols').append(option);
     }
     $('symbols').value = sourceId;
-    const reading = callReading(graphIndex.outgoing.get(id) || []);
-    if (reading.note) $('relations').append(node('p', reading.note));
-    for (const edge of new Set([...reading.calls, ...graphIndex.incoming.get(id)])) {
+    if (current.analysis) {
+      const actions=node('div');actions.className='node-actions';
+      const collect=node('button','继续采集');collect.disabled=!canCollect(id);
+      collect.title=collect.disabled?'仅没有已知下游的待采叶子节点可以采集':'从当前节点采集下游';
+      collect.addEventListener('click',()=>void collectNode(id));
+      const add=node('button','添加节点');add.addEventListener('click',()=>addEntry(id));
+      actions.append(collect,add);$('node-actions-panel').append(actions);
+    }
+    const prune=node('button','删除');prune.disabled=sourceId===current.root;
+    prune.addEventListener('click',()=>void pruneNode(id));
+    const hide=node('button','隐藏');hide.disabled=sourceId===current.root;hide.addEventListener('click',()=>void hideNode(id));
+    const editTools=node('details');editTools.className='node-edit-tools';editTools.append(node('summary','编辑节点'),hide,prune);$('node-actions-panel').append(editTools);
+    const independentCalls = !item.pathCycle;
+    const reading = callReading((independentCalls ? graphWindow.source.outgoing.get(sourceId) : graphIndex.outgoing.get(id)) || []);
+    if(reading.note) { $('selection-description').textContent += ` ${reading.note}`; $('selection-notes').hidden=false; }
+    if(reading.calls.length)$('relations').append(relationList(reading.calls.some(isImplementationCandidate) ? '下游方法与实现' : '直接调用点',reading.calls,edge=>{
+      const other = (independentCalls ? graphWindow.source.nodes : graphIndex.nodes).get(edge.to);
+      const button = node('button', isImplementationCandidate(edge) ? `${other?.label || edge.to}` : `调用 → ${other?.label || edge.to} · 调用点 ${edge.line || '—'}`);
+      button.addEventListener('click', () => {
+        if (independentCalls) void openCall(id, edge.id);
+        else void select('edge', edge.id, true);
+      });
+      return button;
+    },false));
+    const callers=graphIndex.incoming.get(id)||[];
+    if(callers.length)$('relations').append(relationList('当前路径的调用方',callers,edge=>{
       const otherId = edge.from === id ? edge.to : edge.from;
       const other = graphIndex.nodes.get(otherId);
       const button = node('button', `${edge.from === id ? '调用 →' : '来自 ←'} ${other?.label || otherId} · 调用点 ${edge.line || '—'}`);
-      button.addEventListener('click', () => { void select('edge', edge.id); }); $('relations').append(button);
-    }
+      button.addEventListener('click', () => { void select('edge', edge.id); }); return button;
+    },false));
     if (item.sourceId) {
       const incoming = graphWindow.source.incoming.get(item.sourceId) || [];
-      const details = node('details'); details.append(node('summary', `原始调用点：${incoming.length} 个入向关系`));
-      for (const edge of incoming) {
+      if(incoming.length)$('relations').append(relationList('全部调用方',incoming,edge=>{
         const caller = graphWindow.source.nodes.get(edge.from);
         const button = node('button', `${caller?.label || edge.from} · ${edge.file}:${edge.line}`);
-        button.addEventListener('click', () => { void select('node', edge.from, true); }); details.append(button);
-      }
-      $('relations').append(details);
+        button.addEventListener('click', () => { void select('node', edge.from, true); });
+        return button;
+      },false));
     }
   } else {
     $('relations').append(node('p', callMeaning(item)));
+    const sourceEdgeId=item.sourceId||id;
+    if(sourceEdgeId.startsWith('manual-async-') && item.kind==='async-boundary') {
+      $('relations').append(node('p',item.evidence));
+      const contextSlug=activeSlug, remove=node('button','撤销人工关联');
+      remove.addEventListener('click',async()=>{remove.disabled=true;try{await api.removeManualLink(contextSlug,sourceEdgeId);if(wantedSlug===contextSlug){activeSlug=undefined;navigate(contextSlug,false);}}catch(error){remove.disabled=false;status(error.message,true);}});
+      $('relations').append(remove);
+    }
+
     const members = edgeMembers.get(renderedEdge.get(id)) || [id];
     if (members.length > 1) {
       $('relations').append(node('p', `此连线包含 ${members.length} 个调用关系，可逐一核对：`));
@@ -341,6 +536,7 @@ async function select(type, id, focus = false) {
       button.addEventListener('click', () => { void select('node', endpoint); }); $('relations').append(button);
     }
   }
+  sourceNavigationController.select(current, slug, type, item.sourceId || id, clicked);
   $('source-location').textContent = item.file ? `${item.file}:${item.line}` : '无精确源码位置';
   $('source').textContent = '正在读取源码…';
   if (type === 'edge' && item.callSiteStatus && item.callSiteStatus !== 'exact') { $('source').textContent = item.callSiteNote || '此关系未提供精确调用点。'; return; }
@@ -370,6 +566,7 @@ function scheduleViewport() {
   viewportFrame = requestAnimationFrame(() => { void refreshViewport(); });
 }
 async function refreshViewport(force = false, center) {
+  if (resizingSidebar && !force) return;
   if (!renderer || !virtualized() || loading || drawing || draggingNode) return;
   if (mountBusy) {
     mountAgain = true;
@@ -434,9 +631,17 @@ function applyStates(view, states) {
   });
 }
 function setControlsBusy(busy) {
-  for (const id of ['view-mode', 'direction', 'apply-window', 'window-size', 'window-unit']) $(id).disabled = busy;
+  busy ||= changingVisibility;
+  for (const id of ['direction', 'apply-window', 'window-size', 'window-unit']) $(id).disabled = busy;
 }
-function createWindow(data) { return $('view-mode').value === 'paths' ? new PathWindow(data) : new GraphWindow(data); }
+function createWindow(data) { return new PathWindow(data); }
+function visibleSnapshot() {
+  const data = graphWindow.snapshot(), hidden = hiddenNodes.get(wantedSlug);
+  if (!hidden?.size) return data;
+  const nodes = data.nodes.filter(n => !hidden.has(n.sourceId || n.id));
+  const ids = new Set(nodes.map(n => n.id));
+  return { ...data, nodes, edges: data.edges.filter(e => ids.has(e.from) && ids.has(e.to)) };
+}
 function batchSize() {
   const n = Number($('window-size').value);
   return Number.isSafeInteger(n) && n > 0 ? n : 50;
@@ -480,12 +685,13 @@ function windowData(anchor = current.root, preservePositions = false) {
   separateTracks(data, direction);
   paintWindow = new RenderWindow(data);
   const position = positions.get(anchor) || positions.get(current.root);
-  paintedBounds = viewportBounds([position.x, position.y], $('canvas').clientWidth, $('canvas').clientHeight, renderer?.getZoom() || .85);
+  const center = [position.x, position.y];
+  paintedBounds = viewportBounds(center, $('canvas').clientWidth, $('canvas').clientHeight, renderer?.getZoom() || .85);
   return mountedData(virtualized() ? paintWindow.slice(paintedBounds) : data);
 }
 function updateWindowStats() {
   const unique = new Set(visibleGraph.nodes.map(n => n.sourceId || n.id)).size;
-  $('stats').textContent = `已展示 ${unique} / ${current.nodes.length} 个符号 · ${visibleGraph.nodes.length} 个${$('view-mode').value === 'paths' ? '路径引用' : '节点'} · ${visibleGraph.edges.length} 条调用关系 · ${edgeMembers.size || visibleGraph.edges.length} 条展示连线`;
+  $('stats').textContent = `已展示 ${unique} / ${current.nodes.length} 个符号 · ${visibleGraph.nodes.length} 个路径引用 · ${visibleGraph.edges.length} 条调用关系 · ${edgeMembers.size || visibleGraph.edges.length} 条展示连线`;
 }
 async function redrawWindow(anchor, preservePositions = false) {
   contextMenu.close();
@@ -496,7 +702,7 @@ async function redrawWindow(anchor, preservePositions = false) {
   const before = anchor && graphWindow.visible.has(anchor) ? view.getViewportByCanvas(view.getElementPosition(anchor)) : null;
   drawing = true; setControlsBusy(true);
   try {
-    visibleGraph = graphWindow.snapshot(); graphIndex = indexGraph(visibleGraph);
+    visibleGraph = visibleSnapshot(); graphIndex = indexGraph(visibleGraph);
     view.setData(windowData(anchor, preservePositions)); await view.draw();
     if (version !== routeVersion || view !== renderer) return;
     if (before) {
@@ -507,21 +713,30 @@ async function redrawWindow(anchor, preservePositions = false) {
   } catch (error) { if (view === renderer) status(error.message, true); }
   finally { drawing = false; setControlsBusy(loading); }
 }
+const displaySettings = $('display-settings');
+document.addEventListener('pointerdown', event => {
+  if (displaySettings.open && !displaySettings.contains(event.target)) displaySettings.open = false;
+});
+displaySettings.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && displaySettings.open) {
+    event.preventDefault(); event.stopPropagation();
+    displaySettings.open = false;
+    displaySettings.querySelector('summary').focus();
+  }
+});
+displaySettings.addEventListener('focusout', event => {
+  if (event.relatedTarget && !displaySettings.contains(event.relatedTarget)) displaySettings.open = false;
+});
 $('apply-window').addEventListener('click', async () => {
   if (!graphWindow || loading || drawing) return;
+  displaySettings.open = false;
+  displaySettings.querySelector('summary').focus();
   const version = routeVersion;
   $('window-size').value = batchSize();
   graphWindow.reset(batchSize(), $('window-unit').value);
   resetInspector(); await redrawWindow();
   if (version !== routeVersion) return;
   clearSelection(); await renderer.focusElement(current.root, false);
-});
-$('view-mode').addEventListener('change', async () => {
-  if (!current || loading || drawing) return;
-  graphWindow = createWindow(current); elementStates.clear();
-  graphWindow.reset(batchSize(), $('window-unit').value);
-  resetInspector(); await redrawWindow();
-  if (renderer) await renderer.focusElement(current.root, false);
 });
 $('direction').addEventListener('change', async () => {
   if (!graphWindow || loading || drawing) return;
@@ -565,8 +780,26 @@ $('symbols').addEventListener('change', async () => {
   await select('node', $('symbols').value, true);
 });
 $('fit').addEventListener('click', () => { void fitLogicalGraph(); });
-let resizeFrame;
-new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { renderer?.resize(); scheduleViewport(); }); }).observe($('canvas'));
+let resizeFrame, resizingSidebar = false;
+function scheduleCanvasResize() {
+  cancelAnimationFrame(resizeFrame);
+  if (resizingSidebar) return;
+  resizeFrame = requestAnimationFrame(() => {
+    if (changingVisibility || resizingSidebar) return;
+    renderer?.resize();
+    scheduleViewport();
+  });
+}
+sidebarWidths(document.querySelector('.workspace'), { library:$('resize-library'), inspector:$('resize-inspector') }, {
+  onDragChange(active) {
+    // Keep the backing canvas intact while its container clips it during a drag.
+    // Always flush on release/cancel, even if the last ResizeObserver already ran.
+    resizingSidebar = active;
+    if (active) cancelAnimationFrame(viewportFrame);
+    scheduleCanvasResize();
+  }
+});
+new ResizeObserver(scheduleCanvasResize).observe($('canvas'));
 window.addEventListener('popstate', () => navigate(new URL(location.href).searchParams.get('graph') || catalog[0]?.slug, false));
 try {
   const [graphs, health] = await Promise.all([api.listGraphs(), api.health()]);

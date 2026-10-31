@@ -33,9 +33,14 @@ for (const direction of ['TB','LR']) {
  const along=direction==='LR'?'x':'y',cross=direction==='LR'?'y':'x',spacing=direction==='LR'?180:350;
  for(const [id,p] of result) for(const [other,q] of result) if(id!==other && p[along]===q[along]) assert(Math.abs(p[cross]-q[cross])>=spacing);
  const hidden=stablePositions(first,layerPositions(first,direction),result,direction,'b');
- for(const [id,p] of hidden) assert.deepEqual(p,result.get(id));
+ assert.deepEqual(hidden.get('b'),result.get('b'));
+ assert(Math.abs(hidden.get('a')[cross]-hidden.get('b')[cross]) < Math.abs(result.get('a')[cross]-result.get('b')[cross]));
+ for(const [id,p] of hidden) for(const [other,q] of hidden) if(id!==other && p[along]===q[along]) assert(Math.abs(p[cross]-q[cross])>=spacing);
+ const restored=stablePositions(both,layerPositions(both,direction),hidden,direction,'b');
+ assert.deepEqual(restored.get('b'),hidden.get('b'));
+ for(const [id,p] of restored) for(const [other,q] of restored) if(id!==other && p[along]===q[along]) assert(Math.abs(p[cross]-q[cross])>=spacing);
 }
-console.log('Concurrent branches: compact first expansion, collision-triggered widening, no overlap, fixed anchor, collapse stability PASS');
+console.log('Concurrent branches: expansion, collapse compaction, re-expansion, no overlap and fixed anchor PASS');
 
 for(const direction of ['TB','LR']) {
  const point=(cross,depth)=>direction==='LR'?{x:depth*400,y:cross}:{x:cross,y:depth*200};

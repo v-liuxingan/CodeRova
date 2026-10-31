@@ -20,10 +20,11 @@ export class LibraryTree {
   constructor({ container, api, onSelect, onChange, onRemoved, notify }) {
     Object.assign(this, { container, api, onSelect, onChange, onRemoved, notify });
     this.graphs = []; this.projects = new Map(); this.trash = []; this.query = ''; this.selected = '';
-    this.preferences = { closed: [], order: [], groups: [] }; this.busy = false;
+    this.preferences = { closed: [], order: [], groups: [], removedProjects: [] }; this.busy = false;
     try {
       const saved = JSON.parse(localStorage.getItem(key));
       if (saved) this.preferences = {
+        removedProjects: Array.isArray(saved.removedProjects) ? saved.removedProjects.filter(x => typeof x === 'string') : [],
         closed: Array.isArray(saved.closed) ? saved.closed.filter(x => typeof x === 'string') : [],
         order: Array.isArray(saved.order) ? saved.order.filter(x => typeof x === 'string') : [],
         groups: Array.isArray(saved.groups) ? saved.groups.filter(x => x && typeof x.project === 'string' && typeof x.id === 'string' && typeof x.name === 'string') : [],
@@ -95,21 +96,27 @@ export class LibraryTree {
     });
     let matches = 0;
     for (const [project, name] of this.projects) {
+      // Restoring or generating a graph makes its project visible again.
+      if (this.preferences.removedProjects.includes(project) && !this.graphs.some(g => g.projectId === project) && !this.preferences.groups.some(g => g.project === project)) continue;
       const groups = this.groups(project).map(group => ({ ...group, graphs: ordered(group.graphs).filter(g => `${name} ${group.name} ${g.title}`.toLowerCase().includes(this.query)) }));
       const count = groups.reduce((sum, g) => sum + g.graphs.length, 0);
       if (this.query && !count) continue;
       matches += count;
       const folder = this.folder(project, name, count, 'tree-project');
+      const removeProject = this.action('删除', `删除目录 ${name}`, () => void this.archiveProject(project, name));
+      removeProject.className = 'tree-group-delete';
+      folder.querySelector('summary').append(removeProject);
       for (const group of groups) {
         if (this.query && !group.graphs.length) continue;
         const branch = this.folder(`${project}/${group.id}`, group.name, group.graphs.length, 'tree-group');
         branch.dataset.project = project; branch.dataset.category = group.id;
         this.dropTarget(branch, group);
+        const removeGroup = this.action('删除', `删除分组 ${group.name}`, () => void this.archiveGroup(group));
+        removeGroup.className = 'tree-group-delete';
+        branch.querySelector('summary').append(removeGroup);
         if (!group.graphs.length) {
           const empty = el('div', null, 'tree-empty'); empty.append(el('span', '拖入调用图'));
-          empty.append(this.action('删除空组', `删除空分组 ${group.name}`, () => {
-            this.preferences.groups = this.preferences.groups.filter(g => !(g.project === project && g.id === group.id)); this.save(); this.render();
-          })); branch.append(empty);
+          branch.append(empty);
         }
         for (const graph of group.graphs) {
           const row = el('div', null, 'tree-file'); row.draggable = !this.busy; row.dataset.graph = graph.slug;
@@ -189,6 +196,57 @@ export class LibraryTree {
       await this.mutate(() => this.api.archiveGraph(graph.slug), '已移入回收站，可在左侧恢复。', graph.slug);
     }
   }
+  async archiveGroup(group) {
+    return this.archiveFolder(group);
+  }
+  async archiveProject(project, name) {
+    return this.archiveFolder({ project, name }, true);
+  }
+  async archiveFolder(group, wholeProject = false) {
+    if (this.busy) return;
+    const kind = wholeProject ? '目录' : '分组';
+    // Resolve against the complete catalog, never the filtered display list.
+    const members = this.graphs.filter(g => g.projectId === group.project && (wholeProject || (g.categoryId || 'uncategorized') === group.id));
+    if (this.api.editBusy || members.some(g => this.api.hasUnsaved(g.slug))) {
+      this.notify('请先保存或放弃组内调用图的修改。', true); return;
+    }
+    const confirmed = await this.dialog(`删除${kind}`, members.length
+      ? `「${group.name}」中的全部 ${members.length} 张调用图将移入回收站，包括搜索隐藏的图。源码不会删除，可在回收站恢复调用图。`
+      : `删除空${kind}「${group.name}」？源码不会删除。`, [], `删除${kind}`);
+    if (!confirmed || this.busy) return;
+    // Edits may have started while confirmation was open; check the whole batch.
+    if (this.api.editBusy || members.some(g => this.api.hasUnsaved(g.slug))) {
+      this.notify('请先保存或放弃组内调用图的修改。', true); return;
+    }
+    this.busy = true; this.render();
+    const archived = new Set();
+    let failure = null, refreshFailure = null;
+    try {
+      for (const graph of members) {
+        await this.api.archiveGraph(graph.slug);
+        archived.add(graph.slug);
+      }
+      this.preferences.groups = this.preferences.groups.filter(g => !(g.project === group.project && (wholeProject || g.id === group.id)));
+      this.preferences.closed = this.preferences.closed.filter(id => wholeProject ? id !== group.project && !id.startsWith(`${group.project}/`) : id !== `${group.project}/${group.id}`);
+      if (wholeProject && !this.preferences.removedProjects.includes(group.project)) this.preferences.removedProjects.push(group.project);
+    } catch (error) { failure = error; }
+    try {
+      const [graphs, trash] = await Promise.all([this.api.listGraphs(), this.api.listArchivedGraphs()]);
+      this.graphs = graphs; this.trash = trash;
+      // A response can be lost after the server has archived the file.
+      for (const graph of members) if (!graphs.some(g => g.slug === graph.slug) && trash.some(g => g.slug === graph.slug)) archived.add(graph.slug);
+    } catch (error) {
+      refreshFailure = error;
+      this.graphs = this.graphs.filter(g => !archived.has(g.slug));
+      this.trash = [...this.trash.filter(g => !archived.has(g.slug)), ...members.filter(g => archived.has(g.slug))];
+    }
+    this.preferences.order = this.preferences.order.filter(id => !archived.has(id));
+    this.save(); this.busy = false; this.render(); this.onChange(this.graphs);
+    if (archived.has(this.selected)) await this.onRemoved(this.selected, this.graphs);
+    if (failure || refreshFailure) {
+      this.notify(`已移入回收站 ${archived.size}/${members.length} 张。${failure?.message || ''}${refreshFailure ? '目录刷新失败，请刷新后核对状态。' : '其余调用图保留。'}`, true);
+    } else this.notify(members.length ? `已删除${kind}，${archived.size} 张调用图可在回收站恢复。` : `已删除空${kind}。`);
+  }
   async createGroup() {
     const result = await this.dialog('新建分组', '在项目下整理调用图。拖动文件可调整归属与顺序。', [
       { name: 'project', label: '所属项目', options: [...this.projects] }, { name: 'name', label: '分组名称' },
@@ -196,6 +254,7 @@ export class LibraryTree {
     if (!result) return;
     if (this.groups(result.project).some(g => g.name === result.name.trim())) { this.notify('该项目下已有同名分组。', true); return; }
     this.preferences.groups.push({ project: result.project, id: `group-${crypto.randomUUID()}`, name: result.name.trim() });
+    this.preferences.removedProjects = this.preferences.removedProjects.filter(id => id !== result.project);
     this.preferences.closed = this.preferences.closed.filter(id => id !== result.project);
     this.save(); this.render();
   }

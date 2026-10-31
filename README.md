@@ -1,8 +1,14 @@
 # Callgraph Visualizer
 
+平台使用手册（Skill）：[Callgraph 工作台](docs/skills/callgraph-workbench/SKILL.md)。
+包含 [V2 页面操作](docs/skills/callgraph-workbench/references/workbench.md) 与
+[AI 分析和自动化](docs/skills/callgraph-workbench/references/analysis.md)，以当前 V2 和草稿保存流程为准。
+
 当前工作区的架构与能力边界见[系统设计](docs/system-design.md)，已完成事项、验证记录和下一阶段计划见
 [开发进度](docs/development-status.md)（2026-10-31）。新版入口 `/v2/` 使用 G6，
 操作说明见[V2 开发说明](docs/v2-development.md)；下文功能列表主要描述经典工作台，尚未全部迁入 V2。
+
+AI 无需操作页面即可续采、引入异步入口和减枝，见 [AI 操作协议](docs/ai-operations.md)。
 
 真实 LSP 大图验收见[Codex CLI 启动分析](docs/codex-startup-acceptance.md)：包含自动原图、
 人工核验启动图、覆盖边界和 G6 性能测量。
@@ -369,5 +375,6 @@ Monaco 被隔离在独立同源预览页中，只有该页允许编辑器布局�
 
 ## V2 preview
 
-新增 rust-analyzer 静态调用图生成与 G6 阅读器，访问 `/v2/`。
+支持 rust-analyzer 与 Eclipse JDT LS 静态调用图生成及 G6 阅读器，访问 `/v2/`。
+Java 服务配置、Spring 采集示例及续采边界见 [Java LSP](docs/java-lsp.md)。
 安装、分析命令、能力边界和后续计划见 [V2 开发说明](docs/v2-development.md)。

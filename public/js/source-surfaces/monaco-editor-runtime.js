@@ -177,7 +177,7 @@ function loadMonaco() {
 }
 
 function normalizeLanguage(language) {
-  return ["rust", "javascript", "typescript", "python", "go"].includes(language)
+  return ["rust", "java", "javascript", "typescript", "python", "go"].includes(language)
     ? language
     : "plaintext";
 }

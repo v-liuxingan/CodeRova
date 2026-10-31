@@ -71,6 +71,12 @@ export class PathWindow {
     }
     return added;
   }
+  revealCall(parent, callId) {
+    const node = this.nodes.get(parent), edge = this.source.edges.get(callId);
+    if (!node || node.pathCycle || !edge || edge.from !== node.sourceId) return null;
+    this.connect(parent, callId, [edge]);
+    return JSON.stringify(['view-edge', parent, callId]);
+  }
   collapsible(id) { return (this.children.get(id)?.size || 0) > 0; }
   collapse(id) {
     const removed = new Set(), queue = [...(this.children.get(id)?.values() || [])];
@@ -109,6 +115,12 @@ export class PathWindow {
     return occurrence;
   }
   snapshot() {
-    return { ...this.graph, nodes: [...this.nodes.values()], edges: [...this.edges.values()] };
+    const outgoing = new Map();
+    for (const edge of this.edges.values()) {
+      if (!outgoing.has(edge.from)) outgoing.set(edge.from, []);
+      outgoing.get(edge.from).push(edge);
+    }
+    const edges = [...outgoing.values()].flatMap(calls => callReading(calls).calls);
+    return { ...this.graph, nodes: [...this.nodes.values()], edges };
   }
 }

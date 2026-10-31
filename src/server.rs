@@ -1,3 +1,4 @@
+mod drafts;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,6 +35,14 @@ pub struct AppState {
     source_link_builder: Arc<dyn SourceLinkBuilder>,
     source_previewer: Arc<dyn SourcePreviewer>,
     layout_store: Arc<dyn LayoutStore>,
+    analysis_jobs: Arc<crate::analysis::resume::Jobs>,
+    analysis_draft_id: Option<String>,
+    entry_candidates:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, crate::analysis::entry::Candidate>>>,
+    entry_check_busy: Arc<std::sync::atomic::AtomicBool>,
+    drafts: Arc<
+        std::sync::Mutex<std::collections::HashMap<String, Arc<crate::draft_store::DraftStore>>>,
+    >,
 }
 
 impl AppState {
@@ -52,6 +61,11 @@ impl AppState {
             source_link_builder,
             source_previewer,
             layout_store,
+            analysis_jobs: Arc::default(),
+            analysis_draft_id: None,
+            entry_candidates: Arc::default(),
+            entry_check_busy: Arc::default(),
+            drafts: Arc::default(),
         }
     }
 }
@@ -64,6 +78,570 @@ pub enum AppError {
     NotFound(String),
     #[error("{0}")]
     Internal(String),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PruneRequest {
+    node_id: String,
+    #[serde(default)]
+    apply: bool,
+    revision: Option<String>,
+}
+async fn prune_graph(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+    Json(input): Json<PruneRequest>,
+) -> Result<Json<crate::pruning::Plan>, AppError> {
+    same_origin(&headers)?;
+    let jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if jobs.1.status == "running" {
+        return Err(AppError::BadRequest("请先停止采集再减枝".into()));
+    }
+    let before = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let mut plan = crate::pruning::plan(&before, &input.node_id).map_err(AppError::BadRequest)?;
+    if input.apply {
+        if input.revision.as_deref() != Some(&plan.revision) {
+            return Err(AppError::BadRequest(
+                "图已变化或缺少预览版本，请重新预览减枝".into(),
+            ));
+        }
+        let mut graph = before.clone();
+        crate::pruning::apply(&mut graph, &plan);
+        state
+            .graph_store
+            .checkpoint(&slug, &before, &graph)
+            .map_err(AppError::BadRequest)?;
+        plan.applied = true;
+    }
+    Ok(Json(plan))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResumeRequest {
+    request_budget: usize,
+    #[serde(default)]
+    node_id: String,
+}
+
+fn same_origin(headers: &axum::http::HeaderMap) -> Result<(), AppError> {
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::BadRequest("续采操作需要同源 Origin".into()))?;
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let local = url::Url::parse(origin)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .is_some_and(|h| h == "localhost" || h == "127.0.0.1" || h == "[::1]");
+    if !local || origin != format!("http://{host}") {
+        return Err(AppError::BadRequest("拒绝跨站续采操作".into()));
+    }
+    Ok(())
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ManualLinkRequest {
+    from_id: String,
+    target_graph: String,
+    target_id: String,
+    note: String,
+}
+
+async fn add_manual_link(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+    Json(input): Json<ManualLinkRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    let jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if jobs.1.status == "running" {
+        return Err(AppError::BadRequest("请先停止采集再编辑关联".into()));
+    }
+    let before = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let target_graph = state
+        .graph_store
+        .load(&input.target_graph)
+        .map_err(AppError::NotFound)?;
+    if before.project_id != target_graph.project_id
+        || before.analysis.is_none()
+        || !target_graph
+            .analysis
+            .as_ref()
+            .is_some_and(|r| crate::analysis::provider::Language::supported(&r.provider))
+    {
+        return Err(AppError::BadRequest(
+            "仅支持同项目已有 LSP 图中的接收函数".into(),
+        ));
+    }
+    let from = before
+        .nodes
+        .iter()
+        .find(|n| n.id == input.from_id)
+        .ok_or_else(|| AppError::BadRequest("发送节点不存在".into()))?;
+    let target = target_graph
+        .nodes
+        .iter()
+        .find(|n| n.id == input.target_id)
+        .ok_or_else(|| AppError::BadRequest("接收节点不存在".into()))?
+        .clone();
+    if !matches!(target.kind.as_str(), "function" | "method") {
+        return Err(AppError::BadRequest("接收入口必须是函数或方法".into()));
+    }
+    let note = input.note.trim();
+    if note.is_empty() || note.chars().count() > 2000 || from.id == target.id {
+        return Err(AppError::BadRequest(
+            "请填写关联依据（1–2000 字），并选择不同的接收节点".into(),
+        ));
+    }
+    let edge_id = format!(
+        "manual-async-{}",
+        crate::analysis::stable_id(&format!("{}:{}", from.id, target.id))
+    );
+    if before.edges.iter().any(|e| e.id == edge_id) {
+        return Err(AppError::BadRequest("这两个节点已有人工异步关联".into()));
+    }
+    let mut graph = before.clone();
+    if !graph.nodes.iter().any(|n| n.id == target.id) {
+        graph.nodes.push(target.clone());
+        graph
+            .analysis
+            .as_mut()
+            .unwrap()
+            .pending_nodes
+            .push(target.id.clone());
+    }
+    if let Some(report) = &mut graph.analysis {
+        report.pruned_node_ids.retain(|id| id != &target.id);
+    }
+    graph.edges.push(crate::model::GraphEdge {
+        id: edge_id.clone(),
+        from: from.id.clone(),
+        to: target.id.clone(),
+        kind: "async-boundary".into(),
+        flow_kind: "normal".into(),
+        condition: String::new(),
+        order: None,
+        label: "人工异步关联".into(),
+        call_site_status: "omitted-nodes".into(),
+        call_site_note: "人工跨越消息传递边界，非源码中的直接函数调用；请核对两端定义与关联说明。"
+            .into(),
+        file: String::new(),
+        line: 0,
+        description: note.into(),
+        evidence: format!(
+            "人工关联，尚未经静态分析验证。发送端 {}:{}；接收端 {}:{}。依据：{note}",
+            from.file, from.line, target.file, target.line
+        ),
+        confidence: 0.0,
+    });
+    let root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let validation = validate_graph(&graph, Some(&root));
+    if !validation.valid {
+        return Err(AppError::BadRequest(validation.errors.join("\n")));
+    }
+    state
+        .graph_store
+        .checkpoint(&slug, &before, &graph)
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(
+        serde_json::json!({"edgeId":edge_id,"nodeId":target.id}),
+    ))
+}
+async fn remove_manual_link(
+    State(state): State<AppState>,
+    AxumPath((slug, edge)): AxumPath<(String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    let jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if jobs.1.status == "running" {
+        return Err(AppError::BadRequest("请先停止采集再编辑关联".into()));
+    }
+    let before = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    if !before
+        .edges
+        .iter()
+        .any(|e| e.id == edge && e.id.starts_with("manual-async-") && e.kind == "async-boundary")
+    {
+        return Err(AppError::BadRequest("只能撤销人工异步关联".into()));
+    }
+    let mut graph = before.clone();
+    graph.edges.retain(|e| e.id != edge);
+    state
+        .graph_store
+        .checkpoint(&slug, &before, &graph)
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(serde_json::json!({"removed":edge})))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntryCheck {
+    file_id: String,
+    line: u32,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntryCreate {
+    from_id: String,
+    candidate_id: String,
+    note: String,
+}
+async fn list_entry_files(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<Vec<crate::analysis::entry::SourceFile>>, AppError> {
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(
+        crate::analysis::entry::files(&root).map_err(AppError::BadRequest)?,
+    ))
+}
+async fn read_entry_file(
+    State(state): State<AppState>,
+    AxumPath((slug, id)): AxumPath<(String, String)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let (name, text) = crate::analysis::entry::source(&root, &id).map_err(AppError::BadRequest)?;
+    Ok(Json(serde_json::json!({"name":name,"text":text})))
+}
+struct CheckGuard(Arc<std::sync::atomic::AtomicBool>);
+impl Drop for CheckGuard {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+async fn check_entry(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+    Json(input): Json<EntryCheck>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    {
+        let jobs = state
+            .analysis_jobs
+            .state
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        if jobs.1.status == "running"
+            || state
+                .entry_check_busy
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(AppError::BadRequest(
+                "已有采集或校验运行，请稍后再试".into(),
+            ));
+        }
+    }
+    let _guard = CheckGuard(state.entry_check_busy.clone());
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    if graph.analysis.is_none() {
+        return Err(AppError::BadRequest("当前图未配置 LSP 分析".into()));
+    }
+    let root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let (file, text) =
+        crate::analysis::entry::source(&root, &input.file_id).map_err(AppError::BadRequest)?;
+    let symbol = crate::analysis::entry::check(root, file, text.clone(), input.line)
+        .await
+        .map_err(AppError::BadRequest)?;
+    let token = crate::analysis::stable_id(&format!(
+        "{slug}:{}:{}",
+        symbol.id,
+        crate::analysis::stable_id(&text)
+    ));
+    let mut entries = state
+        .entry_candidates
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    entries.retain(|_, v| v.slug != slug);
+    entries.insert(
+        token.clone(),
+        crate::analysis::entry::Candidate {
+            slug,
+            node: symbol.clone(),
+            text,
+        },
+    );
+    Ok(Json(
+        serde_json::json!({"candidateId":token,"node":symbol,"message":"LSP 已确认函数身份；实际下游在采集时查询。"}),
+    ))
+}
+async fn create_entry(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+    Json(input): Json<EntryCreate>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    let jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if jobs.1.status == "running" {
+        return Err(AppError::BadRequest("请先停止采集再添加入口".into()));
+    }
+    let candidate = state
+        .entry_candidates
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .get(&input.candidate_id)
+        .filter(|c| c.slug == slug)
+        .cloned()
+        .ok_or_else(|| AppError::BadRequest("入口校验已失效，请重新校验".into()))?;
+    let before = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let root = state
+        .project_catalog
+        .resolve_root(&before.project_id)
+        .map_err(AppError::BadRequest)?;
+    let path = resolve_source_path(&root, &candidate.node.file).map_err(AppError::BadRequest)?;
+    if std::fs::read_to_string(path).map_err(|e| AppError::BadRequest(e.to_string()))?
+        != candidate.text
+    {
+        return Err(AppError::BadRequest(
+            "源码在校验后发生变化，请重新选择并校验".into(),
+        ));
+    }
+    let parent = before
+        .nodes
+        .iter()
+        .find(|n| n.id == input.from_id)
+        .ok_or_else(|| AppError::BadRequest("父节点不存在".into()))?;
+    if parent.id == candidate.node.id {
+        return Err(AppError::BadRequest("后续入口不能与当前节点相同".into()));
+    }
+    if input.note.chars().count() > 2000 {
+        return Err(AppError::BadRequest("关联说明不能超过 2000 字".into()));
+    }
+    let mut graph = before.clone();
+    let mut target = candidate.node;
+    let edge_id = format!(
+        "manual-async-{}",
+        crate::analysis::stable_id(&format!("{}:{}", parent.id, target.id))
+    );
+    if graph.edges.iter().any(|e| e.id == edge_id) {
+        return Err(AppError::BadRequest("已经存在该人工关联".into()));
+    }
+    if !graph.nodes.iter().any(|n| n.id == target.id) {
+        target.role = "人工采集入口；函数身份已由 LSP 确认".into();
+        graph.nodes.push(target.clone());
+        graph
+            .analysis
+            .as_mut()
+            .ok_or_else(|| AppError::BadRequest("图缺少分析信息".into()))?
+            .pending_nodes
+            .push(target.id.clone());
+    }
+    let note = if input.note.trim().is_empty() {
+        "用户选定的后续入口，关联语义待核实"
+    } else {
+        input.note.trim()
+    };
+    if let Some(report) = &mut graph.analysis {
+        report.pruned_node_ids.retain(|id| id != &target.id);
+    }
+    graph.edges.push(crate::model::GraphEdge {
+        id: edge_id.clone(),
+        from: parent.id.clone(),
+        to: target.id.clone(),
+        kind: "async-boundary".into(),
+        flow_kind: "normal".into(),
+        condition: String::new(),
+        order: None,
+        label: "人工入口".into(),
+        call_site_status: "omitted-nodes".into(),
+        call_site_note: "人工添加的后续入口，不代表直接函数调用。".into(),
+        file: String::new(),
+        line: 0,
+        description: note.into(),
+        evidence: format!(
+            "人工关联。父节点 {}:{}；入口定义 {}:{}。{note}",
+            parent.file, parent.line, target.file, target.line
+        ),
+        confidence: 0.0,
+    });
+    let validation = validate_graph(&graph, Some(&root));
+    if !validation.valid {
+        return Err(AppError::BadRequest(validation.errors.join("\n")));
+    }
+    state
+        .graph_store
+        .checkpoint(&slug, &before, &graph)
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(
+        serde_json::json!({"nodeId":target.id,"edgeId":edge_id}),
+    ))
+}
+
+async fn analysis_status(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<crate::analysis::resume::Status>, AppError> {
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(Json(
+        if jobs.0 == slug && jobs.1.draft_id == state.analysis_draft_id {
+            jobs.1.clone()
+        } else {
+            crate::analysis::resume::Status {
+                pending: graph
+                    .analysis
+                    .map_or(0, |report| report.pending_nodes.len()),
+                ..Default::default()
+            }
+        },
+    ))
+}
+async fn start_analysis(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<ResumeRequest>,
+) -> Result<Json<crate::analysis::resume::Status>, AppError> {
+    same_origin(&headers)?;
+    if !(1..=1000).contains(&request.request_budget) {
+        return Err(AppError::BadRequest("本轮请求预算须在 1–1000 之间".into()));
+    }
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    let report = graph
+        .analysis
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("此图不是 LSP 分析产物".into()))?;
+    if !crate::analysis::provider::Language::supported(&report.provider)
+        || report.pending_nodes.is_empty()
+    {
+        return Err(AppError::BadRequest("没有可续采的 LSP 分析边界".into()));
+    }
+    if !report.pending_nodes.contains(&request.node_id)
+        || graph.edges.iter().any(|e| e.from == request.node_id)
+    {
+        return Err(AppError::BadRequest(
+            "只能从尚未采集下游的叶子节点开始；收起节点不等于叶子节点".into(),
+        ));
+    }
+    let root = state
+        .project_catalog
+        .resolve_root(&graph.project_id)
+        .map_err(AppError::BadRequest)?;
+    let status = crate::analysis::resume::Status {
+        draft_id: state.analysis_draft_id.clone(),
+        status: "running".into(),
+        completed: 0,
+        pending: report.pending_nodes.len(),
+        message: "正在初始化语言服务器…".into(),
+    };
+    {
+        let mut jobs = state
+            .analysis_jobs
+            .state
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        if jobs.1.status == "running"
+            || state
+                .entry_check_busy
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(AppError::BadRequest(
+                "已有采集或校验任务运行，请等待或停止后再试".into(),
+            ));
+        }
+        *jobs = (slug.clone(), status.clone());
+        state
+            .analysis_jobs
+            .cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    tokio::spawn(async move {
+        let temporary = state.analysis_draft_id.is_some();
+        let result = crate::analysis::resume::run(
+            state.graph_store,
+            slug,
+            root,
+            graph,
+            request.request_budget,
+            Some(request.node_id),
+            state.analysis_jobs.clone(),
+        )
+        .await;
+        if let Ok(mut jobs) = state.analysis_jobs.state.lock() {
+            jobs.1.status = if result.is_err() {
+                "failed"
+            } else if state
+                .analysis_jobs
+                .cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                "stopped"
+            } else {
+                "finished"
+            }
+            .into();
+            jobs.1.message = match result {
+                Err(e) => e,
+                Ok(()) if temporary => "结果已暂存，采纳并保存后才写入图文件。".into(),
+                Ok(()) => "本轮已结束；已保存检查点，可加载结果或继续下一轮。".into(),
+            };
+        }
+    });
+    Ok(Json(status))
+}
+async fn stop_analysis(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<crate::analysis::resume::Status>, AppError> {
+    same_origin(&headers)?;
+    let mut jobs = state
+        .analysis_jobs
+        .state
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    if jobs.0 != slug || jobs.1.status != "running" || jobs.1.draft_id != state.analysis_draft_id {
+        return Err(AppError::BadRequest("此图没有运行中的任务".into()));
+    }
+    state
+        .analysis_jobs
+        .cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    jobs.1.message = "正在停止，保留已完成的采集结果。".into();
+    Ok(Json(jobs.1.clone()))
 }
 
 #[derive(Serialize)]
@@ -105,10 +683,44 @@ pub async fn serve(
         Arc::new(FileSourcePreviewer::default()),
         Arc::new(FileLayoutStore::new(layouts_dir)),
     );
+    let draft_sessions = Arc::downgrade(&state.drafts);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            let Some(sessions) = draft_sessions.upgrade() else {
+                break;
+            };
+            if let Ok(mut drafts) = sessions.lock() {
+                drafts.retain(|_, draft| {
+                    !draft.expired_clean(std::time::Duration::from_secs(15 * 60))
+                });
+            }
+        }
+    });
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
     let app = Router::new()
         .route("/api/health", get(health))
+        .route("/api/graphs/{slug}/source-files", get(list_entry_files))
+        .route(
+            "/api/graphs/{slug}/source-files/{file}",
+            get(read_entry_file),
+        )
+        .route("/api/graphs/{slug}/draft", post(drafts::edit))
+        .route("/api/graphs/{slug}/prune", post(prune_graph))
+        .route("/api/graphs/{slug}/entry-check", post(check_entry))
+        .route("/api/graphs/{slug}/entries", post(create_entry))
+        .route("/api/graphs/{slug}/links", post(add_manual_link))
+        .route(
+            "/api/graphs/{slug}/links/{edge}",
+            axum::routing::delete(remove_manual_link),
+        )
+        .route(
+            "/api/graphs/{slug}/analysis",
+            get(analysis_status)
+                .post(start_analysis)
+                .delete(stop_analysis),
+        )
         .route("/api/graphs", get(list_graphs))
         .route("/api/graphs/{slug}", get(get_graph).delete(archive_graph))
         .route("/api/graph-trash", get(list_archived_graphs))

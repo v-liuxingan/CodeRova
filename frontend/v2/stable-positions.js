@@ -11,6 +11,10 @@ export function stablePositions(graph, baseline, previous, direction = 'TB', anc
     const dy = oldAnchor && newAnchor ? oldAnchor.y - newAnchor.y : 0;
     return new Map([...baseline].map(([id, value]) => [id, { x: value.x + dx, y: value.y + dy }]));
   };
+  // Removed descendants must release their branch spacing. Preserve the operated
+  // node as the anchor, not the expanded layout's empty slots.
+  const visible = new Set(graph.nodes.map(n => n.id));
+  if ([...previous.keys()].some(id => !visible.has(id))) return reflow();
   const positions = new Map(), rows = new Map(), parents = new Map();
   for (const edge of graph.edges) {
     if (edge.flowKind === 'loop-back') continue;

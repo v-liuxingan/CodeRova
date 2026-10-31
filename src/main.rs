@@ -19,7 +19,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// V2：通过 rust-analyzer 生成项目内静态调用图（不覆盖已有文件）
+    /// 通过 Rust / Java LSP 生成项目内静态调用图（不覆盖已有文件）
     Analyze {
         #[arg(long, default_value = "callgraph.projects.json")]
         config: PathBuf,
@@ -36,6 +36,9 @@ enum Commands {
         max_depth: u32,
         #[arg(long, default_value_t = 200)]
         request_budget: usize,
+        /// 保留匹配的边界节点，但不采集其下游；可重复指定相对文件或目录
+        #[arg(long = "exclude-path")]
+        exclude_paths: Vec<String>,
         #[arg(long, default_value = "rust-analyzer")]
         server: PathBuf,
         #[arg(long = "server-arg", allow_hyphen_values = true)]
@@ -108,6 +111,7 @@ async fn main() -> ExitCode {
             column,
             max_depth,
             request_budget,
+            exclude_paths,
             server,
             server_args,
             output,
@@ -121,6 +125,7 @@ async fn main() -> ExitCode {
                     column,
                     max_depth,
                     request_budget,
+                    exclude_paths,
                     server,
                     server_args,
                     output,

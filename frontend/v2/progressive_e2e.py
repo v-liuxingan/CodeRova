@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='window-test-') as d:
   page.route('**/v2/?*',relation_page)
   page.goto(BASE+'/v2/?graph=codex-interactive-startup-lsp');expect(page.locator('#fit')).to_be_enabled(timeout=120000)
   expect(page.locator('#window-unit')).to_have_value('layers')
-  page.select_option('#window-unit','nodes');page.click('#apply-window');expect(page.locator('#stats')).to_contain_text('50 / 4144')
+  page.locator('#display-settings > summary').click();page.select_option('#window-unit','nodes');page.click('#apply-window');expect(page.locator('#stats')).to_contain_text('50 / 4144')
   assert page.evaluate('window.__testGraph.getNodeData().length')==50
   assert page.locator('#coverage-issues li').count()==0
   rootid=page.evaluate('window.__testGraph.getNodeData().find(n=>n.data.more).id');page.select_option('#symbols',rootid)

@@ -13,7 +13,9 @@ export function edgeLanes(edges, states = new Map(), direction = 'TB') {
       type: direction === 'LR' ? 'adaptive-horizontal' : 'adaptive-vertical',
       data: { laneFraction: .5, memberIds }, states: states.get(edge.id) || [],
       style: { sourcePort: `out:${edge.id}`, targetPort: `in:${edge.id}`,
-        labelText: group.length > 1 ? `${group.length} 条关系` : Number.isInteger(edge.order) ? `顺序 ${edge.order}` : edge.sourceId && edge.line > 0 ? `L${edge.line}` : '',
+        increasedLineWidthForHitTesting: 12,
+        lineDash: (edge.kind === 'async-boundary' || edge.kind === 'trait-dispatch') ? [5,4] : undefined,
+        labelText: edge.kind === 'trait-dispatch' ? '' : edge.id.startsWith('manual-async-') || edge.sourceId?.startsWith('manual-async-') ? '人工异步关联' : group.length > 1 ? `${group.length} 条关系` : Number.isInteger(edge.order) ? `顺序 ${edge.order}` : edge.sourceId && edge.line > 0 ? `L${edge.line}` : '',
         curvePosition: [.5,.5], curveOffset: [0,0], loopDist: 40 },
     });
   }

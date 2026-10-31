@@ -13,6 +13,8 @@ pub struct Session {
     output: BufReader<ChildStdout>,
     id: u64,
     pub ready: bool,
+    pub usable: bool,
+    pub settings: Value,
 }
 
 impl Session {
@@ -32,6 +34,8 @@ impl Session {
             child,
             id: 0,
             ready: false,
+            usable: true,
+            settings: Value::Null,
         })
     }
 
@@ -95,12 +99,31 @@ impl Session {
         if method == "experimental/serverStatus" {
             self.ready = value["params"]["quiescent"].as_bool().unwrap_or(false);
         }
+        if method == "language/status" && value["params"]["type"] == "Started" {
+            self.ready = true;
+        }
         if let Some(id) = value.get("id").filter(|_| !method.is_empty()) {
             let result = match method {
                 "workspace/configuration" => Some(Value::Array(
                     value["params"]["items"]
                         .as_array()
-                        .map(|items| items.iter().map(|_| Value::Null).collect())
+                        .map(|items| {
+                            items
+                                .iter()
+                                .map(|item| {
+                                    let mut value = &self.settings;
+                                    for part in item["section"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .split('.')
+                                        .filter(|s| !s.is_empty())
+                                    {
+                                        value = &value[part];
+                                    }
+                                    value.clone()
+                                })
+                                .collect()
+                        })
                         .unwrap_or_default(),
                 )),
                 "window/workDoneProgress/create"
@@ -125,6 +148,9 @@ impl Session {
         params: Value,
         seconds: u64,
     ) -> Result<Value, String> {
+        // Partial reads/timeouts cannot safely resume the framed stream. A
+        // complete matching response, including an RPC error, can resume.
+        self.usable = false;
         self.id += 1;
         let id = self.id;
         let deadline = Instant::now() + Duration::from_secs(seconds);
@@ -134,6 +160,7 @@ impl Session {
             loop {
                 let value = self.read().await?;
                 if value.get("method").is_none() && value["id"] == id {
+                    self.usable = true;
                     if let Some(error) = value.get("error") {
                         return Err(format!("{method}: {error}"));
                     }
@@ -158,7 +185,7 @@ impl Session {
             Ok(())
         })
         .await
-        .map_err(|_| "等待 rust-analyzer 索引完成超时".to_owned())?
+        .map_err(|_| "等待语言服务器索引完成超时".to_owned())?
     }
 
     pub async fn stop(mut self) {

@@ -1,12 +1,14 @@
 # V2 源码分析与 G6 阅读器
 
+日常操作以 [工作台 Skill](skills/callgraph-workbench/SKILL.md) 为准；本文的阶段记录用于开发背景。
+
 全局架构见[当前系统设计](system-design.md)；各能力完成情况、最近验证与待办见
 [开发进度](development-status.md)。本文保留 V2 的启动、分析与开发操作说明。
 
 V2 现支持[按调用层级渐进展示](v2-progressive-rendering.md)：默认 50 层，边界节点可继续
 展开后续 50 层；支持横/纵同层对齐、可选节点数量模式及完整图搜索。原始图数据保留。
-默认使用调用路径视图，共享函数在不同分支下以独立引用展示；可切换调用关系视图检查
-原始共享拓扑。重复子树按需展开，递归引用停止扩展，两者均使用 G6。
+仅提供调用路径视图，共享函数在不同分支下以独立引用展示；调用关系视图已移除。
+重复子树按需展开，递归引用停止扩展，使用 G6。
 
 第一阶段已经实现可运行的纵向链路：可信本地 CLI → rust-analyzer → 带源码证据的
 CallGraph JSON → 现有 HTTP 接口 → G6 Canvas → 定义与调用点预览。
@@ -44,7 +46,8 @@ cargo run -- analyze --project callgraph-visualizer --file src/validation.rs --l
 这是当前源码、指定范围和配置下的实测结果，不是语言服务器完整性承诺。
 
 `--server` 可指定 rust-analyzer 可执行文件，重复的 `--server-arg` 传递进程参数。
-本阶段适配依赖 rust-analyzer 的索引就绪通知，不宣称兼容任意 LSP 服务器。
+Rust 适配依赖 rust-analyzer 的索引就绪通知；Java 已接入 Eclipse JDT LS，
+通过服务端本地 LSP 配置选择。不能据此宣称兼容任意 LSP 服务器。
 构建脚本与过程宏执行关闭，以避免首次分析运行项目脚本；此设置可能减少分析覆盖。
 
 初始化/单次查询有超时；索引就绪等待最多 180 秒。Ctrl+C 取消并关闭会话，取消不导出图。

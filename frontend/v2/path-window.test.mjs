@@ -30,3 +30,16 @@ const textual=new PathWindow({...sequential,edges:sequential.edges.map((e,i)=>({
 textual.reset(1);assert.deepEqual(textual.snapshot().edges.map(e=>e.line),[10,20,30]);
 assert(textual.snapshot().edges.every(e=>e.order===undefined));
 console.log('Repeated callee occurrences retain known order; source position never fabricates execution order PASS');
+
+calls.collapse('a');
+const exact=calls.revealCall('a','last');
+assert.equal(calls.snapshot().nodes.length,2);
+assert.equal(calls.edges.get(exact).sourceId,'last');
+assert.equal(calls.hiddenChildren('a'),2);
+assert.equal(calls.revealCall('a','last'),exact);
+assert.equal(calls.snapshot().nodes.length,2);
+calls.revealCall('a','first');assert.equal(calls.snapshot().nodes.length,3);
+assert.equal(calls.revealCall('b','middle'),null);
+console.log('Call-point reveal: exact occurrence, no sibling expansion, idempotence and caller validation PASS');
+
+assert.deepEqual(calls.snapshot().edges.map(e=>e.sourceId),['first','last']);

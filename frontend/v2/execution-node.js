@@ -1,3 +1,4 @@
+import { symbolPresentation } from '../../public/js/api.js';
 import { ExtensionCategory, Label, Rect, register } from '@antv/g6';
 
 // Canvas shapes share G6's hit testing and drag behavior; no per-node DOM overlays.
@@ -12,7 +13,16 @@ class ExecutionNode extends Rect {
       background: false, opacity: attributes.opacity ?? 1, ...options,
     }, container);
     const top = -attributes.size[1] / 2 + 14;
-    text('category', attributes.cardCategory, top, {
+    this.upsert('type-badge', Label, attributes.cardBadge ? {
+      x: -126, y: top + 7, text: attributes.cardBadge,
+      fontFamily: 'Segoe UI, sans-serif', fontSize: 10, fontWeight: 700,
+      textAlign: 'center', textBaseline: 'middle', fill: attributes.cardText,
+      background: true, backgroundWidth: 17, backgroundHeight: 17,
+      backgroundRadius: 4, backgroundFill: attributes.cardControlFill,
+      backgroundStroke: attributes.stroke, backgroundLineWidth: 1,
+      opacity: attributes.opacity ?? 1,
+    } : false, container);
+    text('category', attributes.cardCategory, top, { x: attributes.cardBadge ? -110 : -134, wordWrapWidth: attributes.cardBadge ? 244 : 268,
       fill: attributes.cardAccent, fontWeight: 600, fontSize: 11,
     });
     const methodY = top + 24 + (attributes.cardClass ? 20 : 0);
@@ -58,15 +68,16 @@ export function executionCards(graph) {
     // Only method-qualified names identify an owner. Module paths of free
     // functions must not be presented as classes.
     const qualified = n.kind === 'method' ? n.label.match(/^(.+)::([^:]+)$/) : null;
-    const className = qualified?.[1] || '';
+    const semantic = symbolPresentation(n);
+    const className = semantic.owner || qualified?.[1] || '';
     const description = graph.analysis ? '' : (n.role || '').trim();
     return { id: n.id, data: {
-      label: qualified?.[2] || n.label, className,
+      label: qualified?.[2] || n.label, className, badge: semantic.badge,
       sourceId: n.sourceId || n.id, pathReference: Boolean(n.pathReference), pathCycle: Boolean(n.pathCycle),
       height: 82 + (className ? 20 : 0) + (description ? 24 : 0),
       pending: pending.has(n.sourceId || n.id),
-      tone: pending.has(n.sourceId || n.id) ? 'pending' : n.id === graph.root ? 'entry' : n.kind === 'method' ? 'method' : 'function',
-      category: kinds[n.kind] || n.kind || '符号',
+      tone: n.role?.startsWith('人工采集入口') ? 'manual' : pending.has(n.sourceId || n.id) ? 'pending' : n.id === graph.root ? 'entry' : n.kind === 'method' ? 'method' : 'function',
+      category: n.role?.startsWith('人工采集入口') ? '人工入口 · 已确认符号' : [semantic.type, semantic.type && ['struct','trait'].includes(n.kind) ? '' : kinds[n.kind] || n.kind || '符号', semantic.detail].filter(Boolean).join(' · '),
       purpose: description,
     } };
   });

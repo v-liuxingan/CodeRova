@@ -15,6 +15,14 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// A database, remote catalog, or generated graph source can implement this
 /// trait without changing the HTTP or rendering layers.
 pub trait GraphStore: Send + Sync {
+    fn checkpoint(
+        &self,
+        _slug: &str,
+        _before: &CallGraph,
+        _after: &CallGraph,
+    ) -> Result<(), String> {
+        Err("当前存储不支持续采".into())
+    }
     fn delete_archived(&self, slug: &str) -> Result<(), String>;
     fn archived(&self) -> Result<Vec<(String, CallGraph)>, String>;
     fn set_archived(&self, slug: &str, archived: bool) -> Result<(), String>;
@@ -91,6 +99,22 @@ impl FileGraphStore {
 }
 
 impl GraphStore for FileGraphStore {
+    fn checkpoint(&self, slug: &str, before: &CallGraph, after: &CallGraph) -> Result<(), String> {
+        let _guard = self.operation_lock.lock().map_err(|e| e.to_string())?;
+        let path = self.index()?.remove(slug).ok_or("图已移动或删除")?;
+        let mut current = read_graph_file(&path)?;
+        normalize_graph_category(&mut current);
+        if serde_json::to_value(&current).map_err(|e| e.to_string())?
+            != serde_json::to_value(before).map_err(|e| e.to_string())?
+        {
+            return Err("图已被其他操作修改，已停止续采以避免覆盖".into());
+        }
+        write_atomic(
+            &path,
+            &serde_json::to_vec_pretty(after).map_err(|e| e.to_string())?,
+        )
+    }
+
     fn delete_archived(&self, slug: &str) -> Result<(), String> {
         validate_slug(slug)?;
         let _guard = self.operation_lock.lock().map_err(|_| "图谱存储锁已损坏")?;
@@ -673,6 +697,21 @@ mod tests {
         store.delete_archived("example").unwrap();
         assert!(!path.with_extension("deleted").exists());
         assert_eq!(store.load("example").unwrap().title, "Conflict");
+    }
+
+    #[test]
+    fn checkpoint_preserves_concurrent_edits() {
+        let directory = tempfile::tempdir().unwrap();
+        write_graph(directory.path(), "tools/example.json", "tools", "Tools");
+        let store = FileGraphStore::new(directory.path().to_path_buf());
+        let before = store.load("example").unwrap();
+        let mut after = before.clone();
+        after.description = "checkpoint".into();
+        store.checkpoint("example", &before, &after).unwrap();
+        assert!(store.checkpoint("example", &before, &after).is_err());
+        assert_eq!(store.load("example").unwrap().description, "checkpoint");
+        store.set_archived("example", true).unwrap();
+        assert!(store.checkpoint("example", &after, &before).is_err());
     }
 
     fn write_graph(root: &Path, relative: &str, category_id: &str, title: &str) {

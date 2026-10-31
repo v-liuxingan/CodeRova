@@ -1,39 +1,61 @@
 <!doctype html>
 <html lang="zh-CN" data-theme="light">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Callgraph · 源码阅读 V2</title><script src="/v2/theme.js"></script><link rel="stylesheet" href="/v2/style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Callgraph · 源码阅读 V2</title><script src="/v2/theme.js"></script><link rel="stylesheet" href="/v2/style.css"><link rel="stylesheet" href="/vendor/monaco/monaco-preview.css"></head>
 <body>
 <a class="skip-link" href="#reader">跳到调用图</a>
-<header><a class="brand" href="/v2/">↳ CALLGRAPH <small>V2 · PREVIEW</small></a><span>从调用关系，回到源码。</span><div class="header-actions"><select id="appearance" aria-label="配色主题"><option value="light">亮色</option><option value="dark">深色</option></select><a href="/">经典工作台</a></div></header>
+<header><a class="brand" href="/v2/">↳ CALLGRAPH <small>V2 · PREVIEW</small></a><div class="header-actions"><select id="appearance" aria-label="配色主题"><option value="light">亮色</option><option value="dark">深色</option></select><a href="/">经典工作台</a></div></header>
 <div class="workspace">
-  <aside class="library" aria-label="项目与调用图">
-    <div class="section-title">项目资料库 <span id="graph-count"></span></div>
+  <aside id="project-library" class="library" aria-label="项目与调用图">
+    <div class="section-title sidebar-heading">项目资料库 <span id="graph-count"></span></div>
     <input id="filter" type="search" placeholder="搜索项目、分组或调用图…" aria-label="搜索项目、分组或调用图" autocomplete="off" spellcheck="false">
     <nav id="catalog" aria-label="调用图目录"></nav>
-    <div class="library-note">拖动调用图调整分组或顺序；删除的图可在回收站恢复。</div>
+
   </aside>
   <main id="reader" tabindex="-1">
-    <section class="heading"><div><h1 id="title">选择一个调用图</h1><p id="summary">左侧按项目列出所有调用图。</p></div><button id="fit" disabled>适应画布</button></section>
+    <div id="resize-library" class="sidebar-resizer sidebar-resizer-left" role="separator" aria-orientation="vertical" aria-label="调整项目栏宽度" aria-controls="project-library" tabindex="0" title="拖动调整项目栏宽度；方向键微调，双击复位"></div>
+    <div id="resize-inspector" class="sidebar-resizer sidebar-resizer-right" role="separator" aria-orientation="vertical" aria-label="调整详情栏宽度" aria-controls="source-inspector" tabindex="0" title="拖动调整详情栏宽度；方向键微调，双击复位"></div>
+    <button id="toggle-library" class="sidebar-handle sidebar-handle-left" aria-expanded="true" aria-controls="project-library" aria-label="收起项目栏" title="收起项目栏"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5"/></svg></button>
+    <button id="toggle-inspector" class="sidebar-handle sidebar-handle-right" aria-expanded="true" aria-controls="source-inspector" aria-label="收起证据栏" title="收起证据栏"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
+    <section class="heading"><div><h1 id="title">选择一个调用图</h1></div><button id="fit" disabled>适应画布</button></section>
     <div class="graph-controls" aria-label="图展示范围">
-      <label>视图 <select id="view-mode"><option value="paths">调用路径</option><option value="relations">调用关系</option></select></label>
-      <label>每次展开 <input id="window-size" type="number" min="1" step="1" value="50" aria-label="展开数量"></label>
-      <select id="window-unit" aria-label="展开单位"><option value="nodes">个节点</option><option value="layers" selected>层调用</option></select>
-      <button id="apply-window">从入口重新展示</button>
-      <fieldset id="direction" class="direction-switch" aria-label="布局方向"><label><input type="radio" name="direction" value="TB" checked><span>纵向</span></label><label><input type="radio" name="direction" value="LR"><span>横向</span></label></fieldset>
+      <fieldset id="direction" class="direction-switch" aria-label="布局方向"><label><input type="radio" name="direction" value="TB"><span>纵向</span></label><label><input type="radio" name="direction" value="LR" checked><span>横向</span></label></fieldset>
+      <button id="click-source" type="button" aria-pressed="false" title="开启后，点击节点或精确调用连线时打开编辑器">点击跳转：关</button>
+      <select id="source-editor" aria-label="源码编辑器" title="源码跳转使用的编辑器；IDEA 需注册 idea:// 协议"><option value="vscode">VS Code</option><option value="idea">IntelliJ IDEA</option></select>
+      <details id="display-settings" class="display-settings"><summary><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 4h12M2 12h12"/><circle cx="6" cy="4" r="2"/><circle cx="10" cy="12" r="2"/></svg>展示设置</summary><div class="settings-body" role="group" aria-labelledby="settings-title">
+      <div class="settings-heading"><strong id="settings-title">展开范围</strong><span>按需探索调用链</span></div>
+      <div class="settings-row"><label for="window-size">每次展开</label><div class="settings-value"><input id="window-size" type="number" min="1" step="1" value="50" aria-label="展开数量" aria-describedby="window-help">
+      <select id="window-unit" aria-label="展开单位"><option value="nodes">个节点</option><option value="layers" selected>层调用</option></select></div></div>
+      <p id="window-help">点击节点展开时使用此范围，原始调用数据保留。</p>
+      <div class="settings-footer"><button id="apply-window">重置视图<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button></div>
+      </div></details>
     </div>
+    <div id="edit-bar" hidden class="edit-bar" aria-label="图修改"><span id="edit-state" role="status">已保存</span><button id="restore-hidden" hidden>恢复隐藏</button><button id="discard-edits" disabled>放弃修改</button><button id="save-edits" class="primary" disabled>保存</button></div>
+    <div id="active-collection" class="active-collection" hidden role="status" tabindex="-1"><span id="active-collection-status">正在采集</span><button id="resume-stop" hidden>停止采集</button><div class="collection-result-actions" id="collection-result-actions" hidden><button id="resume-discard">放弃</button><button id="resume-refresh">预览</button><button id="resume-accept" class="collection-result">采纳并保存</button></div></div>
+    <details id="graph-details" class="graph-details"><summary>图详情 <span id="analysis-brief">说明与采集状态</span></summary><div class="graph-details-body"><p id="summary">左侧按项目列出所有调用图。</p>
     <details id="coverage" hidden><summary id="coverage-title"></summary><p id="coverage-scope"></p><ul id="coverage-issues"></ul></details>
+    <details id="resume-panel" hidden aria-label="断点续采"><summary id="resume-summary">采集任务</summary>
+      <div class="resume-actions"><strong>采集任务</strong></div>
+      <p id="resume-status" role="status" aria-live="polite"></p>
+      <small>结果暂存，采纳后写入图文件。停止需等待当前操作结束。</small>
+    </details>
+    </div></details>
     <div id="status" role="status" aria-live="polite">正在读取项目目录…</div>
     <div id="canvas" aria-label="调用关系画布"></div>
-    <footer><span id="stats">—</span><span>拖动画布 · 滚轮缩放 · 点击节点查看证据</span></footer>
+    <footer><span id="stats">—</span></footer>
   </main>
-  <aside class="inspector" aria-label="源码与调用证据">
-    <div class="section-title">源码证据</div>
-    <input id="symbol-filter" type="search" placeholder="查找当前图的符号" aria-label="查找当前图的符号">
-    <select id="symbols" aria-label="选择符号"><option>尚未加载调用图</option></select>
-    <button id="symbols-more" hidden>继续加载符号</button>
-    <h2 id="selection-title">先选择一个符号</h2><p id="selection-description">调用点与函数定义均可在这里核对。</p>
+  <aside id="source-inspector" class="inspector" aria-label="详情">
+    <div id="inspector-heading" class="section-title sidebar-heading">详情</div>
+    <input id="symbol-filter" type="search" placeholder="搜索节点" aria-label="搜索节点">
+    <select id="symbols" aria-label="选择节点"><option>尚未加载调用图</option></select>
+    <button id="symbols-more" hidden>加载更多选项</button><span id="symbol-load-status" role="status" aria-live="polite"></span>
+    <h2 id="selection-title">未选择节点</h2>
+    <div id="source-location"></div>
+    <button id="open-source" type="button" hidden>在编辑器打开</button>
+    <details id="selection-notes" hidden><summary>说明</summary><p id="selection-description"></p></details>
+    <div id="node-actions-panel"></div>
 
     <div id="relations"></div>
-    <div id="source-location"></div><pre id="source" tabindex="0" aria-label="源码预览"></pre>
+    <pre id="source" tabindex="0" aria-label="源码预览" hidden></pre>
   </aside>
 </div>
 <script type="module" src="/vendor/v2/workbench.js"></script>

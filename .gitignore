@@ -1,6 +1,7 @@
 /target/
 /node_modules/
 /callgraph.projects.local.json
+/callgraph.lsp.local.json
 __pycache__/
 *.py[cod]
 /.idea/

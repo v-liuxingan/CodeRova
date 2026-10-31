@@ -31,9 +31,30 @@ def stub_source_open(route):
     )
 
 
+# Additive V2 task contract: ordinary reads expose a state, not a command/path input.
+def assert_analysis_task_contract(request, base_url, slug):
+    response = request.get(f"{base_url}/api/graphs/{slug}/analysis")
+    assert response.ok
+    state = response.json()
+    assert {'status', 'completed', 'pending', 'message'} <= state.keys()
+    rejected = request.post(f"{base_url}/api/graphs/{slug}/analysis", data={'requestBudget': 1, 'server': 'arbitrary'}, headers={'Origin': base_url})
+    assert rejected.status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/draft", data={"operation":{"action":"open","request":{"graph":slug,"targetType":"node","id":"unknown","path":"arbitrary"}}}, headers={"Origin":base_url}).status == 422
+    # Java uses server-side launch configuration; browser requests cannot supply it.
+    assert request.post(f"{base_url}/api/graphs/{slug}/draft", data={"operation":{"action":"analyze","request":{"nodeId":"unknown","requestBudget":1,"javaHome":"arbitrary"}}}, headers={"Origin":base_url}).status == 422
+    rejected_link = request.post(f"{base_url}/api/graphs/{slug}/links", data={'path':'arbitrary'}, headers={'Origin':base_url})
+    assert rejected_link.status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/draft", data={"operation":{"action":"read","path":"arbitrary"}}, headers={"Origin":base_url}).status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/draft", data={"operation":{"action":"analyze","request":{"nodeId":"unknown","requestBudget":1,"path":"arbitrary"}}}, headers={"Origin":base_url}).status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/prune", data={"nodeId":"unknown","apply":True,"path":"arbitrary"}, headers={"Origin":base_url}).status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/entry-check", data={'fileId':'unknown','line':1,'path':'arbitrary'}, headers={'Origin':base_url}).status == 422
+    assert request.post(f"{base_url}/api/graphs/{slug}/entries", data={'fromId':'unknown','candidateId':'unknown','note':'','path':'arbitrary'}, headers={'Origin':base_url}).status == 422
+
+
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 980}, device_scale_factor=1)
+    assert_analysis_task_contract(page.request, BASE_URL, 'codex-end-to-end-agent-loop')
     console_errors = []
     page_errors = []
     page.on(
@@ -350,6 +371,16 @@ with sync_playwright() as playwright:
         )
         assert graph_response.ok
         graph = graph_response.json()
+        for symbol_node in graph['nodes']:
+            if 'symbol' in symbol_node:
+                facts = symbol_node['symbol']
+                assert isinstance(facts['ownerKind'], str)
+                assert isinstance(facts['ownerName'], str)
+                assert all(isinstance(value, str) for value in facts.get('modifiers', []) + facts.get('tags', []))
+        for relation in graph['edges']:
+            if relation['kind'] == 'trait-dispatch' and relation.get('callSiteStatus') == 'omitted-nodes':
+                assert not relation.get('file') and relation.get('line', 0) == 0
+                assert relation.get('callSiteNote')
         exact_edge = next(
             edge
             for edge in graph["edges"]
