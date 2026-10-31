@@ -1,0 +1,24 @@
+{
+  "java": {
+    "command": "E:/tools/jdk-25/bin/java.exe",
+    "args": [
+      "-Declipse.application=org.eclipse.jdt.ls.core.id1",
+      "-Dosgi.bundles.defaultStartLevel=4",
+      "-Declipse.product=org.eclipse.jdt.ls.core.product",
+      "-Xmx2G",
+      "--add-modules=ALL-SYSTEM",
+      "--add-opens",
+      "java.base/java.util=ALL-UNNAMED",
+      "--add-opens",
+      "java.base/java.lang=ALL-UNNAMED",
+      "-jar",
+      "E:/tools/jdtls/plugins/org.eclipse.equinox.launcher_REPLACE_WITH_ACTUAL_VERSION.jar",
+      "-configuration",
+      "E:/tools/jdtls/config_win",
+      "-data",
+      "{workspace}"
+    ],
+    "workspaceRoot": "E:/caches/callgraph-jdtls",
+    "settings": {}
+  }
+}
