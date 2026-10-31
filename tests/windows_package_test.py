@@ -49,4 +49,3 @@ with tempfile.TemporaryDirectory(prefix='portable space-', dir=root / 'target') 
         finally:
             subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], check=False, capture_output=True)
             proc.wait(timeout=10)
-

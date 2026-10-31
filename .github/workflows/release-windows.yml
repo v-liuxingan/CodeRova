@@ -33,7 +33,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm run build:frontend
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          node --test frontend/workbench/*.test.mjs
+          $tests = @(Get-ChildItem frontend/workbench/*.test.mjs | ForEach-Object FullName)
+          node --test @tests
       - name: Verify backend
         run: |
           cargo fmt --check
