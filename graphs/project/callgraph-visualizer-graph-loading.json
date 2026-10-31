@@ -47,8 +47,8 @@
       "crate": "callgraph-visualizer",
       "module": "main",
       "file": "src/main.rs",
-      "line": 61,
-      "endLine": 111,
+      "line": 85,
+      "endLine": 163,
       "role": "进程命令入口",
       "description": "解析 serve、validate 或 open 子命令，并把默认启动参数转换为服务地址和存储目录。本图沿 serve 分支继续，另外两个 CLI 分支由证据校验图解释。",
       "state": "expanded"
@@ -62,7 +62,7 @@
       "module": "server",
       "file": "src/server.rs",
       "line": 88,
-      "endLine": 156,
+      "endLine": 162,
       "role": "本地 HTTP 组装器",
       "description": "拒绝非 loopback 地址，加载项目目录并组装文件图谱、布局、源码导航和预览实现。随后注册 API 与静态资源路由并进入带优雅退出的 Axum 服务循环。",
       "state": "expanded"
@@ -89,8 +89,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 207,
-      "endLine": 224,
+      "line": 213,
+      "endLine": 230,
       "role": "图谱目录处理器",
       "description": "响应 GET /api/graphs，读取全部图文档后只保留 slug、标题、分类、项目和规模信息。排序后的摘要让前端构建目录，而不必先传输所有节点和边。",
       "state": "expanded"
@@ -103,8 +103,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 74,
-      "endLine": 83,
+      "line": 134,
+      "endLine": 143,
       "role": "文件目录读取边界",
       "description": "持有操作锁后建立一次稳定索引，并逐个读取索引中的图文档。任一重复 slug 或格式错误都会阻止返回不一致的目录。",
       "state": "expanded"
@@ -117,8 +117,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 42,
-      "endLine": 63,
+      "line": 62,
+      "endLine": 83,
       "role": "全局 slug 索引器",
       "description": "递归收集 JSON 文件并以文件名建立有序索引；分类目录不能制造同名图谱。它把物理目录结构转换成 API 可使用的全局 slug 空间。",
       "state": "expanded"
@@ -131,8 +131,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 251,
-      "endLine": 271,
+      "line": 319,
+      "endLine": 347,
       "role": "分类目录递归扫描",
       "description": "遍历 graphs 下的子目录，只收集普通 JSON 文件并忽略其他文件。递归行为使物理分类与页面目录保持一致。",
       "state": "expanded"
@@ -145,8 +145,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 65,
-      "endLine": 70,
+      "line": 85,
+      "endLine": 90,
       "role": "分类归一化读取器",
       "description": "解析单个索引文件，检查 JSON 内分类与物理目录是否一致，并为旧图补充默认分类。这里输出的是目录和单图接口共同使用的 CallGraph。",
       "state": "expanded"
@@ -159,8 +159,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 304,
-      "endLine": 308,
+      "line": 380,
+      "endLine": 384,
       "role": "图文件读取入口",
       "description": "从磁盘读取完整字节并交给带字段路径的严格解析器。读取失败和格式失败都保留文件上下文，便于生成模型直接修复。",
       "state": "expanded"
@@ -173,8 +173,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 310,
-      "endLine": 340,
+      "line": 386,
+      "endLine": 416,
       "role": "严格 JSON 解析器",
       "description": "把 JSON 转成 CallGraph，并在未知字段、缺失字段、类型或语法异常时报告字段路径、行列和修复建议。只有格式契约成立的图才能进入目录或单图响应。",
       "state": "expanded"
@@ -187,8 +187,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 226,
-      "endLine": 231,
+      "line": 232,
+      "endLine": 237,
       "role": "完整图谱处理器",
       "description": "响应 GET /api/graphs/{slug}，通过共享读取函数加载唯一图文档并序列化完整 CallGraph。它不混入个人布局，避免语义内容与交互位置相互覆盖。",
       "state": "expanded"
@@ -201,8 +201,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 502,
-      "endLine": 504,
+      "line": 508,
+      "endLine": 510,
       "role": "HTTP 图谱读取适配器",
       "description": "把 GraphStore 的字符串错误映射为 HTTP 错误，并让单图、布局、校验、跳转和预览接口共享同一种 slug 解析行为。",
       "state": "expanded"
@@ -215,8 +215,8 @@
       "crate": "callgraph-visualizer",
       "module": "graph_store",
       "file": "src/graph_store.rs",
-      "line": 85,
-      "endLine": 96,
+      "line": 145,
+      "endLine": 156,
       "role": "单图文件定位器",
       "description": "校验外部 slug、持有存储锁并重新建立索引，然后读取唯一匹配的图文件。重新索引让模型新增或移动文件后无需重启服务。",
       "state": "expanded"
@@ -229,8 +229,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 285,
-      "endLine": 296,
+      "line": 291,
+      "endLine": 302,
       "role": "布局读取处理器",
       "description": "响应 GET /api/graphs/{slug}/layout，先确认图谱存在，再读取独立布局文档。缺失布局会降级为空布局，已有布局则在返回前过滤不存在的节点和异常坐标。",
       "state": "expanded"
@@ -271,8 +271,8 @@
       "crate": "callgraph-visualizer",
       "module": "server",
       "file": "src/server.rs",
-      "line": 359,
-      "endLine": 391,
+      "line": 365,
+      "endLine": 397,
       "role": "失效布局清理器",
       "description": "校验布局版本和图 slug，并删除已不存在节点或非有限、越界坐标。它允许图结构更新后继续使用仍然有效的用户位置。",
       "state": "expanded"
@@ -289,9 +289,9 @@
       "label": "启动服务",
       "callSiteStatus": "exact",
       "file": "src/main.rs",
-      "line": 89,
+      "line": 141,
       "description": "CLI 把解析后的地址、静态目录、图谱目录、布局目录和项目配置交给本地服务。",
-      "evidence": "src/main.rs:70-90 的 Serve match 分支直接 await serve。",
+      "evidence": "src/main.rs:131-142 的 Serve match 分支直接 await serve。",
       "confidence": 1.0
     },
     {
@@ -319,7 +319,7 @@
       "callSiteStatus": "virtual-node",
       "callSiteNote": "serve 在 src/server.rs:112 把 list_graphs 注册为 Axum handler；实际调用由框架路由完成。",
       "description": "收到目录路径时，Axum 从共享状态调用目录处理器；这条路径与单图和布局请求互斥。",
-      "evidence": "src/server.rs:110-126 的 Router 路由注册。",
+      "evidence": "src/server.rs:110-132 的 Router 路由注册。",
       "confidence": 1.0
     },
     {
@@ -333,7 +333,7 @@
       "callSiteStatus": "virtual-node",
       "callSiteNote": "serve 在 src/server.rs:113 注册 get_graph；实际调用由 Axum 根据路径参数完成。",
       "description": "完整图谱请求进入单图处理器，slug 从 HTTP 路径解析后再交给存储边界。",
-      "evidence": "src/server.rs:113 的路由注册和 src/server.rs:226-231 的 handler。",
+      "evidence": "src/server.rs:113 的路由注册和 src/server.rs:232-237 的 handler。",
       "confidence": 1.0
     },
     {
@@ -345,9 +345,9 @@
       "condition": "GET /api/graphs/{slug}/layout",
       "label": "布局请求",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "serve 在 src/server.rs:120-123 注册 get_graph_layout；实际调用由 Axum 完成。",
+      "callSiteNote": "serve 在 src/server.rs:126-129 注册 get_graph_layout；实际调用由 Axum 完成。",
       "description": "布局请求走独立处理器，使用户坐标不会污染模型生成的调用关系。",
-      "evidence": "src/server.rs:120-123 的布局路由注册。",
+      "evidence": "src/server.rs:126-129 的布局路由注册。",
       "confidence": 1.0
     },
     {
@@ -358,7 +358,7 @@
       "label": "列举全部图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 208,
+      "line": 214,
       "description": "HTTP 层通过 GraphStore 接口读取目录，默认运行时分发到 FileGraphStore。",
       "evidence": "AppState.graph_store 类型为 Arc<dyn GraphStore>，serve 注入 FileGraphStore。",
       "confidence": 1.0
@@ -372,7 +372,7 @@
       "label": "建立索引",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 79,
+      "line": 139,
       "description": "在读取任何图之前先得到去重且有序的 slug 到路径映射。",
       "evidence": "FileGraphStore::list 在锁内调用 self.index。",
       "confidence": 1.0
@@ -385,7 +385,7 @@
       "label": "递归扫描",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 44,
+      "line": 64,
       "description": "索引器先递归收集物理 JSON 文件，再按路径排序和检查重复 slug。",
       "evidence": "FileGraphStore::index 首次调用 collect_graph_files。",
       "confidence": 1.0
@@ -399,7 +399,7 @@
       "label": "逐图读取",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 81,
+      "line": 141,
       "description": "索引建立后，迭代器闭包逐个解析文件并保留对应 slug；任何失败都会使整个目录请求失败。",
       "evidence": "FileGraphStore::list 的 map 闭包调用 read_indexed_graph。",
       "confidence": 1.0
@@ -412,7 +412,7 @@
       "label": "读取文档",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 66,
+      "line": 86,
       "description": "分类归一化之前先把磁盘 JSON 转换为 CallGraph。",
       "evidence": "read_indexed_graph 第一条语句调用 read_graph_file。",
       "confidence": 1.0
@@ -425,7 +425,7 @@
       "label": "严格解析",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 307,
+      "line": 383,
       "description": "读取出的原始字节进入带字段路径诊断的统一解析器。",
       "evidence": "read_graph_file 调用 parse_graph。",
       "confidence": 1.0
@@ -438,7 +438,7 @@
       "label": "按 slug 读取",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 230,
+      "line": 236,
       "description": "单图处理器把 HTTP slug 交给共享读取适配器，并把成功结果序列化为 JSON。",
       "evidence": "get_graph 直接调用 read_graph。",
       "confidence": 1.0
@@ -451,7 +451,7 @@
       "label": "加载唯一图",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 503,
+      "line": 509,
       "description": "共享适配器通过 GraphStore::load 分发到文件实现，并统一映射存储错误。",
       "evidence": "read_graph 调用 state.graph_store.load。",
       "confidence": 1.0
@@ -465,7 +465,7 @@
       "label": "刷新定位",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 92,
+      "line": 152,
       "description": "每次单图请求重新扫描索引，因此新增或移动图文件后不需要重启服务。",
       "evidence": "FileGraphStore::load 在取 slug 前调用 self.index。",
       "confidence": 1.0
@@ -479,7 +479,7 @@
       "label": "解析目标图",
       "callSiteStatus": "exact",
       "file": "src/graph_store.rs",
-      "line": 95,
+      "line": 155,
       "description": "找到唯一路径后复用分类归一化读取器，保证目录与单图接口看到相同数据。",
       "evidence": "FileGraphStore::load 返回 self.read_indexed_graph。",
       "confidence": 1.0
@@ -492,7 +492,7 @@
       "label": "先确认图存在",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 289,
+      "line": 295,
       "description": "读取布局前先加载对应图，避免为不存在的 slug 暴露或创建布局。",
       "evidence": "get_graph_layout 首先调用 read_graph。",
       "confidence": 1.0
@@ -505,7 +505,7 @@
       "label": "再读取节点位置",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 292,
+      "line": 298,
       "description": "处理器通过 LayoutStore 接口读取与 slug 对应的独立布局文件。",
       "evidence": "get_graph_layout 调用 state.layout_store.load。",
       "confidence": 1.0
@@ -520,7 +520,7 @@
       "label": "没有保存布局",
       "callSiteStatus": "exact",
       "file": "src/server.rs",
-      "line": 294,
+      "line": 300,
       "description": "没有个人位置时创建空布局，让前端自动排版继续工作，而不是返回 404。",
       "evidence": "get_graph_layout 使用 unwrap_or_else(GraphLayout::empty)。",
       "confidence": 1.0
@@ -533,9 +533,9 @@
       "flowKind": "merge",
       "label": "校验已有位置",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "LayoutStore::load 返回 Option 后，由 get_graph_layout 在 src/server.rs:295 调用 sanitize_loaded_layout。",
+      "callSiteNote": "LayoutStore::load 返回 Option 后，由 get_graph_layout 在 src/server.rs:301 调用 sanitize_loaded_layout。",
       "description": "已有布局返回处理器后进入统一清理步骤，删除对当前图已经失效的位置。",
-      "evidence": "src/server.rs:290-295 的 load、fallback 和 sanitize 组合。",
+      "evidence": "src/server.rs:296-301 的 load、fallback 和 sanitize 组合。",
       "confidence": 1.0
     },
     {
@@ -546,9 +546,9 @@
       "flowKind": "merge",
       "label": "校验默认布局",
       "callSiteStatus": "omitted-nodes",
-      "callSiteNote": "GraphLayout::empty 返回 get_graph_layout 后，由 src/server.rs:295 传给 sanitize_loaded_layout。",
+      "callSiteNote": "GraphLayout::empty 返回 get_graph_layout 后，由 src/server.rs:301 传给 sanitize_loaded_layout。",
       "description": "空布局与已有布局在同一清理点汇合，随后返回统一 GraphLayout 响应。",
-      "evidence": "src/server.rs:294-295。",
+      "evidence": "src/server.rs:300-301。",
       "confidence": 1.0
     }
   ]

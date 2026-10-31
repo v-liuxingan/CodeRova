@@ -639,6 +639,8 @@ function Atlas() {
   const [graphView, setGraphView] = useState("overview");
   const [phaseDetailId, setPhaseDetailId] = useState(null);
   const [orientation, setOrientation] = useState("vertical");
+  const orientationRef = useRef(orientation);
+  orientationRef.current = orientation;
   const canvasCursorRef = useRef(null);
 
   const openScenario = useCallback(async (slug) => {
@@ -663,7 +665,7 @@ function Atlas() {
     try {
       const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug).catch(() => null)]);
       const hasPhases = (graph.phases || []).length > 0;
-      const flow = hasPhases ? phaseOverviewToFlow(graph) : await graphToFlow(graph, layout, null, orientation);
+      const flow = hasPhases ? phaseOverviewToFlow(graph) : await graphToFlow(graph, layout, null, orientationRef.current);
       setNodes(flow.nodes);
       setEdges(flow.edges);
       setActive({ kind: "graph", slug, data: graph, layout });
@@ -680,7 +682,7 @@ function Atlas() {
         ? `已加载 ${graph.phases.length} 个执行阶段；${graph.nodes.length} 个源码节点留在各阶段的实现路径中。`
         : `调用图已加载：${graph.nodes.length} 个可验证实现节点`);
     } catch (error) { setStatus(`无法加载调用图：${error.message}`); }
-  }, [orientation, setEdges, setNodes]);
+  }, [setEdges, setNodes]);
 
   useEffect(() => {
     Promise.all([api.listGraphs(), api.listScenarios()]).then(([graphs, scenarios]) => {
@@ -818,7 +820,7 @@ function Atlas() {
   const description = active?.data?.goal || active?.data?.description || "从系统结构进入可验证的实现路径。";
 
   return <main className="atlas-shell">
-    <header className="atlas-topbar"><a href="/" className="atlas-brand"><span>◇</span><div><strong>ARCHITECTURE ATLAS</strong><small>SOURCE-VERIFIED SYSTEM READING</small></div></a><div className="atlas-title"><span>{active?.kind === "scenario" ? "ARCHITECTURE SCENARIO" : graphView === "overview" ? "EXECUTION ARCHITECTURE" : graphView === "full" ? "NARRATIVE CALLGRAPH" : "PHASE IMPLEMENTATION"}</span><h1>{title}</h1><p>{description}</p></div><div className="atlas-topbar-actions">{active?.kind === "graph" && graphView !== "overview" && <button className="atlas-overview-link" onClick={returnToPhaseOverview}>← 返回架构总览</button>}<a className="legacy-link" href="/">旧版工作台 ↗</a></div></header>
+    <header className="atlas-topbar"><a href="/" className="atlas-brand"><span>◇</span><div><strong>ARCHITECTURE ATLAS</strong><small>实验入口 · 独立维护</small></div></a><div className="atlas-title"><span>{active?.kind === "scenario" ? "ARCHITECTURE SCENARIO" : graphView === "overview" ? "EXECUTION ARCHITECTURE" : graphView === "full" ? "NARRATIVE CALLGRAPH" : "PHASE IMPLEMENTATION"}</span><h1>{title}</h1><p>{description}</p></div><div className="atlas-topbar-actions">{active?.kind === "graph" && graphView !== "overview" && <button className="atlas-overview-link" onClick={returnToPhaseOverview}>← 返回架构总览</button>}<a className="legacy-link" href="/">调用图工作台 ↗</a></div></header>
     <aside className="atlas-rail"><div className="rail-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索系统或功能" /></div><section><div className="rail-label">ARCHITECTURE SCENARIOS <b>{filtered.scenarios.length}</b></div>{filtered.scenarios.map((scenario) => <button key={scenario.slug} className={`catalog-card ${active?.kind === "scenario" && active.slug === scenario.slug ? "is-active" : ""}`} onClick={() => openScenario(scenario.slug)}><span>功能路径</span><strong>{scenario.title}</strong><small>{scenario.participantCount} 个架构元素 · {scenario.stepCount} 个步骤</small></button>)}</section><section><div className="rail-label">SOURCE CALLGRAPHS <b>{filtered.graphs.length}</b></div>{filtered.graphs.map((graph) => <button key={graph.slug} className={`catalog-card ${active?.kind === "graph" && active.slug === graph.slug ? "is-active" : ""}`} onClick={() => openGraph(graph.slug)}><span>{graph.category || "未分类"}</span><strong>{graph.title}</strong><small>{graph.nodeCount} 节点 · {graph.edgeCount} 关系</small></button>)}</section></aside>
     <section className="atlas-canvas" onPointerEnter={moveCanvasCursor} onPointerMove={moveCanvasCursor} onPointerLeave={hideCanvasCursor}>
       <ReactFlow colorMode="light" nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onNodeDragStop={onNodeDragStop} onPaneClick={onPaneClick} fitView minZoom={0.2} maxZoom={1.7} nodesDraggable={active?.kind !== "graph" || graphView !== "overview"} proOptions={{ hideAttribution: true }}>

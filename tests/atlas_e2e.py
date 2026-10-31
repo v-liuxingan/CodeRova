@@ -40,10 +40,18 @@ def main() -> None:
         vertical_levels = full_nodes.evaluate_all("nodes => new Set(nodes.map(node => Math.round(node.getBoundingClientRect().y))).size")
         assert vertical_levels >= 3, "Narrative layout must keep a multi-level execution order."
         page.get_by_role("button", name="改为横向").click()
+        page.get_by_role("button", name="改为纵向").wait_for()
         horizontal_levels = full_nodes.evaluate_all("nodes => new Set(nodes.map(node => Math.round(node.getBoundingClientRect().x))).size")
         assert horizontal_levels >= 3, "The reader must be able to switch execution direction without losing graph content."
         page.locator(".atlas-graph-toolbar button").first.click()
         phase_cards.first.wait_for()
+        # CanvasFitter schedules fitting over two animation frames after navigation.
+        # Finish that navigation before asserting that selecting a phase preserves it.
+        page.evaluate("""() => new Promise(resolve => {
+            let frames = 4;
+            const tick = () => --frames ? requestAnimationFrame(tick) : resolve();
+            requestAnimationFrame(tick);
+        })""")
         phase_viewport = page.locator(".react-flow__viewport").get_attribute("style")
         phase_cards.nth(1).click()
         assert page.locator(".react-flow__viewport").get_attribute("style") == phase_viewport

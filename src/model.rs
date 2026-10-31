@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallGraph {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<crate::analysis::AnalysisReport>,
     pub schema_version: String,
     pub project_id: String,
     pub title: String,

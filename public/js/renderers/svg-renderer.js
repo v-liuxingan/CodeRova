@@ -11,6 +11,7 @@ import {
   normalizeScreenRectangle,
 } from "../marquee-selection.js";
 import { placeEdgeLabels } from "./edge-label-placer.js";
+import { routeEdges, dragEdgeGeometry } from "./edge-router.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const EDGE_LABEL_MAX_TEXT_WIDTH = 210;
@@ -38,6 +39,7 @@ export class SvgRenderer {
     this.lastLayout = null;
     this.edgeViews = new Map();
     this.nodeViews = new Map();
+    this.incidentEdges = new Map();
     this.nodeDrag = null;
     this.suppressNodeClicks = new Set();
     this.bindViewportEvents();
@@ -48,6 +50,7 @@ export class SvgRenderer {
   }
 
   render(graph, state) {
+    this.cancelInteraction?.();
     const viewport = this.getViewport();
     this.orientation = state.orientation;
     this.svg.replaceChildren();
@@ -79,11 +82,26 @@ export class SvgRenderer {
 
     this.edgeViews.clear();
     this.nodeViews.clear();
+    this.incidentEdges.clear();
     this.lastLayout = this.layout.compute(
       graph,
       state.orientation,
       state.getNodePositions?.() || {},
     );
+    const routeKey = JSON.stringify([state.orientation,
+      [...this.lastLayout.nodes.values()].map(({ node, x, y, width, height }) => [node.id, x, y, width, height]),
+      this.lastLayout.edges.map(({ edge, routingRole, feedbackLane, narrativeRole }) =>
+        [edge.id, edge.from, edge.to, routingRole, feedbackLane, narrativeRole]),
+    ]);
+    if (routeKey !== this.routeKey) {
+      routeEdges(this.lastLayout, state.orientation);
+      this.routeCache = new Map(this.lastLayout.edges.map((entry) => [entry.edge.id, {
+        geometry: entry.geometry, routePorts: entry.routePorts, routeSides: entry.routeSides,
+      }]));
+      this.routeKey = routeKey;
+    } else {
+      for (const entry of this.lastLayout.edges) Object.assign(entry, this.routeCache.get(entry.edge.id));
+    }
     this.svg.dataset.layoutMode = this.lastLayout.layoutMode || "narrative";
     const selectionFocus = normalizeSelectionFocus(graph.selectionFocus);
     const phaseFocus = normalizePhaseFocus(graph.phaseFocus);
@@ -133,6 +151,9 @@ export class SvgRenderer {
     backEdge = false,
     feedbackLane = 0,
     bounds = null,
+    geometry,
+    routePorts,
+    routeSides,
   }, state, selectionFocus, phaseFocus) {
     if (!from || !to) return;
     const kind = markerColorVariables[edge.kind] ? edge.kind : "direct";
@@ -205,7 +226,8 @@ export class SvgRenderer {
       "marker-end": `url(#arrow-${backEdge ? "feedback" : kind})`,
       "data-edge-id": edge.id,
     });
-    edgeGroup.append(hitTarget, path);
+    const casing = svgElement("path", { class: "graph-edge-casing", "aria-hidden": "true" });
+    edgeGroup.append(hitTarget, casing, path);
 
     const labelGroup = svgElement("g", {
       class: `graph-edge-label-group graph-edge-group${dataFlow ? " data-flow-relation" : ""}${pathFocusClass}${phaseFocusClass}${selected ? " selected" : ""}`,
@@ -227,6 +249,8 @@ export class SvgRenderer {
     });
     labelGroup.addEventListener("click", selectEdge);
     labelGroup.addEventListener("keydown", handleEdgeKey);
+    const leader = svgElement("path", { class: "edge-label-leader", "aria-hidden": "true" });
+    labelGroup.append(leader);
     const card = svgElement("rect", {
       class: "edge-label-card",
       rx: "5",
@@ -279,12 +303,15 @@ export class SvgRenderer {
       backEdge,
       feedbackLane,
       bounds,
+      geometry, routePorts, routeSides,
     };
     const view = {
       entry,
       edgeGroup,
       hitTarget,
       path,
+      casing,
+      leader,
       labelGroup,
       card,
       label,
@@ -294,6 +321,10 @@ export class SvgRenderer {
     this.sizeEdgeLabel(view);
     this.updateEdgeView(view);
     this.edgeViews.set(edge.id, view);
+    for (const nodeId of new Set([edge.from, edge.to])) {
+      if (!this.incidentEdges.has(nodeId)) this.incidentEdges.set(nodeId, new Set());
+      this.incidentEdges.get(nodeId).add(view);
+    }
   }
 
   drawNode(
@@ -356,9 +387,18 @@ export class SvgRenderer {
         "pointer-events": "none",
       }),
       svgElement("rect", { class: "node-accent", width: "3", height }),
-      svgElement("circle", { class: "node-port", cx: width / 2, cy: "0", r: "4" }),
-      svgElement("circle", { class: "node-port", cx: width / 2, cy: height, r: "4" }),
     );
+    const ports = new Map();
+    for (const view of this.incidentEdges.get(node.id) || []) {
+      const points = view.geometry.points;
+      if (!points) continue;
+      for (const [endpoint, point] of [[view.entry.edge.from, points[0]], [view.entry.edge.to, points.at(-1)]]) {
+        if (endpoint === node.id) ports.set(`${point.x}:${point.y}`, point);
+      }
+    }
+    for (const point of ports.values()) group.append(svgElement("circle", {
+      class: "node-port", cx: point.x - x, cy: point.y - y, r: "3",
+    }));
     const textWidth = width - 28;
     addText(group, node.kind.toUpperCase(), 14, 14, "node-kind node-technical");
     addFittedText(
@@ -472,10 +512,12 @@ export class SvgRenderer {
     view.card.setAttribute("height", String(view.labelHeight));
   }
 
-  updateEdgeView(view) {
-    const geometry = computeEdgeGeometry(view.entry, view.orientation);
+  updateEdgeView(view, dragging = false) {
+    const geometry = dragging ? dragEdgeGeometry(view.entry, view.orientation)
+      : view.entry.geometry || computeEdgeGeometry(view.entry, view.orientation);
     view.hitTarget.setAttribute("d", geometry.pathData);
     view.path.setAttribute("d", geometry.pathData);
+    view.casing.setAttribute("d", geometry.pathData);
     view.path.classList.toggle("geometry-feedback", geometry.routingRole === "feedback");
     view.path.setAttribute(
       "marker-end",
@@ -489,11 +531,24 @@ export class SvgRenderer {
   }
 
   layoutEdgeLabels(orientation) {
-    const positions = placeEdgeLabels(this.edgeViews.values(), orientation);
+    const positions = placeEdgeLabels(this.edgeViews.values(), orientation, this.lastLayout.nodes.values());
     for (const [edgeId, position] of positions) {
-      this.edgeViews
-        .get(edgeId)
-        ?.labelGroup.setAttribute("transform", `translate(${position.x} ${position.y})`);
+      const view = this.edgeViews.get(edgeId);
+      view.labelPosition = position;
+      view.labelGroup.setAttribute("transform", `translate(${position.x} ${position.y})`);
+      const anchor = position.anchor || view.geometry.midpoint;
+      view.leader.setAttribute("d", `M ${anchor.x - position.x} ${anchor.y - position.y} L 0 0`);
+    }
+    const boxes = [...this.lastLayout.nodes.values()].map(({ x, y, width, height }) => ({ x, y, width, height }));
+    for (const view of this.edgeViews.values()) {
+      for (const point of view.geometry.points || []) boxes.push({ ...point, width: 0, height: 0 });
+      boxes.push({ x: view.labelPosition.x - view.labelWidth / 2, y: view.labelPosition.y - view.labelHeight / 2,
+        width: view.labelWidth, height: view.labelHeight });
+    }
+    if (boxes.length) {
+      const x = Math.min(...boxes.map((box) => box.x)), y = Math.min(...boxes.map((box) => box.y));
+      this.lastLayout.bounds = { x, y, width: Math.max(...boxes.map((box) => box.x + box.width)) - x,
+        height: Math.max(...boxes.map((box) => box.y + box.height)) - y };
     }
   }
 
@@ -518,7 +573,12 @@ export class SvgRenderer {
       startX: event.clientX,
       startY: event.clientY,
       moved: false,
+      edges: new Set(members.flatMap((member) => [...(this.incidentEdges.get(member.id) || [])])),
     };
+    for (const view of this.nodeDrag.edges) {
+      view.dragLabelOffset = { x: view.labelPosition.x - view.geometry.midpoint.x,
+        y: view.labelPosition.y - view.geometry.midpoint.y };
+    }
     group.setPointerCapture(event.pointerId);
     for (const member of members) member.group.classList.add("dragging");
     this.svg.parentElement.classList.add("node-dragging");
@@ -610,7 +670,8 @@ export class SvgRenderer {
   }
 
   applyTransform() {
-    this.svg.dataset.semanticZoom = semanticZoomTier(this.transform.scale);
+    const tier = semanticZoomTier(this.transform.scale);
+    if (this.svg.dataset.semanticZoom !== tier) this.svg.dataset.semanticZoom = tier;
     this.viewport?.setAttribute(
       "transform",
       `translate(${this.transform.x} ${this.transform.y}) scale(${this.transform.scale})`,
@@ -657,13 +718,12 @@ export class SvgRenderer {
       this.svg.setPointerCapture(event.pointerId);
       this.svg.parentElement.classList.add("dragging");
     });
-    this.svg.addEventListener("pointermove", (event) => {
+    const move = (event) => {
       if (this.nodeDrag) {
         event.preventDefault();
         const deltaX = (event.clientX - this.nodeDrag.startX) / this.transform.scale;
         const deltaY = (event.clientY - this.nodeDrag.startY) / this.transform.scale;
         if (Math.hypot(deltaX, deltaY) >= dragThreshold) this.nodeDrag.moved = true;
-        const movedIds = new Set();
         for (const member of this.nodeDrag.members) {
           member.entry.x = member.originX + deltaX;
           member.entry.y = member.originY + deltaY;
@@ -671,17 +731,13 @@ export class SvgRenderer {
             "transform",
             `translate(${member.entry.x} ${member.entry.y})`,
           );
-          movedIds.add(member.id);
         }
-        for (const view of this.edgeViews.values()) {
-          if (
-            movedIds.has(view.entry.edge.from)
-            || movedIds.has(view.entry.edge.to)
-          ) {
-            this.updateEdgeView(view);
-          }
+        for (const view of this.nodeDrag.edges) {
+          this.updateEdgeView(view, true);
+          const { x, y } = view.geometry.midpoint;
+          view.labelGroup.setAttribute("transform", `translate(${x + view.dragLabelOffset.x} ${y + view.dragLabelOffset.y})`);
+          view.leader.setAttribute("d", `M ${-view.dragLabelOffset.x} ${-view.dragLabelOffset.y} L 0 0`);
         }
-        this.layoutEdgeLabels(this.orientation);
         return;
       }
       if (marquee) {
@@ -705,8 +761,29 @@ export class SvgRenderer {
       this.transform.x = drag.originX + deltaX;
       this.transform.y = drag.originY + deltaY;
       this.applyTransform();
+    };
+    let frame = null;
+    let pendingMove = null;
+    const flushMove = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      if (pendingMove) {
+        const event = pendingMove;
+        pendingMove = null;
+        move(event);
+      }
+    };
+    this.svg.addEventListener("pointermove", (event) => {
+      if (!this.nodeDrag && !marquee && !drag) return;
+      event.preventDefault();
+      pendingMove = event;
+      if (frame === null) frame = requestAnimationFrame(flushMove);
     });
     const finish = (event) => {
+      // A release can arrive before the scheduled frame; commit its final
+      // coordinates synchronously so no queued frame mutates a new graph.
+      if (event.type === "pointerup" && (this.nodeDrag || marquee || drag)) pendingMove = event;
+      flushMove();
       if (this.nodeDrag) {
         const completed = this.nodeDrag;
         for (const member of completed.members) {
@@ -786,6 +863,10 @@ export class SvgRenderer {
     };
     this.svg.addEventListener("pointerup", finish);
     this.svg.addEventListener("pointercancel", finish);
+    this.cancelInteraction = () => {
+      if (this.nodeDrag || drag || marquee) finish({ type: "pointercancel" });
+    };
+    this.svg.addEventListener("lostpointercapture", this.cancelInteraction);
     this.svg.addEventListener("click", (event) => {
       if (suppressCanvasClick) {
         suppressCanvasClick = false;

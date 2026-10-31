@@ -21,7 +21,10 @@ export class ResizablePanelController {
   }
 
   initialize() {
-    const storedValue = localStorage.getItem(STORAGE_KEY);
+    let storedValue = null;
+    try {
+      storedValue = localStorage.getItem(STORAGE_KEY);
+    } catch { /* Preferences are optional. */ }
     const stored = storedValue === null ? Number.NaN : Number(storedValue);
     this.apply(Number.isFinite(stored) ? stored : this.width, false);
     return this.width;
@@ -59,7 +62,7 @@ export class ResizablePanelController {
       this.drag = null;
       this.handle.classList.remove("active");
       document.body.classList.remove("resizing-inspector");
-      localStorage.setItem(STORAGE_KEY, String(this.width));
+      this.persist();
     };
     this.handle.addEventListener("pointerup", finish);
     this.handle.addEventListener("pointercancel", finish);
@@ -93,8 +96,14 @@ export class ResizablePanelController {
     }
     this.handle.setAttribute("aria-valuenow", String(this.width));
     this.handle.title = `拖动调整源码侧栏宽度 · 当前 ${this.width}px · 双击复位`;
-    if (persist) localStorage.setItem(STORAGE_KEY, String(this.width));
+    if (persist) this.persist();
     this.callbacks.onResize?.(this.width);
+  }
+
+  persist() {
+    try {
+      localStorage.setItem(STORAGE_KEY, String(this.width));
+    } catch { /* Keep resizing available. */ }
   }
 
   maximumWidth() {

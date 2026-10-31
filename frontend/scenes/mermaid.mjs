@@ -5,7 +5,7 @@ import { validateScene, validateShape } from "./validate.mjs";
 export function parseMermaid(source, filename = "sequence.mmd") {
   const participants = [], byId = new Map(), declared = new Set(), body = [];
   const stack = [{ body }];
-  let header = false;
+  let header = false, pendingEvidence = null;
   const fail = (line, message) => { throw new Error(`${filename}:${line}: ${message}`); };
   function participant(id) {
     if (!byId.has(id)) {
@@ -35,7 +35,17 @@ export function parseMermaid(source, filename = "sequence.mmd") {
     const line = index + 1, input = raw.trim();
     if (!input) return;
     if (/^%%\s*\{/.test(input)) fail(line, "不支持 Mermaid 配置指令，样式由项目统一控制");
-    if (input.startsWith("%%")) return;
+    if (input.startsWith("%%")) {
+      if (/^%%\s*@evidence\b/.test(input)) {
+        const ids = input.match(/^%%\s*@evidence\s+([A-Za-z0-9_-]+(?:\s*,\s*[A-Za-z0-9_-]+)*)\s*$/);
+        if (!header || !ids || pendingEvidence) fail(line, "依据注释格式为 %% @evidence id1,id2，且必须紧接下一条消息或 Note");
+        pendingEvidence = { ids: [...new Set(ids[1].split(/\s*,\s*/))], line };
+      }
+      return;
+    }
+    if (pendingEvidence && !/^(?:[A-Za-z0-9_]+\s*(?:-->>|->>|-\))|Note\s+over\s)/i.test(input)) {
+      fail(line, "依据注释只能标注下一条消息或 Note；控制条件可在 Note 中说明");
+    }
     if (!header) {
       if (input !== "sequenceDiagram") fail(line, "第一条语句必须是 sequenceDiagram");
       header = true; return;
@@ -50,11 +60,13 @@ export function parseMermaid(source, filename = "sequence.mmd") {
     } else if ((match = input.match(/^([A-Za-z0-9_]+)\s*(-->>|->>|-\))\s*([A-Za-z0-9_]+)\s*:\s*(.*)$/))) {
       const [, from, arrow, to, value] = match;
       participant(from); participant(to);
-      current().push({ type: "message", from, to, kind: arrow === "->>" ? "call" : arrow === "-->>" ? "return" : "async", label: label(value, line) });
+      current().push({ type: "message", from, to, kind: arrow === "->>" ? "call" : arrow === "-->>" ? "return" : "async", label: label(value, line), ...(pendingEvidence ? { evidence: pendingEvidence.ids } : {}) });
+      pendingEvidence = null;
     } else if ((match = input.match(/^Note\s+over\s+([A-Za-z0-9_]+)(?:\s*,\s*([A-Za-z0-9_]+))?\s*:\s*(.*)$/i))) {
       const over = [match[1], match[2]].filter(Boolean);
       for (const id of over) if (!byId.has(id)) fail(line, `说明引用了尚未出现的参与者 ${id}`);
-      current().push({ type: "note", over, text: label(match[3], line) });
+      current().push({ type: "note", over, text: label(match[3], line), ...(pendingEvidence ? { evidence: pendingEvidence.ids } : {}) });
+      pendingEvidence = null;
     } else if ((match = input.match(/^(alt|par|opt|loop)\s+(.+)$/))) {
       const type = match[1], condition = label(match[2], line), nested = [];
       const block = ["alt", "par"].includes(type)
@@ -76,6 +88,7 @@ export function parseMermaid(source, filename = "sequence.mmd") {
     }
   });
   if (!header) fail(1, "缺少 sequenceDiagram");
+  if (pendingEvidence) fail(pendingEvidence.line, "依据注释后缺少消息或 Note");
   if (stack.length > 1) fail(stack.at(-1).line, "控制流框未闭合，缺少 end");
   if (!body.length) fail(lines.length, "场景没有消息或控制流");
   return { participants, body };
@@ -84,6 +97,13 @@ export function parseMermaid(source, filename = "sequence.mmd") {
 export function compileMermaidScene(metadata, source, schema, metadataSchema, filename) {
   validateShape(metadata, metadataSchema);
   const parsed = parseMermaid(source, filename);
+  const evidenceIds = new Set(metadata.evidence.map((item) => item.id));
+  source.split(/\r?\n/).forEach((line, index) => {
+    const match = line.trim().match(/^%%\s*@evidence\s+(.+)$/);
+    if (match) for (const id of match[1].split(/\s*,\s*/)) {
+      if (!evidenceIds.has(id)) throw new Error(`${filename}:${index + 1}: 不存在的源码依据 ${id}`);
+    }
+  });
   const roles = new Set();
   for (const item of metadata.participantRoles || []) {
     if (roles.has(item.id)) throw new Error(`participantRoles: 重复 ID ${item.id}`);

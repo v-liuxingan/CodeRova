@@ -19,6 +19,30 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// V2：通过 rust-analyzer 生成项目内静态调用图（不覆盖已有文件）
+    Analyze {
+        #[arg(long, default_value = "callgraph.projects.json")]
+        config: PathBuf,
+        #[arg(long)]
+        project: String,
+        #[arg(long)]
+        file: String,
+        #[arg(long)]
+        line: u32,
+        /// 从 1 开始的 UTF-16 列，指向函数名
+        #[arg(long, default_value_t = 1)]
+        column: u32,
+        #[arg(long, default_value_t = 3)]
+        max_depth: u32,
+        #[arg(long, default_value_t = 200)]
+        request_budget: usize,
+        #[arg(long, default_value = "rust-analyzer")]
+        server: PathBuf,
+        #[arg(long = "server-arg", allow_hyphen_values = true)]
+        server_args: Vec<String>,
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// 启动本地可视化服务
     Serve {
         #[arg(long, default_value_t = 4317)]
@@ -76,6 +100,34 @@ async fn main() -> ExitCode {
         public: PathBuf::from("public"),
         layouts: PathBuf::from("layouts"),
     }) {
+        Commands::Analyze {
+            config,
+            project,
+            file,
+            line,
+            column,
+            max_depth,
+            request_budget,
+            server,
+            server_args,
+            output,
+        } => {
+            callgraph_visualizer::analysis::analyze(
+                callgraph_visualizer::analysis::AnalyzeOptions {
+                    config,
+                    project,
+                    file,
+                    line,
+                    column,
+                    max_depth,
+                    request_budget,
+                    server,
+                    server_args,
+                    output,
+                },
+            )
+            .await
+        }
         Commands::Serve {
             port,
             host,

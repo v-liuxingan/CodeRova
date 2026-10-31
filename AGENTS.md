@@ -117,6 +117,9 @@ For independent scene generation, read `docs/scenario-authoring.md` and
 Do not hand-edit generated scene pages or ask the model to supply geometry.
 Scene data and `schema/sequence-scene.schema.json` are shared integration scope.
 The unified generation entry point is `docs/graph-authoring.md`.
+After generation, run `npm run check:content` for both artifact types. Source fingerprint baselines
+are updated only after reviewing changed evidence, with `npm run evidence:snapshot -- --project <id>`;
+never refresh them automatically to suppress stale-evidence errors. See `docs/content-verification.md`.
 
 Before creating or editing `graphs/**/*.json`, read
 `docs/callgraph-content-standard.md`, `docs/control-flow-semantics.md`, and the

@@ -4,7 +4,8 @@
   "summary": "一次用户回合可能包含多次模型请求。沿着历史输入、模型输出、工具结果和退出判断，理解为什么看到一段回答或一个工具完成后，Codex 还会继续。",
   "project": {
     "label": "Codex",
-    "revision": "a68d0a74bd38ddc01361ce42262da689b788afce"
+    "revision": "a68d0a74bd38ddc01361ce42262da689b788afce",
+    "id": "codex"
   },
   "scope": {
     "startEnd": "普通 Agent 回合已开始 → 正常任务返回，收尾并发布回合完成事件。",

@@ -110,7 +110,13 @@ pub async fn serve(
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/graphs", get(list_graphs))
-        .route("/api/graphs/{slug}", get(get_graph))
+        .route("/api/graphs/{slug}", get(get_graph).delete(archive_graph))
+        .route("/api/graph-trash", get(list_archived_graphs))
+        .route(
+            "/api/graph-trash/{slug}",
+            axum::routing::delete(delete_archived_graph),
+        )
+        .route("/api/graph-trash/{slug}/restore", post(restore_graph))
         .route("/api/scenarios", get(list_scenarios))
         .route("/api/scenarios/{slug}", get(get_scenario))
         .route(
@@ -525,6 +531,59 @@ fn scenario_store_error(error: String) -> AppError {
     } else {
         AppError::Internal(error)
     }
+}
+
+async fn list_archived_graphs(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<GraphSummary>>, AppError> {
+    let graphs = state.graph_store.archived().map_err(AppError::Internal)?;
+    let mut summaries = Vec::with_capacity(graphs.len());
+    for (slug, graph) in graphs {
+        summaries.push(GraphSummary {
+            slug,
+            title: graph.title,
+            category_id: graph.category_id,
+            category: graph.category,
+            description: graph.description,
+            project_id: graph.project_id,
+            node_count: graph.nodes.len(),
+            edge_count: graph.edges.len(),
+        });
+    }
+    summaries.sort_by(|left, right| left.title.cmp(&right.title));
+    Ok(Json(summaries))
+}
+
+async fn archive_graph(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .graph_store
+        .set_archived(&slug, true)
+        .map_err(graph_store_error)?;
+    Ok(Json(serde_json::json!({"slug":slug,"archived":true})))
+}
+async fn restore_graph(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .graph_store
+        .set_archived(&slug, false)
+        .map_err(graph_store_error)?;
+    Ok(Json(serde_json::json!({"slug":slug,"archived":false})))
+}
+
+async fn delete_archived_graph(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .graph_store
+        .delete_archived(&slug)
+        .map_err(graph_store_error)?;
+    Ok(Json(serde_json::json!({"slug":slug,"deleted":true})))
 }
 
 #[cfg(test)]

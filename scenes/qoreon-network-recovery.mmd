@@ -1,0 +1,59 @@
+sequenceDiagram
+    participant runtime as 执行运行时
+    participant cli as 本地 CLI 进程
+    participant store as RunStore
+    participant scheduler as 恢复调度
+    %% @evidence classify
+    Note over runtime,cli: 从进程非零退出开始，排除超时、中断和 profile 缺失降级路径
+    alt 开启即时重试且检测到认证错误
+        %% @evidence classify
+        runtime->>runtime: 标记原 run 为 error / auth_error，不自动重试
+    else 开启即时重试且匹配临时网络错误
+        loop 未超过重试上限，且尚未成功或遇到停止条件
+            %% @evidence retry
+            runtime->>runtime: 按 base × 2 的指数退避等待
+            runtime->>cli: 重新执行相同 spawn_cmd，等待进程返回
+            cli-->>runtime: 返回退出码和输出
+            alt 重试退出码为 0
+                %% @evidence retry
+                runtime->>runtime: 原 run 变为 done，清空错误并退出循环
+            else 认证错误、非网络错误或重试超时
+                %% @evidence retry
+                runtime->>runtime: 保存错误并停止本轮即时重试
+            else 仍为网络错误且还有次数
+                runtime->>runtime: 继续下一次退避重试
+            end
+        end
+        opt 未恢复成功
+            %% @evidence failure
+            runtime->>runtime: 汇总失败并判断是否仍为临时网络故障
+        end
+    else 未开启即时重试或未匹配重试条件
+        %% @evidence disabled
+        runtime->>runtime: 原 run 保持 error，仍检查是否需要延迟恢复
+    end
+    opt 原 run 为 error、网络故障持续且不是自动恢复 run
+        %% @evidence schedule
+        runtime->>runtime: 检查源 run、项目、通道和会话 ID
+        alt 必要 ID 完整
+            %% @evidence create
+            runtime->>store: 在同一会话创建新的系统恢复 run
+            store-->>runtime: 返回新的 run ID
+            %% @evidence waiting
+            runtime->>store: 保存 retry_waiting、retryOf 和 autoResumePrompt
+            alt 调度器可用且未禁用
+                %% @evidence dispatch
+                runtime-)scheduler: 注册延迟定时器，等待到期激活
+            else 调度器缺失或禁用
+                %% @evidence fallback
+                runtime-)scheduler: 启动后台线程，等待后检查状态再进入执行
+            end
+            %% @evidence backlink
+            runtime->>runtime: 原 run 记录 networkResumeRunId 和计划时间
+        else 必要 ID 缺失
+            %% @evidence schedule
+            runtime->>runtime: 返回空 ID，不创建恢复 run
+        end
+    end
+    %% @evidence waiting,backlink
+    Note over runtime,scheduler: 原 run 失败与新 run 等待是两个状态。安排恢复不等于成功，后续执行结果不在本图范围

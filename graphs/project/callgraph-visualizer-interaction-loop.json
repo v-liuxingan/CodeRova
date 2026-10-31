@@ -53,8 +53,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 396,
-      "endLine": 437,
+      "line": 405,
+      "endLine": 450,
       "role": "探索会话初始化器",
       "description": "加载图与个人布局后，仅让最后一次选择建立 GraphState 和 TraceNavigator，把根节点设为初始选择并订阅状态变化。成功切换同步清空旧搜索词并更新 URL；失败保留当前图，供用户继续阅读或重新选择。",
       "state": "expanded"
@@ -67,8 +67,8 @@
       "crate": "browser",
       "module": "svg-renderer",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 299,
-      "endLine": 458,
+      "line": 330,
+      "endLine": 498,
       "role": "调用节点交互表面",
       "description": "根据选择、链路焦点和搜索状态绘制节点，并把点击与键盘激活转换为统一 node target 回调。拖拽后的抑制标记阻止误触选择。",
       "state": "expanded"
@@ -81,8 +81,8 @@
       "crate": "browser",
       "module": "svg-renderer",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 127,
-      "endLine": 297,
+      "line": 145,
+      "endLine": 328,
       "role": "调用关系交互表面",
       "description": "绘制带控制语义和证据标签的连线，为路径与标签共用同一个 edge target 回调。选择边后会沿边的真实上游和下游推导焦点。",
       "state": "expanded"
@@ -95,8 +95,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 657,
-      "endLine": 661,
+      "line": 671,
+      "endLine": 675,
       "role": "图元选择协调器",
       "description": "处理节点或边 target，依次同步调用游标和 GraphState。即时打开源码是可选策略，默认保留网页内阅读；这里不切换场景或阶段。",
       "state": "expanded"
@@ -151,8 +151,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 439,
-      "endLine": 470,
+      "line": 452,
+      "endLine": 483,
       "role": "交互状态投影主干",
       "description": "取得当前可见图并依次同步 TraceNavigator、SVG、详情、源码和步进控件。首次渲染定位入口，后续刷新保留用户当前视口。",
       "state": "expanded"
@@ -207,8 +207,8 @@
       "crate": "browser",
       "module": "svg-renderer",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 50,
-      "endLine": 105,
+      "line": 52,
+      "endLine": 123,
       "role": "SVG 图谱重建器",
       "description": "保存当前 viewport，清空并重建分层 SVG，再按投影焦点绘制边和节点；结束时恢复原变换，因此普通点击不会自动居中或重置缩放。",
       "state": "expanded"
@@ -235,8 +235,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 663,
-      "endLine": 703,
+      "line": 677,
+      "endLine": 717,
       "role": "调用步进控件投影器",
       "description": "根据当前游标显示上一步、调用位置、候选下游和下一步，并预取即将阅读的源码。分支选项来自真实出边，不维护额外路径配置。",
       "state": "expanded"
@@ -263,8 +263,8 @@
       "crate": "browser",
       "module": "app",
       "file": "public/js/app.js",
-      "line": 820,
-      "endLine": 833,
+      "line": 834,
+      "endLine": 847,
       "role": "步进动作协调器",
       "description": "根据按钮或方向键动作调用 TraceNavigator；有效目标以 preserveFocusAnchor 方式重新选择，连续阅读不会丢失当前上下游走廊。",
       "state": "expanded"
@@ -294,7 +294,7 @@
       "label": "生成调用图",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 426,
+      "line": 438,
       "description": "状态订阅建立后执行第一次完整调用图渲染。",
       "evidence": "activateGraph 调用 render(state, initial)。",
       "confidence": 1.0
@@ -308,7 +308,7 @@
       "label": "投影当前图",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 440,
+      "line": 453,
       "description": "每次刷新先从不可变原图和交互状态派生当前可见结构与焦点集合。",
       "evidence": "render 第一条业务语句调用 getVisibleGraph。",
       "confidence": 1.0
@@ -352,7 +352,7 @@
       "label": "刷新 SVG",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 444,
+      "line": 457,
       "description": "带焦点投影的可见图交给 SVG 渲染器；渲染器内部恢复原视口。",
       "evidence": "render 调用 renderer.render。",
       "confidence": 1.0
@@ -366,7 +366,7 @@
       "label": "计算叙事布局",
       "callSiteStatus": "exact",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 82,
+      "line": 86,
       "description": "渲染器通过布局接口计算当前方向和手工覆盖下的节点、边及边界。",
       "evidence": "SvgRenderer::render 调用 this.layout.compute，应用注入 NarrativeLayout。",
       "confidence": 1.0
@@ -380,7 +380,7 @@
       "label": "逐边绘制",
       "callSiteStatus": "exact",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 91,
+      "line": 109,
       "description": "布局中的每条边按选择与控制流语义绘制。",
       "evidence": "SvgRenderer::render 的 edges 循环调用 drawEdge。",
       "confidence": 1.0
@@ -394,7 +394,7 @@
       "label": "逐节点绘制",
       "callSiteStatus": "exact",
       "file": "public/js/renderers/svg-renderer.js",
-      "line": 96,
+      "line": 114,
       "description": "边标签完成布局后逐个绘制节点及其交互命中区域。",
       "evidence": "SvgRenderer::render 的 nodes 循环调用 drawNode。",
       "confidence": 1.0
@@ -408,9 +408,9 @@
       "condition": "用户点击节点或键盘激活节点",
       "label": "选择节点",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "drawNode 在 svg-renderer.js:426 调用 onSelect；app.js:119-121 把回调注册为 selectGraphTarget。",
+      "callSiteNote": "drawNode 在 svg-renderer.js:466 调用 onSelect；app.js:119-121 把回调注册为 selectGraphTarget。",
       "description": "节点交互产生标准 node target，并进入统一选择协调器。",
-      "evidence": "public/js/renderers/svg-renderer.js:426-455 与 app.js:119-121。",
+      "evidence": "public/js/renderers/svg-renderer.js:466-495 与 app.js:119-121。",
       "confidence": 1.0
     },
     {
@@ -422,9 +422,9 @@
       "condition": "用户点击边路径或标签",
       "label": "选择连线",
       "callSiteStatus": "virtual-node",
-      "callSiteNote": "drawEdge 的 selectEdge 在 svg-renderer.js:160-187 调用 onSelect；应用回调是 selectGraphTarget。",
+      "callSiteNote": "drawEdge 的 selectEdge 在 svg-renderer.js:181-208 调用 onSelect；应用回调是 selectGraphTarget。",
       "description": "边路径和标签产生同一个 edge target，避免出现视觉选中与详情选中不一致。",
-      "evidence": "public/js/renderers/svg-renderer.js:160-187、211-228。",
+      "evidence": "public/js/renderers/svg-renderer.js:181-208、211-228。",
       "confidence": 1.0
     },
     {
@@ -436,7 +436,7 @@
       "label": "同步调用游标",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 658,
+      "line": 672,
       "description": "先让 SOURCE WALK 游标与直接点击目标一致，随后更新高亮状态。",
       "evidence": "selectGraphTarget 先调用 syncSelection。",
       "confidence": 1.0
@@ -450,7 +450,7 @@
       "label": "更新高亮目标",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 659,
+      "line": 673,
       "description": "图元目标进入 GraphState，节点锚点和边选择语义在这里统一处理。",
       "evidence": "selectGraphTarget 调用 state.select。",
       "confidence": 1.0
@@ -479,7 +479,7 @@
       "callSiteStatus": "virtual-node",
       "callSiteNote": "activateGraph 在 app.js:416 通过 state.subscribe(render) 注册监听；notify 在 graph-state.js:50 调用 listener。",
       "description": "状态变化回到统一渲染主干，下一轮从最新可见结构、焦点和游标重新生成界面。",
-      "evidence": "public/js/app.js:416 与 graph-state.js:49-51。",
+      "evidence": "public/js/app.js:428 与 graph-state.js:49-51。",
       "confidence": 1.0
     },
     {
@@ -491,7 +491,7 @@
       "label": "刷新步进栏",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 458,
+      "line": 471,
       "description": "画布和详情同步后，用同一 TraceNavigator 状态刷新固定步进控件。",
       "evidence": "render 调用 renderTraceControls。",
       "confidence": 1.0
@@ -504,7 +504,7 @@
       "label": "读取当前位置",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 665,
+      "line": 679,
       "description": "步进栏一次读取当前、前驱、调用边、下一节点和候选分支快照。",
       "evidence": "renderTraceControls 调用 traceNavigator.snapshot。",
       "confidence": 1.0
@@ -520,7 +520,7 @@
       "callSiteStatus": "virtual-node",
       "callSiteNote": "bindControls 在 app.js:599-616 注册步进按钮，键盘处理器在 app.js:651 调用 navigateTrace；renderTraceControls 负责更新这些固定控件的可用状态。",
       "description": "用户从当前快照选择连续阅读动作，进入统一步进协调器。",
-      "evidence": "public/js/app.js:599-616、639-653。",
+      "evidence": "public/js/app.js:612-606、639-653。",
       "confidence": 1.0
     },
     {
@@ -534,7 +534,7 @@
       "callSiteStatus": "omitted-nodes",
       "callSiteNote": "navigateTrace 在 app.js:821 通过动态属性 traceNavigator[action] 调用；这里展开 stepForward 代表下一步路径。",
       "description": "下一步动作让 TraceNavigator 决定先展示调用位置还是直接进入目标节点；其他动作复用同一动态分发。",
-      "evidence": "public/js/app.js:820-832 与 trace-navigator.js:172-182。",
+      "evidence": "public/js/app.js:834-823 与 trace-navigator.js:172-182。",
       "confidence": 1.0
     },
     {
@@ -545,7 +545,7 @@
       "label": "保留走廊选择",
       "callSiteStatus": "exact",
       "file": "public/js/app.js",
-      "line": 831,
+      "line": 845,
       "description": "步进结果以 preserveFocusAnchor 方式重新选择，随后通过 notify 回到同一渲染循环。",
       "evidence": "navigateTrace 调用 state.select(target, preserveFocusAnchor=true)。",
       "confidence": 1.0

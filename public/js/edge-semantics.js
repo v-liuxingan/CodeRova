@@ -1,4 +1,5 @@
 export const CONTROL_EDGE_KINDS = new Set([
+  "static-call",
   "direct",
   "callback",
   "trait-dispatch",
@@ -20,6 +21,7 @@ const FLOW_KIND_LABELS = {
 };
 
 const EDGE_KIND_LABELS = {
+  "static-call": "静态调用（机制未分类）",
   direct: "直接调用",
   callback: "回调",
   "trait-dispatch": "Trait 分发",

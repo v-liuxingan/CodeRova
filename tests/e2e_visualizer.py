@@ -44,7 +44,7 @@ with sync_playwright() as playwright:
     )
     page.on("pageerror", lambda error: page_errors.append(str(error)))
 
-    page.goto(BASE_URL)
+    page.goto(BASE_URL + "/?graph=codex-end-to-end-agent-loop")
     page.wait_for_load_state("networkidle")
     page.wait_for_selector(".graph-option")
     rail_scroll_state = page.locator(".rail").evaluate(
@@ -107,13 +107,17 @@ with sync_playwright() as playwright:
     assert [project["id"] for project in projects] == [
         "callgraph-visualizer",
         "codex",
+        "qoreon",
     ]
     assert all(project["rootExists"] for project in projects)
 
+    trash = page.request.get(f"{BASE_URL}/api/graph-trash")
+    assert trash.ok and isinstance(trash.json(), list)
     graphs = page.request.get(f"{BASE_URL}/api/graphs")
     assert graphs.ok
     graph_summaries = graphs.json()
     expected_slugs = {
+        "callgraph-v2-validation",
         "codex-config-resolution",
         "codex-context-compaction",
         "codex-turn-context-continuity",
@@ -129,28 +133,36 @@ with sync_playwright() as playwright:
         "callgraph-visualizer-source-evidence",
         "callgraph-visualizer-interaction-loop",
         "tui-authorization",
+        "qoreon-network-recovery",
     }
     assert {graph["slug"] for graph in graph_summaries} == expected_slugs
     assert Counter(graph["projectId"] for graph in graph_summaries) == {
         "codex": 12,
-        "callgraph-visualizer": 3,
+        "callgraph-visualizer": 4,
+        "qoreon": 1,
     }
-    assert sum(graph["nodeCount"] for graph in graph_summaries) == 326
-    assert sum(graph["edgeCount"] for graph in graph_summaries) == 382
-    assert page.locator(".graph-option").count() == 15
+    assert sum(graph["nodeCount"] for graph in graph_summaries) == 341
+    assert sum(graph["edgeCount"] for graph in graph_summaries) == 398
+    visible_summaries = graph_summaries
+    assert page.locator(".catalog-project").count() == 3
+    assert page.locator(".graph-option").count() == len(visible_summaries)
     expected_category_counts = {
         "先看这里": 1,
         "提交与继续任务": 3,
         "让 Codex 操作项目": 5,
         "设置与长对话": 3,
         "项目自身": 3,
+        "源码分析": 1,
+        "故障恢复": 1,
     }
     expected_category_id_counts = {
         "overview": 1,
         "session": 3,
         "tools": 5,
         "context": 3,
+        "analysis": 1,
         "project": 3,
+        "recovery": 1,
     }
     assert Counter(
         graph["category"] for graph in graph_summaries
@@ -168,10 +180,10 @@ with sync_playwright() as playwright:
         ]))"""
     ) == expected_category_counts
     category_toggles = page.locator(".graph-category-header")
-    assert category_toggles.count() == 5
+    assert category_toggles.count() == len(expected_category_counts)
     assert category_toggles.evaluate_all(
         "buttons => buttons.map(button => button.getAttribute('aria-expanded'))"
-    ) == ["true", "true", "true", "true", "true"]
+    ) == ["true"] * len(expected_category_counts)
     tools_category = page.locator('.graph-category[data-category-id="tools"]')
     tools_toggle = tools_category.locator(".graph-category-header")
     tools_items = tools_category.locator(".graph-category-items")
@@ -180,7 +192,7 @@ with sync_playwright() as playwright:
     assert tools_items.is_hidden()
     assert page.evaluate(
         "() => JSON.parse(localStorage.getItem('callgraph.catalog.collapsed.v1'))"
-    ) == ["tools"]
+    ) == ["codex:tools"]
     page.reload(wait_until="networkidle")
     tools_category = page.locator('.graph-category[data-category-id="tools"]')
     tools_toggle = tools_category.locator(".graph-category-header")
@@ -220,9 +232,9 @@ with sync_playwright() as playwright:
     catalog_slugs = page.locator(".graph-option").evaluate_all(
         "buttons => buttons.map(button => button.dataset.slug)"
     )
-    assert len(catalog_slugs) == len(set(catalog_slugs)) == 15
+    assert len(catalog_slugs) == len(set(catalog_slugs)) == len(visible_summaries)
     category_by_slug = {
-        graph["slug"]: graph["category"] for graph in graph_summaries
+        graph["slug"]: graph["category"] for graph in visible_summaries
     }
     assert page.locator(".graph-option").evaluate_all(
         """buttons => Object.fromEntries(buttons.map(button => [
@@ -438,6 +450,10 @@ with sync_playwright() as playwright:
         "启动 Codex 后，模型请求如何获得登录凭据": (23, 44),
     }
     for title, (node_count, source_location_count) in expected_graphs.items():
+        project_id = next(graph["projectId"] for graph in graph_summaries if graph["title"] == title)
+        project_group = page.locator(f'.catalog-project[data-project-id="{project_id}"]')
+        if not project_group.evaluate("el => el.open"):
+            project_group.locator("summary").click()
         graph_button = page.locator(".graph-option", has_text=title)
         selected_slug = graph_button.get_attribute("data-slug")
         graph_button.click()
@@ -460,7 +476,7 @@ with sync_playwright() as playwright:
         assert page.locator(".workspace").get_attribute("data-workspace-view") == "code"
         assert page.locator("#phase-navigator").count() == 0
         assert page.locator(".source-stepper").is_visible()
-        assert page.locator("#scene-page-link").get_attribute("href") == "/scenes/index.html"
+        assert page.locator("#reading-switcher a[aria-current=page]").get_attribute("href") == f"/?graph={selected_slug}"
         if title == "对话太长时，Codex 如何压缩上下文并继续":
             long_description = (
                 "在“安装精简历史并继续任务”阶段，原子替换活动历史，更新 "
@@ -2456,6 +2472,9 @@ with sync_playwright() as playwright:
     page.locator("#reset-view").click()
     assert page.locator(".graph-node").count() == 23
 
+    # Orientation changes preserve the camera. Fit the restored vertical graph
+    # before checking screen-space hit tolerance (rather than a horizontal zoom).
+    page.locator("#fit-view").click()
     edge_hit_target = page.locator(
         '[data-edge-hit-id="edge.client-runtime-start"]'
     )
@@ -2487,7 +2506,8 @@ with sync_playwright() as playwright:
                     ?.closest(".graph-edge-group")
                     ?.dataset.edgeGroupId || null""",
             [point["x"], point["y"]],
-        ) == "edge.client-runtime-start"
+        ) == "edge.client-runtime-start", {"point": point, "path": edge_hit_target.get_attribute("d"),
+            "hit": page.evaluate("([x,y]) => document.elementFromPoint(x,y)?.outerHTML", [point["x"], point["y"]])}
     hit_test_x = edge_hit_points[4]["x"]
     hit_test_y = edge_hit_points[4]["y"]
     page.mouse.click(hit_test_x, hit_test_y)
@@ -2603,6 +2623,12 @@ with sync_playwright() as playwright:
     page.locator("#theme-select").select_option("halo")
     page.wait_for_timeout(3700)
     page.screenshot(path=str(ARTIFACTS / "callgraph-overview.png"), full_page=True)
+
+    analysis_graph = page.request.get(f"{BASE_URL}/api/graphs/callgraph-v2-validation").json()
+    assert analysis_graph["analysis"]["provider"].startswith("rust-analyzer")
+    assert set(analysis_graph["analysis"]["queriedNodes"]) <= {n["id"] for n in analysis_graph["nodes"]}
+    assert all(e["kind"] == "static-call" for e in analysis_graph["edges"])
+    assert "analysis" not in active_graph
 
     scenarios = page.request.get(f"{BASE_URL}/api/scenarios")
     assert scenarios.ok

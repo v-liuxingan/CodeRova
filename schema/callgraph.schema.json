@@ -25,6 +25,7 @@
     },
     "description": { "type": "string" },
     "sourceRevision": { "type": ["string", "null"] },
+    "analysis": { "$ref": "#/$defs/analysis" },
     "phases": {
       "type": "array",
       "description": "Ordered user-facing scenario phases; nodes opt in through phaseId",
@@ -41,6 +42,53 @@
     }
   },
   "$defs": {
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "scope",
+        "maxDepth",
+        "requestBudget",
+        "queriedNodes",
+        "pendingNodes",
+        "issues"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requestBudget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "queriedNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pendingNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "phase": {
       "type": "object",
       "additionalProperties": false,
@@ -94,7 +142,7 @@
         "from": { "type": "string", "minLength": 1 },
         "to": { "type": "string", "minLength": 1 },
         "kind": {
-          "enum": ["direct", "callback", "trait-dispatch", "spawn", "remote", "async-boundary", "data-flow"]
+          "enum": ["direct", "callback", "trait-dispatch", "spawn", "remote", "async-boundary", "data-flow", "static-call"]
         },
         "flowKind": {
           "enum": ["normal", "branch", "fallback", "merge", "loop-back", "loop-exit"],

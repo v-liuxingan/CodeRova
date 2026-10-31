@@ -1,5 +1,12 @@
 # Third-party notices
 
+## AntV G6
+
+V2 bundles AntV G6 5.1.1 (MIT, Copyright (c) 2018 Alipay.inc).
+Source: <https://github.com/antvis/G6>. The build copies its license to
+`public/vendor/v2/G6-LICENSE.txt`; bundled legal comments remain in
+`public/vendor/v2/workbench.js.LEGAL.txt`.
+
 ## Monaco Editor
 
 This project bundles selected parts of Monaco Editor 0.51.0 for the local,

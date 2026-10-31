@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {PathWindow} from './path-window.js';
+import {GraphWindow} from './graph-window.js';
+const graph={root:'a',nodes:['a','b','c','d','e'].map(id=>({id})),edges:[['a','b'],['a','c'],['b','d'],['c','d'],['d','e'],['e','a']].map(([from,to],i)=>({id:String(i),from,to,...(i===5?{flowKind:'loop-back'}:{})}))};
+const original=JSON.stringify(graph);
+const p=new PathWindow(graph);p.reset(10,'layers');
+const other=p.children.get('c').get('3');
+assert(p.collapse('b')>0);assert(p.visible.has(other));assert.equal(p.hiddenChildren('b'),1);
+p.expand('b',10,'layers');assert.equal(p.hiddenChildren('b'),0);
+p.collapse('a');assert.equal(p.snapshot().nodes.length,1);
+const found=p.reveal('e');assert(p.visible.has(found));assert.equal(p.nodes.get(found).sourceId,'e');
+const r=new GraphWindow(graph);r.reset(10,'layers');
+assert.equal(r.collapse('b'),0);assert(r.visible.has('d'));
+assert.equal(r.collapse('a'),4);assert.deepEqual([...r.visible],['a']);
+r.expand('a',1,'layers');assert.deepEqual([...r.visible],['a','b','c']);
+assert.equal(JSON.stringify(graph),original);
+console.log('Collapse: branch isolation, shared targets, cycles, search reveal, re-expansion and unchanged source PASS');

@@ -75,12 +75,9 @@ export class InspectorWorkbenchController {
   }
 
   persist() {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        collapsed: this.collapsed,
-      }),
-    );
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ collapsed: this.collapsed }));
+    } catch { /* Keep workbench controls available when storage is blocked. */ }
   }
 
   bind() {

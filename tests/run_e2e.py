@@ -42,6 +42,10 @@ def find_free_port() -> int:
 
 def main() -> int:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    subprocess.run(["node", str(ROOT / "tests" / "content_check_test.mjs")], cwd=ROOT, check=True)
+    subprocess.run(["node", str(ROOT / "tests" / "project_navigation_test.mjs")], cwd=ROOT, check=True)
+    subprocess.run(["node", str(ROOT / "tests" / "edge_routing_test.mjs")], cwd=ROOT, check=True)
+    subprocess.run([sys.executable, str(ROOT / "tests" / "qoreon_acceptance.py")], cwd=ROOT, check=True)
     subprocess.run(
         ["node", str(ROOT / "tests" / "mermaid_scene_test.mjs")],
         cwd=ROOT,
@@ -109,6 +113,9 @@ def main() -> int:
         cwd=ROOT,
         check=True,
     )
+    analysis_environment = os.environ.copy()
+    analysis_environment["CALLGRAPH_TEST_BINARY"] = str(SERVER)
+    subprocess.run([sys.executable, str(ROOT / "tests" / "lsp_analysis_test.py")], cwd=ROOT, env=analysis_environment, check=True)
     shutil.rmtree(TEMP_LAYOUTS, ignore_errors=True)
     shutil.rmtree(TEMP_GRAPHS, ignore_errors=True)
     shutil.rmtree(TEMP_SCENARIOS, ignore_errors=True)
@@ -138,6 +145,14 @@ def main() -> int:
         environment = os.environ.copy()
         environment["CALLGRAPH_TEST_URL"] = f"http://127.0.0.1:{port}"
         environment["CALLGRAPH_TEST_GRAPHS"] = str(TEMP_GRAPHS)
+        subprocess.run(
+            [sys.executable, str(ROOT / "tests" / "renderer_interaction_e2e.py")],
+            cwd=ROOT, env=environment, check=True,
+        )
+        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_e2e.py")], cwd=ROOT, env=environment, check=True)
+        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_drag_e2e.py")], cwd=ROOT, env=environment, check=True)
+        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_highlight_e2e.py")], cwd=ROOT, env=environment, check=True)
+        subprocess.run([sys.executable, str(ROOT / "tests" / "v2_library_e2e.py")], cwd=ROOT, env=environment, check=True)
         result = subprocess.run(
             [sys.executable, str(ROOT / "tests" / "e2e_visualizer.py")],
             cwd=ROOT,
@@ -151,6 +166,12 @@ def main() -> int:
             cwd=ROOT,
             env=environment,
             check=False,
+        )
+        if result.returncode:
+            return result.returncode
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tests" / "project_navigation_e2e.py")],
+            cwd=ROOT, env=environment, check=False,
         )
         if result.returncode:
             return result.returncode

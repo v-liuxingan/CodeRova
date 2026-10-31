@@ -17,20 +17,28 @@ export class LayoutPersistenceController {
   async flush() {
     window.clearTimeout(this.timer);
     this.timer = null;
-    if (this.saving) await this.saving;
+    if (this.saving && await this.saving === false) return false;
     const pending = this.pending;
     this.pending = null;
-    if (!pending) return;
+    if (!pending) return true;
 
     this.callbacks.onStatus?.("正在保存节点布局");
     this.saving = this.api
       .saveLayout(pending.graphSlug, pending.layout)
-      .then(() => this.callbacks.onStatus?.("节点布局已保存"))
-      .catch((error) => this.callbacks.onError?.(error.message))
+      .then(() => {
+        this.callbacks.onStatus?.("节点布局已保存");
+        return true;
+      })
+      .catch((error) => {
+        // Preserve a newer edit if one arrived during the failed request.
+        this.pending ||= pending;
+        this.callbacks.onError?.(error.message);
+        return false;
+      })
       .finally(() => {
         this.saving = null;
       });
-    await this.saving;
-    if (this.pending) await this.flush();
+    if (await this.saving === false) return false;
+    return this.pending ? this.flush() : true;
   }
 }

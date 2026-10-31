@@ -1,4 +1,4 @@
-:root {
+:root, :host {
   color-scheme: light;
   --paper: #f5f5f5;
   --ink: #2d3142;
@@ -15,18 +15,18 @@
   background: var(--paper);
 }
 /* Same palette families as the workbench, applied without runtime coupling. */
-:root[data-theme="halo"] {
+:root[data-theme="halo"], :host([data-theme="halo"]) {
   --paper: #f4f7fb; --ink: #17263d; --muted: #465b74; --line: #c8d5e5;
   --accent: #2563d9; --link: #2563d9;
   --blue: #2563d9; --teal: #087f8f; --orange: #95600a; --plum: #a33561;
 }
-:root[data-theme="aether"] {
+:root[data-theme="aether"], :host([data-theme="aether"]) {
   color-scheme: dark;
   --paper: #08121f; --ink: #e7eef8; --muted: #b0bdd0; --line: #293b54;
   --accent: #75a7ff; --link: #75a7ff;
   --blue: #75a7ff; --teal: #43d7c5; --orange: #f2b65c; --plum: #d6a2e9;
 }
-:root[data-theme="signal"] {
+:root[data-theme="signal"], :host([data-theme="signal"]) {
   color-scheme: dark;
   --paper: #121611; --ink: #e9eadc; --muted: #b0b5a8; --line: #343d30;
   --accent: #c8f04a; --link: #c8f04a;
@@ -76,8 +76,18 @@ code { font: .92em "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere
 .scene-entry h2 { margin: 0 0 10px; }
 .scene-entry p { margin: 0; color: var(--muted); line-height: 1.8; font-size: 14px; }
 .scene-entry > a { align-self: center; white-space: nowrap; font-size: 13px; }
+.scene-entry h3 { margin: 0; font-size: 21px; line-height: 1.5; }
+.project-index { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 36px; }
+.project-index a { border: 1px solid var(--line); padding: 10px 16px; text-decoration: none; border-radius: 4px; }
+.project-index small { margin-left: 12px; color: var(--muted); }
+.project-section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-top: 40px; }
+.project-section-heading a { font-size: 13px; }
+.scene-list { scroll-margin-top: 24px; }
 .scene-entry > div { min-width: 0; }
 .sequence text { fill: var(--ink); font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif; font-size: 13px; }
+.sequence a, .sequence a text { pointer-events: bounding-box; cursor: pointer; }
+.sequence a:hover text, .sequence a:focus-visible text { text-decoration: underline; }
+.evidence li:target { background: color-mix(in srgb, var(--blue) 10%, var(--paper)); }
 .sequence .actor { --actor-color: var(--blue); }
 .sequence .actor[data-tone="teal"] { --actor-color: var(--teal); }
 .sequence .actor[data-tone="orange"] { --actor-color: var(--orange); }
@@ -128,3 +138,7 @@ code { font: .92em "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere
   .sequence { width: 100%; min-width: 0; }
   .diagram-scroll { overflow: visible; }
 }
+
+:host { display: block; min-width: 0; }
+:host .page { padding: 24px 32px 48px; }
+:host .kicker { margin-top: 4px; }

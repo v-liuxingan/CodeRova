@@ -106,6 +106,12 @@ def main():
                 for link in page.locator("a[href]").all():
                     href = link.get_attribute("href")
                     assert "targetIds" not in href and "phase" not in href
+                evidence_link = svg.locator('a[href^="#evidence-"]').first
+                if evidence_link.count():
+                    href = evidence_link.get_attribute("href")
+                    evidence_link.click()
+                    assert page.url.endswith(href)
+                    assert page.locator(href).is_visible()
         assert not any("/api/" in url for url in requests), requests
         assert all(urlparse(url).netloc == urlparse(BASE_URL).netloc for url in requests)
         page.goto(f"{BASE_URL}/scenes/index.html")
@@ -168,6 +174,15 @@ def main():
         page.on("request", lambda request: scenario_requests.append(request.url)
                 if "/api/scenarios" in request.url else None)
         page.route("**/api/scenarios**", lambda route: route.abort())
+        page.goto(f"{BASE_URL}/scenes/qoreon-network-recovery.html")
+        page.locator(".page-nav .callgraph-link").click()
+        page.wait_for_selector(".graph-node")
+        assert page.locator(".graph-option.active").get_attribute("data-slug") == "qoreon-network-recovery"
+        response = page.request.post(f"{BASE_URL}/api/preview", data={
+            "graph": "qoreon-network-recovery", "targetType": "node", "id": "schedule",
+        })
+        assert response.status == 200
+        assert "_schedule_network_resume_run" in response.text()
         page.goto(f"{BASE_URL}/scenes/codex-message-roundtrip.html")
         page.locator(".page-nav .callgraph-link").click()
         page.wait_for_selector(".graph-node")
@@ -177,8 +192,8 @@ def main():
         assert page.locator(".workspace").get_attribute("data-workspace-view") == "code"
         assert page.locator("#phase-navigator, #architecture-scenario-navigator").count() == 0
         assert page.locator(".source-stepper").is_visible()
-        page.locator("#scene-page-link").click()
-        page.wait_for_url("**/scenes/index.html")
+        page.locator('#reading-switcher a[href="/?scene=codex-message-roundtrip"]').click()
+        page.wait_for_url("**/?scene=codex-message-roundtrip")
         page.go_back()
         page.wait_for_selector(".graph-node")
         assert page.locator(".graph-option.active").get_attribute("data-slug") == (

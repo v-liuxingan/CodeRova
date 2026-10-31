@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Callgraph · 源码阅读 V2</title><script src="/v2/theme.js"></script><link rel="stylesheet" href="/v2/style.css"></head>
+<body>
+<a class="skip-link" href="#reader">跳到调用图</a>
+<header><a class="brand" href="/v2/">↳ CALLGRAPH <small>V2 · PREVIEW</small></a><span>从调用关系，回到源码。</span><div class="header-actions"><select id="appearance" aria-label="配色主题"><option value="light">亮色</option><option value="dark">深色</option></select><a href="/">经典工作台</a></div></header>
+<div class="workspace">
+  <aside class="library" aria-label="项目与调用图">
+    <div class="section-title">项目资料库 <span id="graph-count"></span></div>
+    <input id="filter" type="search" placeholder="搜索项目、分组或调用图…" aria-label="搜索项目、分组或调用图" autocomplete="off" spellcheck="false">
+    <nav id="catalog" aria-label="调用图目录"></nav>
+    <div class="library-note">拖动调用图调整分组或顺序；删除的图可在回收站恢复。</div>
+  </aside>
+  <main id="reader" tabindex="-1">
+    <section class="heading"><div><h1 id="title">选择一个调用图</h1><p id="summary">左侧按项目列出所有调用图。</p></div><button id="fit" disabled>适应画布</button></section>
+    <div class="graph-controls" aria-label="图展示范围">
+      <label>视图 <select id="view-mode"><option value="paths">调用路径</option><option value="relations">调用关系</option></select></label>
+      <label>每次展开 <input id="window-size" type="number" min="1" step="1" value="50" aria-label="展开数量"></label>
+      <select id="window-unit" aria-label="展开单位"><option value="nodes">个节点</option><option value="layers" selected>层调用</option></select>
+      <button id="apply-window">从入口重新展示</button>
+      <fieldset id="direction" class="direction-switch" aria-label="布局方向"><label><input type="radio" name="direction" value="TB" checked><span>纵向</span></label><label><input type="radio" name="direction" value="LR"><span>横向</span></label></fieldset>
+    </div>
+    <details id="coverage" hidden><summary id="coverage-title"></summary><p id="coverage-scope"></p><ul id="coverage-issues"></ul></details>
+    <div id="status" role="status" aria-live="polite">正在读取项目目录…</div>
+    <div id="canvas" aria-label="调用关系画布"></div>
+    <footer><span id="stats">—</span><span>拖动画布 · 滚轮缩放 · 点击节点查看证据</span></footer>
+  </main>
+  <aside class="inspector" aria-label="源码与调用证据">
+    <div class="section-title">源码证据</div>
+    <input id="symbol-filter" type="search" placeholder="查找当前图的符号" aria-label="查找当前图的符号">
+    <select id="symbols" aria-label="选择符号"><option>尚未加载调用图</option></select>
+    <button id="symbols-more" hidden>继续加载符号</button>
+    <h2 id="selection-title">先选择一个符号</h2><p id="selection-description">调用点与函数定义均可在这里核对。</p>
+
+    <div id="relations"></div>
+    <div id="source-location"></div><pre id="source" tabindex="0" aria-label="源码预览"></pre>
+  </aside>
+</div>
+<script type="module" src="/vendor/v2/workbench.js"></script>
+</body></html>

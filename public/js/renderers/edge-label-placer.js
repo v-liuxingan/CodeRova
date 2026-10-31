@@ -6,25 +6,53 @@ const SEARCH_STEPS = 4;
  * Places edge label cards outside their branch direction and resolves the
  * remaining collisions without coupling the policy to SVG DOM operations.
  */
-export function placeEdgeLabels(views, orientation) {
+export function placeEdgeLabels(views, orientation, nodes = []) {
   const vertical = orientation === "vertical";
   const ordered = [...views].sort((left, right) => compareViews(left, right, vertical));
-  const occupied = [];
+  const occupied = new BoxIndex();
+  for (const node of nodes) occupied.add({ left: node.x - 8, right: node.x + node.width + 8,
+    top: node.y - 20, bottom: node.y + node.height + 20 });
   const positions = new Map();
 
   for (const view of ordered) {
     const candidates = labelCandidates(view, vertical);
     const chosen =
-      candidates.find((candidate) => !occupied.some((box) => overlaps(candidate, box)))
+      candidates.find((candidate) => !occupied.near(candidate).some((box) => overlaps(candidate, box)))
       || candidates.reduce((best, candidate) =>
-        overlapArea(candidate, occupied) < overlapArea(best, occupied) ? candidate : best);
-    occupied.push(chosen);
-    positions.set(view.entry.edge.id, { x: chosen.x, y: chosen.y });
+        overlapArea(candidate, occupied.near(candidate)) < overlapArea(best, occupied.near(best)) ? candidate : best);
+    occupied.add(chosen);
+    positions.set(view.entry.edge.id, { x: chosen.x, y: chosen.y, anchor: chosen.anchor });
   }
   return positions;
 }
 
 function labelCandidates(view, vertical) {
+  const anchors = view.geometry.labelAnchors;
+  if (anchors?.length) {
+    const candidates = [];
+    const primarySide = (vertical ? centerX(view.entry.to) - centerX(view.entry.from)
+      : centerY(view.entry.to) - centerY(view.entry.from)) < 0 ? -1 : 1;
+    for (const anchor of anchors) {
+      for (const side of [primarySide, -primarySide]) {
+        candidates.push({ ...toBox({
+          x: anchor.x + (anchor.vertical ? side * (view.labelWidth / 2 + PATH_OFFSET) : 0),
+          y: anchor.y + (anchor.vertical ? 0 : side * (view.labelHeight / 2 + PATH_OFFSET)),
+        }, view.labelWidth / 2, view.labelHeight / 2), anchor });
+      }
+    }
+    // Preserve association with a real route segment if dense labels must move.
+    for (const candidate of [...candidates]) {
+      for (let step = 1; step <= SEARCH_STEPS; step += 1) {
+        for (const direction of [-1, 1]) {
+          const dx = candidate.anchor.vertical ? 0 : direction * step * (view.labelWidth + COLLISION_GAP);
+          const dy = candidate.anchor.vertical ? direction * step * (view.labelHeight + COLLISION_GAP) : 0;
+          candidates.push({ ...candidate, x: candidate.x + dx, y: candidate.y + dy,
+            left: candidate.left + dx, right: candidate.right + dx, top: candidate.top + dy, bottom: candidate.bottom + dy });
+        }
+      }
+    }
+    return candidates;
+  }
   const { midpoint } = view.geometry;
   const branchDelta = vertical
     ? centerX(view.entry.to) - centerX(view.entry.from)
@@ -111,4 +139,23 @@ function centerX(node) {
 
 function centerY(node) {
   return node.y + node.height / 2;
+}
+
+// Local collision queries avoid rescanning every previously placed label.
+class BoxIndex {
+  cells = new Map();
+  keys(box) {
+    const keys = [];
+    for (let x = Math.floor(box.left / 256); x <= Math.floor(box.right / 256); x += 1) {
+      for (let y = Math.floor(box.top / 256); y <= Math.floor(box.bottom / 256); y += 1) keys.push(`${x}:${y}`);
+    }
+    return keys;
+  }
+  add(box) {
+    for (const key of this.keys(box)) {
+      if (!this.cells.has(key)) this.cells.set(key, []);
+      this.cells.get(key).push(box);
+    }
+  }
+  near(box) { return [...new Set(this.keys(box).flatMap((key) => this.cells.get(key) || []))]; }
 }

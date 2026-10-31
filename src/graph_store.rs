@@ -15,6 +15,9 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// A database, remote catalog, or generated graph source can implement this
 /// trait without changing the HTTP or rendering layers.
 pub trait GraphStore: Send + Sync {
+    fn delete_archived(&self, slug: &str) -> Result<(), String>;
+    fn archived(&self) -> Result<Vec<(String, CallGraph)>, String>;
+    fn set_archived(&self, slug: &str, archived: bool) -> Result<(), String>;
     fn list(&self) -> Result<Vec<(String, CallGraph)>, String>;
     fn load(&self, slug: &str) -> Result<CallGraph, String>;
     fn update_category(
@@ -32,6 +35,23 @@ pub struct FileGraphStore {
 }
 
 impl FileGraphStore {
+    fn archived_index(&self) -> Result<BTreeMap<String, PathBuf>, String> {
+        let mut paths = Vec::new();
+        collect_files(&self.root, "deleted", &mut paths)?;
+        let mut index = BTreeMap::new();
+        for path in paths {
+            let slug = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or("无效回收站文件名")?
+                .to_owned();
+            validate_slug(&slug)?;
+            if index.insert(slug.clone(), path).is_some() {
+                return Err(format!("回收站名称冲突：{slug}"));
+            }
+        }
+        Ok(index)
+    }
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
@@ -71,6 +91,46 @@ impl FileGraphStore {
 }
 
 impl GraphStore for FileGraphStore {
+    fn delete_archived(&self, slug: &str) -> Result<(), String> {
+        validate_slug(slug)?;
+        let _guard = self.operation_lock.lock().map_err(|_| "图谱存储锁已损坏")?;
+        let path = self
+            .archived_index()?
+            .remove(slug)
+            .ok_or_else(|| format!("回收站中不存在调用图：{slug}"))?;
+        fs::remove_file(path).map_err(|e| format!("无法永久删除图配置：{e}"))
+    }
+    fn archived(&self) -> Result<Vec<(String, CallGraph)>, String> {
+        let _guard = self.operation_lock.lock().map_err(|_| "图谱存储锁已损坏")?;
+        self.archived_index()?
+            .into_iter()
+            .map(|(slug, path)| self.read_indexed_graph(&path).map(|g| (slug, g)))
+            .collect()
+    }
+
+    fn set_archived(&self, slug: &str, archived: bool) -> Result<(), String> {
+        validate_slug(slug)?;
+        let _guard = self.operation_lock.lock().map_err(|_| "图谱存储锁已损坏")?;
+        let active = self.index()?;
+        let deleted = self.archived_index()?;
+        let (source, occupied, extension) = if archived {
+            (&active, &deleted, "deleted")
+        } else {
+            (&deleted, &active, "json")
+        };
+        if occupied.contains_key(slug) {
+            return Err(format!("同名调用图已存在，无法覆盖：{slug}"));
+        }
+        let source = source
+            .get(slug)
+            .ok_or_else(|| format!("调用图不存在：{slug}"))?;
+        let target = source.with_extension(extension);
+        if target.exists() {
+            return Err("目标文件已存在，无法覆盖".into());
+        }
+        // Same-directory rename preserves every byte and its original category. No source files or layouts are touched.
+        fs::rename(source, target).map_err(|e| format!("无法更新回收站：{e}"))
+    }
     fn list(&self) -> Result<Vec<(String, CallGraph)>, String> {
         let _operation_guard = self
             .operation_lock
@@ -118,6 +178,14 @@ impl GraphStore for FileGraphStore {
         graph.category = category.trim().to_owned();
 
         let target_directory = self.root.join(&graph.category_id);
+        if target_directory.exists()
+            && !target_directory
+                .canonicalize()
+                .map_err(|e| e.to_string())?
+                .starts_with(self.root.canonicalize().map_err(|e| e.to_string())?)
+        {
+            return Err("分类目录必须位于图谱根目录内".into());
+        }
         let target = target_directory.join(
             source
                 .file_name()
@@ -249,6 +317,14 @@ fn replace_file(temporary: &Path, path: &Path) -> std::io::Result<()> {
 }
 
 fn collect_graph_files(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
+    collect_files(directory, "json", paths)
+}
+
+fn collect_files(
+    directory: &Path,
+    extension: &str,
+    paths: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     let entries = fs::read_dir(directory)
         .map_err(|error| format!("无法读取调用图目录 {}：{error}", directory.display()))?;
     for entry in entries {
@@ -260,9 +336,9 @@ fn collect_graph_files(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<(),
             )
         })?;
         if file_type.is_dir() {
-            collect_graph_files(&entry.path(), paths)?;
+            collect_files(&entry.path(), extension, paths)?;
         } else if file_type.is_file()
-            && entry.path().extension().and_then(|value| value.to_str()) == Some("json")
+            && entry.path().extension().and_then(|value| value.to_str()) == Some(extension)
         {
             paths.push(entry.path());
         }
@@ -572,6 +648,31 @@ mod tests {
             .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("tmp"))
             .count();
         assert_eq!(temporary_files, 0);
+    }
+
+    #[test]
+    fn trash_preserves_bytes_restores_and_deletes_only_archived_files() {
+        let directory = tempfile::tempdir().unwrap();
+        write_graph(directory.path(), "tools/example.json", "tools", "Example");
+        let path = directory.path().join("tools/example.json");
+        let original = fs::read(&path).unwrap();
+        let store = FileGraphStore::new(directory.path().to_owned());
+        assert!(store.delete_archived("example").is_err());
+        assert!(store.set_archived("../example", true).is_err());
+        store.set_archived("example", true).unwrap();
+        assert!(!path.exists());
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(store.archived().unwrap().len(), 1);
+        assert_eq!(fs::read(path.with_extension("deleted")).unwrap(), original);
+        store.set_archived("example", false).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), original);
+        store.set_archived("example", true).unwrap();
+        write_graph(directory.path(), "other/example.json", "other", "Conflict");
+        assert!(store.set_archived("example", false).is_err());
+        assert_eq!(fs::read(path.with_extension("deleted")).unwrap(), original);
+        store.delete_archived("example").unwrap();
+        assert!(!path.with_extension("deleted").exists());
+        assert_eq!(store.load("example").unwrap().title, "Conflict");
     }
 
     fn write_graph(root: &Path, relative: &str, category_id: &str, title: &str) {

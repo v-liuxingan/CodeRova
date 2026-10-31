@@ -9,13 +9,23 @@
 1. 在 `scenes/<slug>.mmd` 编写 Mermaid 时序图，在同名 `.json` 保存元数据。文件名用
    小写字母、数字、连字符或下划线，不使用 `index`。现有示例为 `codex-message-roundtrip`
    和 `codex-agent-turn`；两个文件应一起维护。
-2. 运行 `npm run build:scenes`。共用渲染器生成 `public/scenes/<slug>.html` 和场景目录，
+2. 运行 `npm run build:scenes`。共用渲染器生成 `public/scenes/<slug>.html`、场景目录和 `catalog.json`，
    无需手工登记目录，也不要修改生成后的 HTML。
 3. 运行 `npm run check:scenes` 检查数据与产物是否同步；提交 `.mmd`、元数据 JSON 与生成页面。
    `npm run build:frontend` 也包含场景构建。仅改场景数据时不需要重建 Monaco。
+4. 运行 `npm run check:content -- --project <项目ID>` 检查源码及基线。project.id 对应本地
+   项目目录；location.anchor 可提供所引范围内的字面片段。详见 [证据检查](content-verification.md)。
 
-调用图与场景数据分别生成和维护，只通过普通链接连接。无需 `targetIds`、phase 映射、
+调用图与场景数据分别生成和维护，由工作台统一切换阅读视图。无需 `targetIds`、phase 映射、
 跨页选择状态或 `/api/scenarios`。旧 `scenarios/*.json` 属于 Atlas 实验协议，不是这里的输入。
+
+主页是全量项目目录：所有项目同时展示，卡片内列出场景地图和调用图。点击场景会通过
+`/?scene=<slug>` 在当前工作台直接展示时序图；点击关联调用图继续在同一工作台核对源码。
+`/scenes/<slug>.html` 保留独立阅读兼容，但不作为主目录的中转步骤。
+元数据的 `project.id` 应对应 `callgraph.projects.json` 中已登记的项目 ID，以便与调用图
+归入同一项目；缺少 ID 的旧场景仍可从首页和场景目录的未关联项目分组阅读。
+`callgraph` 仅提供可选的对应调用图标识，供统一阅读入口使用，不是节点映射。模型无需编写或手工登记 `catalog.json`，
+也无需创建首页或场景前端页面。
 
 ## 数据结构
 
@@ -104,7 +114,19 @@ Note left/right、其他箭头（包括 `--)`）、前置配置或样式指令�
 [`sequence-scene.schema.json`](../schema/sequence-scene.schema.json)。在上述公共元数据中
 增加 `participants` 和 `body`，移除仅 Mermaid 元数据支持的 `participantRoles`。
 参与者为 `{ id, label, role? }`，以下是 body 的步骤类型。需要消息或说明直接引用源码
-依据 ID 时，可使用此完整 JSON 入口；Mermaid 入口目前使用场景级依据表。
+依据 ID 时，两种入口均可使用；Mermaid 使用下述可选注释，不重复输出 body。
+
+```mermaid
+sequenceDiagram
+    %% @evidence accept
+    client->>server: 提交请求
+```
+
+`%% @evidence accept,other` 将下一条消息或 Note 关联元数据中的依据 ID。插入其他消息
+不会改变关联，不需要维护序号。注释不能悬空、跨过控制框或引用不存在的 ID。
+点击消息或说明可跳到本页依据表；多依据时先到第一项，编号列出全部依据。
+仅给关键交接补充注释，不设置标注比例要求。控制条件可通过旁边的 Note 标注。
+evidence.status 可选 source/inferred；未标注不会被显示成已验证。
 
 - **消息**：`{ type: "message", from, to, kind, label }`。`kind` 为 `call`（调用/请求）、
   `return`（返回/结果）或 `async`（异步派发/事件）；`from == to` 表示自调用。

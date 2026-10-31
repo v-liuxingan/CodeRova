@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod graph_store;
 pub mod layout_store;
 pub mod model;

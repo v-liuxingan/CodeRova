@@ -63,6 +63,9 @@ export function renderSequence(scene, slug) {
   const evidenceSuffix = (block) => block.evidence?.length
     ? `〔依据 ${block.evidence.map((id) => evidenceIndex.get(id)).join("、")}〕` : "";
 
+  const linked = (block, markup) => block.evidence?.length
+    ? `<a href="#evidence-${e(block.evidence[0])}" aria-label="核对源码依据">${markup}</a>` : markup;
+
   function layout(body, top, level = 0) {
     let y = top;
     const content = [];
@@ -80,7 +83,7 @@ export function renderSequence(scene, slug) {
         const arrow = self
           ? `<path class="message ${block.kind}" d="M${from} ${arrowY} h${direction * 42} v24 h${-direction * 42}" marker-end="url(#${slug}-${marker})"/>`
           : `<line class="message ${block.kind}" x1="${from}" y1="${arrowY}" x2="${to}" y2="${arrowY}" marker-end="url(#${slug}-${marker})"/>`;
-        content.push(`<g class="exchange" data-kind="${block.kind}" data-from="${e(block.from)}" data-to="${e(block.to)}">${text(lines, labelX, y + 16, "message-label", "middle")}${arrow}</g>`);
+        content.push(`<g class="exchange" data-kind="${block.kind}" data-from="${e(block.from)}" data-to="${e(block.to)}">${linked(block, text(lines, labelX, y + 16, "message-label", "middle"))}${arrow}</g>`);
         y = arrowY + (self ? 24 : 0) + 32;
       } else if (block.type === "note") {
         const positions = (block.over || scene.participants.map((a) => a.id)).map((id) => xs.get(id));
@@ -88,7 +91,7 @@ export function renderSequence(scene, slug) {
         const right = Math.min(width - inset - 12, Math.max(...positions) + 120);
         const lines = wrapText(block.text + evidenceSuffix(block), right - left - 32, 12);
         const height = lines.length * LINE + 28;
-        content.push(`<g class="sequence-note"><rect class="note-box" x="${left}" y="${y}" width="${right - left}" height="${height}" rx="3"/>${text(lines, left + 16, y + 25, "note")}</g>`);
+        content.push(`<g class="sequence-note"><rect class="note-box" x="${left}" y="${y}" width="${right - left}" height="${height}" rx="3"/>${linked(block, text(lines, left + 16, y + 25, "note"))}</g>`);
         y += height + 24;
       } else {
         const start = y;
@@ -144,10 +147,13 @@ function document(title, description, body, theme = "editorial") {
 
 const callgraphLink = (scene, label) => scene.callgraph
   ? `<a class="callgraph-link" href="/?graph=${encodeURIComponent(scene.callgraph)}">${label}</a>` : "";
+const projectLink = (scene) => scene.project.id
+  ? `<a class="project-home-link" href="/?project=${encodeURIComponent(scene.project.id)}">← 项目目录 · ${e(scene.project.label)}</a>`
+  : '<a class="project-home-link" href="/">← 项目主页</a>';
 
 export function renderScene(scene, slug) {
   return document(scene.title, scene.summary, `
-<nav class="page-nav" aria-label="页面导航"><a href="/scenes/index.html">← 场景目录</a><span class="wordmark">CALLGRAPH / SCENARIOS</span>${callgraphLink(scene, "查看调用图 →")}</nav>
+<nav class="page-nav" aria-label="页面导航">${projectLink(scene)}<a href="/scenes/index.html${scene.project.id ? `#project-${e(scene.project.id)}` : ""}">场景目录</a>${callgraphLink(scene, "查看调用图 →")}</nav>
 <header><p class="kicker">${e(scene.project.label)} · EXECUTION SEQUENCE</p><h1>${e(scene.title)}</h1><p class="lead">${e(scene.summary)}</p>
 <dl class="scope"><div><dt>开始 → 结束</dt><dd>${e(scene.scope.startEnd)}</dd></div><div><dt>本页范围</dt><dd>${e(scene.scope.boundary)}</dd></div>${scene.scope.notes ? `<div><dt>阅读提示</dt><dd>${e(scene.scope.notes)}</dd></div>` : ""}</dl></header>
 <section aria-labelledby="sequence-heading"><div class="figure-heading"><h2 id="sequence-heading">执行时序</h2><p>按语义展开 · 窄屏可横向滚动</p></div>
@@ -156,14 +162,28 @@ export function renderScene(scene, slug) {
 <figcaption>从上向下阅读；间距不表示耗时，PAR 分区之间不表示执行或完成先后。角色配色辅助对齐泳道；区域颜色对应控制流类型，不表示风险或重要性。${e(scene.caption || "")}</figcaption></figure></section>
 ${scene.reading ? `<section class="reading" aria-label="读图要点">${scene.reading.map((item) => `<article><h3>${e(item.title)}</h3><p>${e(item.text)}</p></article>`).join("")}</section>` : ""}
 <section class="evidence" id="evidence"><h2>核对执行依据</h2><p>源码基线：${e(scene.project.label)} <code>${e(scene.project.revision)}</code>。图中箭头按职责归纳，不保证逐一对应函数调用；下列位置用于核对结论。</p>
-<ol>${scene.evidence.map((item) => `<li id="evidence-${e(item.id)}">${e(item.claim)}<br/>${item.locations.map((location) => `<code>${e(location.file)}${location.line ? `:${location.line}${location.endLine ? `–${location.endLine}` : ""}` : "（文件级依据）"}</code> · <code>${e(location.symbol)}</code>`).join("<br/>")}</li>`).join("\n")}</ol>
+<ol>${scene.evidence.map((item) => `<li id="evidence-${e(item.id)}">${e(item.claim)} <small>${item.status === "inferred" ? "推断 · 需进一步核对" : item.status === "source" ? "源码依据 · 作者核对" : "依据分类未标注"}</small><br/>${item.locations.map((location) => `<code>${e(location.file)}${location.line ? `:${location.line}${location.endLine ? `–${location.endLine}` : ""}` : "（文件级依据）"}</code> · <code>${e(location.symbol)}</code>`).join("<br/>")}</li>`).join("\n")}</ol>
 <p>${callgraphLink(scene, "打开调用图，核对函数、调用点和源码 →")}</p></section>
-<footer class="page-footer"><a href="/scenes/index.html">返回场景目录</a>${callgraphLink(scene, "查看调用图 →")}</footer>`, scene.theme);
+<footer class="page-footer">${projectLink(scene)}${callgraphLink(scene, "查看调用图 →")}</footer>`, scene.theme);
 }
 
 export function renderCatalog(scenes) {
+  const projects = new Map();
+  for (const entry of scenes) {
+    const key = entry.scene.project.id || "unassigned";
+    if (!projects.has(key)) projects.set(key, []);
+    projects.get(key).push(entry);
+  }
   return document("场景地图", "从场景理解执行，再通过调用图核对源码。", `
-<nav class="page-nav"><span class="wordmark">CALLGRAPH / SCENARIOS</span><a href="/">打开调用图工作台 →</a></nav>
+<nav class="page-nav"><span class="wordmark">CALLGRAPH / SCENARIOS</span><a href="/">全部项目与地图 →</a></nav>
 <header><p class="kicker">EXECUTION SEQUENCES</p><h1>场景地图</h1><p class="lead">先读懂谁在协作、消息如何传递，以及执行为什么继续或结束。每张图独立阅读，按需跳转调用图核对源码。</p></header>
-<section class="scene-list">${scenes.map(({ slug, scene }, i) => `<article class="scene-entry"><span class="number">${String(i + 1).padStart(2, "0")}</span><div><h2><a href="${slug}.html">${e(scene.title)}</a></h2><p>${e(scene.summary)}</p></div><a href="${slug}.html">阅读场景 →</a></article>`).join("\n")}</section>`);
+<nav class="project-index" aria-label="按项目阅读">${[...projects].map(([id, entries]) => `<a href="#project-${e(id)}">${e(id === "unassigned" ? "未关联项目" : entries[0].scene.project.label)} <small>${entries.length}</small></a>`).join("")}</nav>
+${[...projects].map(([id, entries]) => `<section class="scene-list" id="project-${e(id)}"><div class="project-section-heading"><h2>${e(id === "unassigned" ? "未关联项目" : entries[0].scene.project.label)}</h2>${projectLink(entries[0].scene)}</div>${entries.map(({ slug, scene }, i) => `<article class="scene-entry"><span class="number">${String(i + 1).padStart(2, "0")}</span><div><h3><a href="${slug}.html">${e(scene.title)}</a></h3><p>${e(scene.summary)}</p></div><a href="${slug}.html">阅读场景 →</a></article>`).join("\n")}</section>`).join("\n")}`);
+}
+
+export function renderSceneCatalog(scenes) {
+  return JSON.stringify({ schemaVersion: "1.0", generatedBy: "build:scenes", scenes: scenes.map(({ slug, scene }) => ({
+    slug, projectId: scene.project.id || null, projectLabel: scene.project.label,
+    title: scene.title, summary: scene.summary, callgraph: scene.callgraph || null,
+  })) }, null, 2) + "\n";
 }

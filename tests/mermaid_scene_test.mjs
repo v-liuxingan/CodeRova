@@ -89,6 +89,14 @@ const large = parseMermaid("sequenceDiagram\n" + Array.from({ length: 100 }, (_,
 assert.equal(large.body.length, 100);
 assert.equal(large.participants.length, 101);
 const scenes = await loadScenes();
+const annotatedSource = "sequenceDiagram\nparticipant A\n%% @evidence e1\nA->>A: 核对\n%% @evidence e1,e1\nNote over A: 依据";
+const annotated = compileMermaidScene({ ...metadata, participantRoles: [], evidence: [{ id: "e1", claim: "依据", locations: [{ file: "src/a.rs", symbol: "run" }] }] }, annotatedSource, schema, metadataSchema, "linked.mmd");
+assert.deepEqual(annotated.body.map((b) => b.evidence), [["e1"], ["e1"]]);
+assert.match(renderScene(annotated, "linked"), /href="#evidence-e1"/);
+assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1"), /缺少消息/);
+assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1\nopt test"), /只能标注下一条/);
+assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1,\nA->>B: test"), /依据注释格式/);
+assert.throws(() => compileMermaidScene({ ...metadata, participantRoles: [] }, "sequenceDiagram\n%% @evidence nonexistent\nA->>B: test", schema, metadataSchema, "missing.mmd"), /missing.mmd:2:.*不存在/);
 const blocks = scenes.filter(({ slug }) => ["codex-message-roundtrip", "codex-agent-turn"].includes(slug))
   .flatMap(({ scene }) => [...walkBlocks(scene.body)]);
 assert.equal(blocks.filter((b) => b.type === "message").length, 26, "curated migration retains every message");

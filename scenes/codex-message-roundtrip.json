@@ -4,7 +4,8 @@
   "summary": "沿着一次新消息，看清请求如何进入执行核心，以及执行事实如何通过通知回到界面。关键边界是请求回复、Core 事件和线程消费。",
   "project": {
     "label": "Codex",
-    "revision": "a68d0a74bd38ddc01361ce42262da689b788afce"
+    "revision": "a68d0a74bd38ddc01361ce42262da689b788afce",
+    "id": "codex"
   },
   "scope": {
     "startEnd": "已打开 Thread 中提交新消息 → 活动线程消费执行通知并更新界面。",

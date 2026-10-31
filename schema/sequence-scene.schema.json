@@ -40,6 +40,11 @@
         "revision": {
           "type": "string",
           "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "Optional project catalog id for local source verification"
         }
       }
     },
@@ -174,6 +179,11 @@
         "endLine": {
           "type": "integer",
           "minimum": 1
+        },
+        "anchor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional literal excerpt expected in the referenced line range"
         }
       }
     },
@@ -201,6 +211,14 @@
           "items": {
             "$ref": "#/$defs/location"
           }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "source",
+            "inferred"
+          ],
+          "description": "Author classification; source location validity does not prove the claim"
         }
       }
     },

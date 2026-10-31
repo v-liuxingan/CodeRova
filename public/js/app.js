@@ -1,5 +1,6 @@
 import { CallgraphApi } from "./api.js";
 import { groupGraphCatalog } from "./catalog-grouping.js";
+import { ProjectNavigation } from "./project-navigation.js";
 import { ClickNavigationPolicy } from "./click-navigation-policy.js";
 import {
   edgeExecutionOrder,
@@ -20,6 +21,7 @@ import { themes } from "./theme-registry.js";
 import { TraceNavigator } from "./trace-navigator.js";
 
 const api = new CallgraphApi();
+const projectNavigation = new ProjectNavigation(api, () => layoutPersistence.flush(), { openGraph: activateGraph, onError: (message) => toast(message, true), cancelGraph: () => { graphLoadVersion += 1; } });
 const CATALOG_COLLAPSE_STORAGE_KEY = "callgraph.catalog.collapsed.v1";
 const RAIL_COLLAPSE_STORAGE_KEY = "callgraph.rail.collapsed.v1";
 const elements = {
@@ -152,7 +154,8 @@ function initializeThemes() {
   elements.themeSelect.value = themes.initialize("halo");
   elements.themeSelect.addEventListener("change", () => themes.apply(elements.themeSelect.value));
   themes.subscribe(() => {
-    if (state) render(state, "theme");
+    document.querySelector("#scene-content").setAttribute("data-theme", document.documentElement.dataset.theme);
+    if (state && projectNavigation.view === "graph") render(state, "theme");
   });
 }
 
@@ -164,16 +167,20 @@ async function bootstrap() {
   ]);
   catalogGraphs = graphs;
   updateHealth(health);
-  const catalog = renderGraphList(graphs);
-  if (!graphs.length) throw new Error("graphs 目录中没有调用图");
-  const requestedSlug = new URL(window.location.href).searchParams.get("graph");
-  const initialSlug = graphs.some((graph) => graph.slug === requestedSlug)
-    ? requestedSlug
-    : catalog[0].graphs[0].slug;
-  await activateGraph(initialSlug);
-  if (requestedSlug && requestedSlug !== initialSlug) {
-    toast("链接中的调用图不存在，已打开目录中的首张图", true);
+  projectNavigation.initialize(health, graphs);
+  const requestedProject = new URL(window.location.href).searchParams.get("project");
+  if (requestedProject && !projectNavigation.projects.some((project) => project.id === requestedProject)) {
+    toast("链接中的项目不存在，已回到可用项目", true);
   }
+  const catalog = renderGraphList(graphs);
+  const url = new URL(window.location.href);
+  const requested = url.searchParams.get("graph");
+  if (requested && !url.searchParams.has("scene") && !graphs.some((graph) => graph.slug === requested)) {
+    if (graphs.length) url.search = `?graph=${catalog[0].graphs[0].slug}`;
+    else url.search = "";
+    toast("链接中的调用图不存在，已回到可用内容", true);
+  }
+  await projectNavigation.navigate(url.href, "replace");
 }
 
 function updateHealth(health) {
@@ -188,12 +195,14 @@ function updateHealth(health) {
 }
 
 function renderGraphList(graphs) {
-  elements.graphList.replaceChildren();
-  const groups = groupGraphCatalog(graphs);
+  projectNavigation.renderProjects(graphs);
+  const groups = projectNavigation.projects.flatMap((project) =>
+    groupGraphCatalog(graphs.filter((graph) => graph.projectId === project.id)).map((group) => ({ ...group, projectId: project.id })));
   const collapsedCategories = loadCollapsedCatalogCategories();
-  groups.forEach(({ categoryId, category, graphs: categoryGraphs }, index) => {
+  groups.forEach(({ categoryId, category, graphs: categoryGraphs, projectId }, index) => {
     const itemsId = `graph-category-${index + 1}`;
-    const collapsed = collapsedCategories.has(categoryId);
+    const storageKey = `${projectId}:${categoryId}`;
+    const collapsed = collapsedCategories.has(storageKey);
     const section = document.createElement("section");
     section.className = "graph-category";
     section.classList.toggle("collapsed", collapsed);
@@ -228,8 +237,8 @@ function renderGraphList(graphs) {
       header.setAttribute("aria-expanded", String(!nextCollapsed));
       header.title = `${nextCollapsed ? "展开" : "折叠"}${category}`;
       items.hidden = nextCollapsed;
-      if (nextCollapsed) collapsedCategories.add(categoryId);
-      else collapsedCategories.delete(categoryId);
+      if (nextCollapsed) collapsedCategories.add(storageKey);
+      else collapsedCategories.delete(storageKey);
       persistCollapsedCatalogCategories(collapsedCategories);
     });
 
@@ -246,7 +255,7 @@ function renderGraphList(graphs) {
       meta.textContent =
         `${graph.projectId.toUpperCase()} · ${graph.nodeCount} NODES · ${graph.edgeCount} EDGES`;
       button.append(title, meta);
-      button.addEventListener("click", () => activateGraph(graph.slug));
+      button.addEventListener("click", () => projectNavigation.navigate(`/?graph=${encodeURIComponent(graph.slug)}`));
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "graph-category-edit";
@@ -259,7 +268,7 @@ function renderGraphList(graphs) {
       items.append(row);
     }
     section.append(header, items);
-    elements.graphList.append(section);
+    projectNavigation.graphHost(projectId).append(section);
   });
   return groups;
 }
@@ -337,7 +346,7 @@ function openCategoryEditor(slug) {
   const graph = catalogGraphs.find((candidate) => candidate.slug === slug);
   if (!graph) return;
   categoryEditorSlug = slug;
-  const groups = groupGraphCatalog(catalogGraphs);
+  const groups = groupGraphCatalog(catalogGraphs.filter((item) => item.projectId === graph.projectId));
   elements.categoryEditorSelect.replaceChildren();
   for (const group of groups) {
     const option = document.createElement("option");
@@ -396,18 +405,21 @@ function persistCollapsedCatalogCategories(categories) {
 async function activateGraph(slug) {
   const version = ++graphLoadVersion;
   try {
-    await layoutPersistence.flush();
+    if (await layoutPersistence.flush() === false) throw new Error("布局尚未保存，图谱未切换。请重试。");
     if (version !== graphLoadVersion) return;
+    if (slug === activeSlug && state) {
+      projectNavigation.setGraph({ ...activeGraph, slug });
+      elements.graphTitle.textContent = activeGraph.title;
+      return true;
+    }
     setStatus(`装载 ${slug}`);
     const [graph, layout] = await Promise.all([api.loadGraph(slug), api.loadLayout(slug)]);
     if (version !== graphLoadVersion) return;
     const nextState = new GraphState(graph, layout);
     const nextTrace = new TraceNavigator(graph);
     activeSlug = slug;
-    const url = new URL(window.location.href);
-    url.searchParams.set("graph", slug);
-    window.history.replaceState(null, "", url);
     activeGraph = graph;
+    projectNavigation.setGraph({ ...graph, slug });
     firstRender = true;
     unsubscribe?.();
     state = nextState;
@@ -424,15 +436,16 @@ async function activateGraph(slug) {
     elements.revision.textContent = `REVISION ${(graph.sourceRevision || "—").slice(0, 10)}`;
     buildKindFilters();
     render(state, "initial");
-    await validateActiveGraph();
+    void validateActiveGraph();
+    return true;
   } catch (error) {
     if (version !== graphLoadVersion) return;
     if (!activeGraph) {
       showFatal(error);
-      return;
+      throw error;
     }
     setStatus(`无法装载 ${slug}，保留当前调用图`);
-    toast(error.message, true);
+    throw error;
   }
 }
 
@@ -620,6 +633,7 @@ function bindControls() {
     }
   });
   window.addEventListener("keydown", (event) => {
+    if (projectNavigation.view !== "graph") return;
     if (event.key === "/" && !event.defaultPrevented
       && !event.ctrlKey && !event.metaKey && !event.altKey
       && !isEditableTarget(event.target)) {

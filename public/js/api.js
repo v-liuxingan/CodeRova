@@ -7,6 +7,16 @@ async function request(path, options) {
   return body;
 }
 export class CallgraphApi {
+  // Optional V2 metadata; older authored graphs intentionally have no analysis report.
+  analysisCoverage(graph) {
+    const report = graph.analysis;
+    if (!report) return null;
+    return { ...report, queriedCount: report.queriedNodes.length, pendingCount: report.pendingNodes.length };
+  }
+  listSceneCatalog(signal) {
+    return request("/scenes/catalog.json", { signal, cache: "no-cache" });
+  }
+
   listGraphs() {
     return request("/api/graphs");
   }
@@ -66,5 +76,19 @@ export class CallgraphApi {
       body: JSON.stringify({ graph, targetType, id, contextLines, scope }),
       signal,
     });
+  }
+  listArchivedGraphs() {
+    return request('/api/graph-trash');
+  }
+
+  archiveGraph(slug) {
+    return request(`/api/graphs/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+  }
+
+  restoreGraph(slug) {
+    return request(`/api/graph-trash/${encodeURIComponent(slug)}/restore`, { method: 'POST' });
+  }
+  deleteArchivedGraph(slug) {
+    return request(`/api/graph-trash/${encodeURIComponent(slug)}`, { method: 'DELETE' });
   }
 }

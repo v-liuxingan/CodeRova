@@ -93,6 +93,16 @@ if (process.argv.includes("--fixtures")) {
     await writeFile(resolve(sourceDir, "test.json"), JSON.stringify(base));
     await buildScenes({ sourceDir, outputDir });
     const html = await readFile(resolve(outputDir, "test.html"), "utf8");
+    const manifest = await readFile(resolve(outputDir, "catalog.json"), "utf8");
+    assert.deepEqual(JSON.parse(manifest).scenes, [{ slug: "test", projectId: base.project.id || null,
+      projectLabel: base.project.label, title: base.title, summary: base.summary, callgraph: base.callgraph || null }]);
+    await writeFile(resolve(outputDir, "catalog.json"), JSON.stringify({ scenes: [] }));
+    await assert.rejects(buildScenes({ sourceDir, outputDir }), /不会覆盖手写内容/);
+    assert.equal(await readFile(resolve(outputDir, "test.html"), "utf8"), html);
+    await writeFile(resolve(outputDir, "catalog.json"), manifest);
+    await writeFile(resolve(outputDir, "catalog.json"), manifest.replace(base.title, "stale title"));
+    await assert.rejects(buildScenes({ sourceDir, outputDir, check: true }), /未同步/);
+    await buildScenes({ sourceDir, outputDir });
     await buildScenes({ sourceDir, outputDir, check: true });
     await writeFile(resolve(sourceDir, "invalid.json"), "{");
     await assert.rejects(buildScenes({ sourceDir, outputDir }), /invalid.json/);
@@ -121,7 +131,8 @@ if (process.argv.includes("--fixtures")) {
     await rm(resolve(sourceDir, "test.json"));
     await assert.rejects(buildScenes({ sourceDir, outputDir, check: true }), /未同步/);
     await buildScenes({ sourceDir, outputDir });
-    assert.deepEqual((await readdir(outputDir)).sort(), ["index.html", "manual.html"]);
+    assert.deepEqual((await readdir(outputDir)).sort(), ["catalog.json", "index.html", "manual.html"]);
+    assert.deepEqual(JSON.parse(await readFile(resolve(outputDir, "catalog.json"), "utf8")).scenes, []);
   } finally {
     assert.equal(dirname(temp), resolve(tmpdir()));
     assert.ok(basename(temp).startsWith("callgraph-scene-build-test-"));

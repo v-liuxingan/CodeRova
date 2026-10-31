@@ -18,6 +18,7 @@ const NODE_KINDS: &[&str] = &[
     "remote-service",
 ];
 const EDGE_KINDS: &[&str] = &[
+    "static-call",
     "direct",
     "callback",
     "trait-dispatch",
@@ -289,6 +290,7 @@ mod tests {
 
     fn graph() -> CallGraph {
         CallGraph {
+            analysis: None,
             schema_version: "0.2".into(),
             project_id: "demo".into(),
             title: "test".into(),

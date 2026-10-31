@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {callReading,callMeaning} from './call-reading.js';
+const input=[{id:'b',order:2},{id:'a',order:1}];
+assert.deepEqual(callReading(input).calls.map(e=>e.id),['a','b']);assert.equal(input[0].id,'b');
+assert.match(callReading([{file:'a',line:2},{file:'a',line:1}]).note,/不代表/);
+assert.deepEqual(callReading([{file:'b',line:2},{file:'a',line:1}]).calls.map(e=>e.line),[2,1]);
+assert.match(callMeaning({kind:'static-call'}),/尚未分析/);
+assert.match(callMeaning({flowKind:'branch',condition:'ready',order:2}),/条件：ready/);
+assert.match(callMeaning({flowKind:'loop-exit'}),/条件尚未提供/);
+assert.match(callMeaning({flowKind:'loop-back'}),/回环/);
+console.log('Call reading: evidence-backed order, unknown control flow, conditions and immutable input PASS');

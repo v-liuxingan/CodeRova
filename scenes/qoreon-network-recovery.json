@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "1.0",
+  "title": "Qoreon：网络失败后如何重试与安排恢复",
+  "summary": "一次 CLI 执行失败后，运行时区分认证和网络错误，尝试即时重试，并在必要时为同一会话创建延迟恢复 run。重点区分原任务的失败与后续恢复任务的等待。",
+  "project": {
+    "id": "qoreon",
+    "label": "Qoreon",
+    "revision": "afaf671f7243dd7453e6826f567e445385d57a2a；2026-09-06 本地核对，所引文件与该提交一致"
+  },
+  "scope": {
+    "startEnd": "CLI 非零退出 → 即时恢复成功、停止重试或安排新恢复 run",
+    "boundary": "只分析网络恢复分支；进程启动、超时/用户中断处理、profile 缺失降级及新 run 的最终执行结果不展开。",
+    "notes": "消息为职责层面的交接，并非每条都对应独立函数。loop 内退出条件按源码说明；不意味着全部分支依次执行。"
+  },
+  "theme": "editorial",
+  "evidence": [
+    {
+      "id": "classify",
+      "claim": "先排除超时、中断和 profile 缺失路径；开启即时重试时认证错误优先于网络错误处理",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 701,
+          "endLine": 786,
+          "symbol": "run_cli_exec",
+          "anchor": "elif network_retry_max > 0:"
+        }
+      ]
+    },
+    {
+      "id": "retry",
+      "claim": "网络重试指数退避；成功、认证错误、非网络错误或 TimeoutExpired 会停止循环",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 789,
+          "endLine": 829,
+          "symbol": "run_cli_exec",
+          "anchor": "network_retry_base_s * (2 ** (attempt - 1))"
+        }
+      ]
+    },
+    {
+      "id": "failure",
+      "claim": "未恢复时标记原 run 为 error；认证错误不进入网络恢复，其他失败仍需重新匹配网络特征",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_retry.py",
+          "line": 38,
+          "endLine": 60,
+          "symbol": "apply_network_retry_failure",
+          "anchor": "meta[\"status\"] = \"error\""
+        }
+      ]
+    },
+    {
+      "id": "disabled",
+      "claim": "即时重试关闭时仍检测网络故障，因此关闭即时重试不等于关闭延迟恢复",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 851,
+          "endLine": 869,
+          "symbol": "run_cli_exec",
+          "anchor": "network_failed_persist ="
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "claim": "自动恢复 run 不再衍生新的恢复 run，且必须具备源 run、项目、通道、会话 ID",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 335,
+          "endLine": 351,
+          "symbol": "_schedule_network_resume_run",
+          "anchor": "if bool(source_meta.get(\"autoResumePrompt\")):"
+        }
+      ]
+    },
+    {
+      "id": "create",
+      "claim": "用原项目、通道、会话创建新的系统 run，承接配置但不复制附件",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 353,
+          "endLine": 372,
+          "symbol": "_schedule_network_resume_run",
+          "anchor": "retry_run = store.create_run("
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "claim": "新 run 标记为 retry_waiting，关联 retryOf 并开启 autoResumePrompt 防止恢复链无穷派生",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/network_recovery.py",
+          "line": 8,
+          "endLine": 25,
+          "symbol": "build_network_resume_retry_meta",
+          "anchor": "meta[\"autoResumePrompt\"] = True"
+        }
+      ]
+    },
+    {
+      "id": "dispatch",
+      "claim": "调度器存在且 CCB_SCHEDULER 不为 0 时注册延迟定时器",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 381,
+          "endLine": 387,
+          "symbol": "_schedule_network_resume_run",
+          "anchor": "scheduler.schedule_retry_waiting("
+        }
+      ]
+    },
+    {
+      "id": "fallback",
+      "claim": "降级后台线程到期后只恢复未隐藏且仍在 retry_waiting 的 run，先改 queued 再进入执行",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/execution_runtime.py",
+          "line": 302,
+          "endLine": 332,
+          "symbol": "_schedule_retry_waiting_fallback",
+          "anchor": "if status != \"retry_waiting\":"
+        }
+      ]
+    },
+    {
+      "id": "backlink",
+      "claim": "原 run 记录恢复 run ID 与计划时间；此处不把原 run 改为 done",
+      "status": "source",
+      "locations": [
+        {
+          "file": "task_dashboard/runtime/network_recovery.py",
+          "line": 29,
+          "endLine": 41,
+          "symbol": "apply_network_resume_schedule",
+          "anchor": "meta[\"networkResumeRunId\"] = rid"
+        }
+      ]
+    }
+  ],
+  "callgraph": "qoreon-network-recovery",
+  "reading": [
+    {
+      "title": "关闭即时重试不等于停止恢复",
+      "text": "network_retry_max 为 0 时仍可能设置 network_failed_persist，之后可进入延迟恢复。认证错误会阻止网络恢复。"
+    },
+    {
+      "title": "失败与等待属于不同 run",
+      "text": "原 run 仍为 error，新 run 为 retry_waiting；retryOf 与 networkResumeRunId 分别连接前后关系。"
+    },
+    {
+      "title": "恢复不是无限派生",
+      "text": "autoResumePrompt 防止恢复 run 再创建恢复 run；它并不禁止该 run 内部的即时网络重试。"
+    }
+  ]
+}

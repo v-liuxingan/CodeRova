@@ -5,9 +5,13 @@
   "scripts": {
     "build:frontend": "node scripts/build_frontend.mjs",
     "build:scenes": "node scripts/build_scenes.mjs",
-    "check:scenes": "node scripts/build_scenes.mjs --check"
+    "check:scenes": "node scripts/build_scenes.mjs --check",
+    "check:content": "node scripts/check_content.mjs",
+    "evidence:snapshot": "node scripts/check_content.mjs --snapshot",
+    "build:atlas": "node scripts/build_atlas.mjs"
   },
   "dependencies": {
+    "@antv/g6": "5.1.1",
     "@dagrejs/dagre": "^1.1.8",
     "@xyflow/react": "^12.11.2",
     "elkjs": "^0.11.1",
