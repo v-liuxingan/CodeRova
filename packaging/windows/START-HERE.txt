@@ -1,0 +1,23 @@
+Callgraph Visualizer - Windows x64
+
+Extract the entire ZIP to a writable folder, then double-click Start.cmd.
+The browser opens after the server is ready. Keep the console open.
+Press Ctrl+C to stop the server.
+
+No Rust, Node.js or Python installation is required to run the application.
+Add source projects to callgraph.projects.local.json, then restart:
+{"schemaVersion":"0.1","projects":[{"id":"my-app","name":"My app","root":"E:/projects/my-app"}]}
+
+LSP collection requires the language server and target project toolchain.
+Java: copy callgraph.lsp.example.json to callgraph.lsp.local.json and set paths.
+Rust: install rust-analyzer and the target project's Rust toolchain.
+
+Upgrade: extract into a NEW folder, then copy your graphs/, layouts/,
+callgraph.projects.local.json and optional callgraph.lsp.local.json across.
+Never overwrite existing data/config with the empty package defaults.
+
+Manual: https://github.com/v-liuxingan/callgraph-visualizer#readme
+Unsigned scripts may be blocked by Windows policy. Follow your administrator's
+policy, or run the executable directly from a terminal in this folder:
+callgraph-visualizer.exe serve --port 4324 --config callgraph.projects.local.json
+Then open http://127.0.0.1:4324/ manually.

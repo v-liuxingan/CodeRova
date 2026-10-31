@@ -37,6 +37,29 @@
 
 ## 快速开始
 
+### Windows 免安装版（推荐）
+
+1. 打开 [GitHub Releases](https://github.com/v-liuxingan/callgraph-visualizer/releases/latest)，下载 `callgraph-visualizer-v版本号-windows-x64.zip`（不是 Source code）。
+2. **完整解压**到可写目录，双击 `Start.cmd`。启动器自动选择空闲本机端口，服务就绪后打开浏览器。
+3. 保持启动窗口打开；结束使用时按 `Ctrl+C` 停止服务。
+
+无需安装 Rust、Node.js 或 Python。包内自带前端资源，初始项目列表为空，不包含作者的本机数据。
+编辑包内 `callgraph.projects.local.json` 添加源码项目，重启后即可新建图；格式见下文。
+采集功能仍需配置相应 LSP 和目标项目工具链；免安装的是工作台本身。
+
+压缩包旁提供 SHA-256 校验文件。当前包面向 Windows x64，未进行代码签名。
+如果 Windows 策略阻止 PowerShell 脚本，请遵循管理员策略；也可在解压目录的终端直接启动：
+
+```powershell
+.\callgraph-visualizer.exe serve --port 4324 --config callgraph.projects.local.json
+```
+
+然后手动访问 http://127.0.0.1:4324/ 。
+
+**升级：** 解压新版到新目录，再复制原来的 `graphs/`、`layouts/`、`callgraph.projects.local.json` 和可选的 `callgraph.lsp.local.json`。不要用包内空配置覆盖已有数据。无需重新编译。
+
+以下是源码构建方式。
+
 ### 1. 准备环境
 
 - Git。
@@ -261,6 +284,18 @@ Python 用于测试和可选操作脚本，日常运行服务无需 Python。浏
 不要手改生成的前端资源，或自动刷新源码指纹来消除过期证据警告。当前节点拖动位置不持久保存；历史设计文档可能描述已退役界面，当前操作以 Skill 为准。
 
 [产品战略](docs/product-strategy.md) · [开发边界](docs/agent-development-boundaries.md) · [系统设计](docs/system-design.md) · [开发进度](docs/development-status.md)
+
+## 发布 Windows 包
+
+GitHub Actions 工作流 [`release-windows.yml`](.github/workflows/release-windows.yml) 在推送 `v*` 标签时执行前后端检查、编译、打包和解压启动测试，通过后上传 ZIP 与 SHA-256 到 GitHub Releases。使用静态 CRT 链接减少额外运行库依赖。
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+后续发布使用新的版本号。Actions 手动运行只生成可下载的构建产物，不发布 Release。
+本地构建后也可执行 `./scripts/package_windows.ps1 -Version v0.1.0`，输出位于 `target/packages/`。打包使用白名单，不收录本机图谱、配置、索引缓存或运行日志。
 
 ## 开源许可证
 
