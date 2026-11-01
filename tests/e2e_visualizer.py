@@ -5,6 +5,13 @@ from playwright.sync_api import sync_playwright,expect
 BASE=os.environ['CALLGRAPH_TEST_URL']
 with sync_playwright() as p:
  browser=p.chromium.launch();page=browser.new_page(viewport={'width':1440,'height':960})
+ # Legacy fixture is served canonically, while browser preview still resolves its source.
+ wire=page.request.get(BASE+'/api/graphs/sample').json()
+ assert wire['schemaVersion']=='0.5'
+ assert wire['nodes'][0]['sourceFile']=='main.rs' and 'file' not in wire['nodes'][0]
+ edge=wire['edges'][0]
+ assert (edge['source'],edge['target'],edge['relation'])==('root','child','static-call')
+ assert 'confidenceScore' in edge and not {'from','to','kind','confidence','file'}.intersection(edge)
  errors=[];requests=[]
  page.on('pageerror',lambda error:errors.append(str(error)))
  page.on('request',lambda request:requests.append(request.url))

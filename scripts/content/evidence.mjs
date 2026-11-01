@@ -1,3 +1,4 @@
+import { normalizeGraph } from "../../public/js/graph-format.js";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
@@ -34,7 +35,8 @@ export function sceneReferences(scene) {
   })));
 }
 
-export function graphReferences(graph) {
+export function graphReferences(input) {
+  const graph = normalizeGraph(input);
   return [
     ...graph.nodes.map((node) => ({ key: `nodes.${node.id}`, location: { file: node.file, line: node.line, ...(node.endLine ? { endLine: node.endLine } : {}) }, claim: `${node.label}\n${node.description ?? ""}` })),
     ...graph.edges.filter((edge) => (!edge.callSiteStatus || edge.callSiteStatus === "exact") && edge.file && edge.line)

@@ -42,9 +42,9 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     let mut warnings = Vec::new();
     let mut source_locations = Vec::new();
 
-    if !matches!(graph.schema_version.as_str(), "0.2" | "0.3" | "0.4") {
+    if !matches!(graph.schema_version.as_str(), "0.2" | "0.3" | "0.4" | "0.5") {
         errors.push(format!(
-            "不支持 schemaVersion {:?}，当前支持 0.2、0.3 和 0.4",
+            "不支持 schemaVersion {:?}，当前支持 0.2、0.3、0.4 和 0.5",
             graph.schema_version
         ));
     }

@@ -1,3 +1,4 @@
+import { normalizeGraphResponse } from "./graph-format.js";
 // Semantic facts are supplied by analyzers; the UI never infers Java types from paths.
 export function symbolPresentation(node) {
   const info = node.symbol;
@@ -16,7 +17,7 @@ async function request(path, options) {
     error.status = response.status;
     throw error;
   }
-  return body;
+  return normalizeGraphResponse(body);
 }
 export class CallgraphApi {
   projectFiles(project) { return request(`/api/projects/${encodeURIComponent(project)}/source-files`); }

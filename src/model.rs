@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct CallGraph {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analysis: Option<crate::analysis::AnalysisReport>,
+    #[serde(serialize_with = "serialize_graph_version")]
     pub schema_version: String,
     pub project_id: String,
     pub title: String,
@@ -47,6 +48,7 @@ pub struct GraphNode {
     pub crate_name: String,
     #[serde(default)]
     pub module: String,
+    #[serde(rename = "sourceFile", alias = "file")]
     pub file: String,
     pub line: u32,
     #[serde(default)]
@@ -78,8 +80,11 @@ fn default_node_state() -> String {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphEdge {
     pub id: String,
+    #[serde(rename = "source", alias = "from")]
     pub from: String,
+    #[serde(rename = "target", alias = "to")]
     pub to: String,
+    #[serde(rename = "relation", alias = "kind")]
     pub kind: String,
     #[serde(
         default = "default_flow_kind",
@@ -97,6 +102,7 @@ pub struct GraphEdge {
     #[serde(default)]
     pub call_site_note: String,
     #[serde(default)]
+    #[serde(rename = "sourceFile", alias = "file")]
     pub file: String,
     #[serde(default)]
     pub line: u32,
@@ -105,6 +111,7 @@ pub struct GraphEdge {
     #[serde(default)]
     pub evidence: String,
     #[serde(default = "default_confidence")]
+    #[serde(rename = "confidenceScore", alias = "confidence")]
     pub confidence: f32,
 }
 
@@ -413,5 +420,89 @@ mod tests {
         let value = serde_json::to_value(graph).expect("serialize scenario graph");
         assert_eq!(value["phases"][0]["title"], "接收输入");
         assert_eq!(value["nodes"][0]["phaseId"], "input");
+    }
+}
+
+/// Old documents are upgraded on output, never by reading or by rewriting IDs.
+fn serialize_graph_version<S: serde::Serializer>(
+    version: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(match version {
+        "0.2" | "0.3" | "0.4" | "0.5" => "0.5",
+        other => other,
+    })
+}
+
+#[cfg(test)]
+mod graph_format_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn legacy() -> serde_json::Value {
+        json!({"schemaVersion":"0.4","projectId":"sample","title":"sample","root":"a",
+        "nodes":[{"id":"a","kind":"method","label":"run","file":"A.java","line":1,"role":"entry"}],
+        "edges":[
+            {"id":"one","from":"a","to":"a","kind":"static-call","file":"A.java","line":2},
+            {"id":"two","from":"a","to":"a","kind":"static-call","file":"A.java","line":3}
+        ]})
+    }
+
+    #[test]
+    fn legacy_graph_round_trips_to_canonical_without_losing_call_sites() {
+        let graph: CallGraph = serde_json::from_value(legacy()).unwrap();
+        let canonical = serde_json::to_value(&graph).unwrap();
+        assert_eq!(canonical["schemaVersion"], "0.5");
+        assert_eq!(canonical["nodes"][0]["sourceFile"], "A.java");
+        assert!(canonical["nodes"][0].get("file").is_none());
+        let edges = canonical["edges"].as_array().unwrap();
+        assert_eq!(edges.len(), 2);
+        for (edge, line) in edges.iter().zip([2, 3]) {
+            assert_eq!(edge["line"], line);
+            assert_eq!(edge["source"], "a");
+            assert_eq!(edge["target"], "a");
+            assert_eq!(edge["relation"], "static-call");
+            assert_eq!(edge["confidenceScore"], 1.0);
+            for old in ["from", "to", "kind", "file", "confidence"] {
+                assert!(edge.get(old).is_none());
+            }
+        }
+        let restored: CallGraph = serde_json::from_value(canonical.clone()).unwrap();
+        assert_eq!(serde_json::to_value(restored).unwrap(), canonical);
+    }
+
+    #[test]
+    fn conflicting_aliases_and_unknown_fields_are_rejected() {
+        for (old, new) in [
+            ("from", "source"),
+            ("to", "target"),
+            ("kind", "relation"),
+            ("file", "sourceFile"),
+        ] {
+            let mut value = legacy();
+            value["edges"][0][new] = value["edges"][0][old].clone();
+            assert!(serde_json::from_value::<CallGraph>(value).is_err());
+        }
+        let mut value = legacy();
+        value["nodes"][0]["sourceFile"] = json!("A.java");
+        assert!(serde_json::from_value::<CallGraph>(value).is_err());
+        let mut value = legacy();
+        value["edges"][0]["confidence"] = json!(0.5);
+        value["edges"][0]["confidenceScore"] = json!(0.5);
+        assert!(serde_json::from_value::<CallGraph>(value).is_err());
+        let mut value = legacy();
+        value["nodes"][0]["unexpected"] = json!(true);
+        assert!(serde_json::from_value::<CallGraph>(value).is_err());
+    }
+
+    #[test]
+    fn future_versions_are_not_silently_downgraded() {
+        let mut graph: CallGraph = serde_json::from_value(legacy()).unwrap();
+        graph.schema_version = "9.0".into();
+        assert_eq!(
+            serde_json::to_value(&graph).unwrap()["schemaVersion"],
+            "9.0"
+        );
+        assert!(!crate::validation::validate_graph(&graph, None).valid);
     }
 }

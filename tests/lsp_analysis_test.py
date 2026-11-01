@@ -105,7 +105,7 @@ def run():
         graph = json.loads(output.read_text(encoding="utf-8"))
         assert len(graph["nodes"]) == 2 and len(graph["edges"]) == 4
         assert len(graph["analysis"]["queriedNodes"]) == 2 and not graph["analysis"]["pendingNodes"]
-        assert all(edge["kind"] == "static-call" and edge.get("order") is None for edge in graph["edges"])
+        assert all(edge["relation"] == "static-call" and edge.get("order") is None for edge in graph["edges"])
         assert invoke("cycle")[0].returncode != 0, "existing export must not be overwritten"
         for mode in ["null", "error"]:
             result, output = invoke(mode)

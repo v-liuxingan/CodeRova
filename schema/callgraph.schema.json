@@ -17,7 +17,8 @@
       "enum": [
         "0.2",
         "0.3",
-        "0.4"
+        "0.4",
+        "0.5"
       ]
     },
     "projectId": {
@@ -64,15 +65,11 @@
     },
     "nodes": {
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/node"
-      }
+      "items": {}
     },
     "edges": {
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/edge"
-      }
+      "items": {}
     }
   },
   "$defs": {
@@ -162,6 +159,243 @@
       "description": "Path relative to the configured source root"
     },
     "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "sourceFile",
+        "line",
+        "role"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phaseId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "Optional user-facing scenario phase membership"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "method",
+            "closure",
+            "trait",
+            "struct",
+            "module",
+            "process",
+            "remote-service"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "crate": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "sourceFile": {
+          "$ref": "#/$defs/sourcePath"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "expanded",
+            "collapsed",
+            "hidden"
+          ],
+          "default": "expanded"
+        },
+        "symbol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ownerKind",
+            "ownerName"
+          ],
+          "properties": {
+            "ownerKind": {
+              "type": "string"
+            },
+            "ownerName": {
+              "type": "string"
+            },
+            "modifiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "target",
+        "relation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "enum": [
+            "direct",
+            "callback",
+            "trait-dispatch",
+            "spawn",
+            "remote",
+            "async-boundary",
+            "data-flow",
+            "static-call"
+          ]
+        },
+        "flowKind": {
+          "enum": [
+            "normal",
+            "branch",
+            "fallback",
+            "merge",
+            "loop-back",
+            "loop-exit"
+          ],
+          "default": "normal",
+          "description": "Runtime control-flow role, independent from the call mechanism in kind"
+        },
+        "condition": {
+          "type": "string",
+          "description": "Human-readable branch or loop condition"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Known execution order among sequential outgoing calls from the same caller"
+        },
+        "label": {
+          "type": "string"
+        },
+        "callSiteStatus": {
+          "enum": [
+            "exact",
+            "virtual-node",
+            "omitted-nodes"
+          ],
+          "default": "exact"
+        },
+        "callSiteNote": {
+          "type": "string"
+        },
+        "sourceFile": {
+          "$ref": "#/$defs/sourcePath"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "confidenceScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "file",
+            "line"
+          ],
+          "properties": {
+            "callSiteStatus": {
+              "const": "exact"
+            }
+          }
+        },
+        {
+          "required": [
+            "callSiteStatus",
+            "callSiteNote"
+          ],
+          "properties": {
+            "callSiteStatus": {
+              "enum": [
+                "virtual-node",
+                "omitted-nodes"
+              ]
+            },
+            "callSiteNote": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "file"
+                ]
+              },
+              {
+                "required": [
+                  "line"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "nodeLegacy": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -263,7 +497,7 @@
         }
       }
     },
-    "edge": {
+    "edgeLegacy": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -398,5 +632,44 @@
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": "0.5"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/$defs/edge"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/$defs/nodeLegacy"
+            }
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/$defs/edgeLegacy"
+            }
+          }
+        }
+      }
+    }
+  ]
 }
