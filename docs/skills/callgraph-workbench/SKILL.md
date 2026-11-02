@@ -1,6 +1,6 @@
 ---
 name: callgraph-workbench
-description: 使用 Callgraph Visualizer 分析本地源码、生成和审阅调用图，操作 LSP 续采、人工异步入口、分支整理及草稿保存。用于平台操作和产出验收，不代替平台代码开发规范。
+description: 使用 CodeRova 分析本地源码、生成和审阅调用图，操作 LSP 续采、人工异步入口、分支整理及草稿保存。用于平台操作和产出验收，不代替平台代码开发规范。
 ---
 
 # Callgraph 工作台

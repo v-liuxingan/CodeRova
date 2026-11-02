@@ -21,7 +21,7 @@ import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
 import { RenderWindow, viewportBounds, containsBounds } from './render-window.js';
-import { CallgraphApi, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
+import { CallgraphApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
 const api = new CallgraphApi({drafts:true});
 const $ = (id) => document.getElementById(id);
@@ -351,7 +351,7 @@ function renderCoverage(analysis) {
   $('coverage').hidden = !analysis; $('coverage-issues').replaceChildren();
   if (!analysis) return;
   $('coverage-title').textContent = `静态分析范围：已查询 ${analysis.queriedNodes.length} 个符号 · ${analysis.pendingNodes.length} 个待查询 · ${analysis.issues.length} 项边界说明${analysis.prunedNodeIds?.length ? ` · 已减枝 ${analysis.prunedNodeIds.length} 个符号` : ''}`;
-  $('coverage-scope').textContent = `${analysis.provider}。初次采集深度 ${analysis.maxDepth}，初次请求预算 ${analysis.requestBudget}；页面续采按本轮预算继续。仅当前项目内静态关系，历史边界说明保留供核对；未证明业务链路完整。`;
+  $('coverage-scope').textContent = !supportsCollection(current) ? `${analysis.provider}。历史导入图，仅保留查看与编辑；需要采集请从源码新建图。` : `${analysis.provider}。初次采集深度 ${analysis.maxDepth}，初次请求预算 ${analysis.requestBudget}；页面续采按本轮预算继续。仅当前项目内静态关系，历史边界说明保留供核对；未证明业务链路完整。`;
   $('coverage').open = false;
 }
 

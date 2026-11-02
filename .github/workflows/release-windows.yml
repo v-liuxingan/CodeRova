@@ -66,6 +66,6 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:GITHUB_REF_NAME @assets --clobber
           } else {
-            gh release create $env:GITHUB_REF_NAME @assets --verify-tag --generate-notes --title "Callgraph Visualizer $env:GITHUB_REF_NAME"
+            gh release create $env:GITHUB_REF_NAME @assets --verify-tag --generate-notes --title "CodeRova $env:GITHUB_REF_NAME"
           }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

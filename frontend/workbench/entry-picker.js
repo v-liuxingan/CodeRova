@@ -74,7 +74,7 @@ export function entryPicker(api,onAdded,options={}) {
   find.onclick=()=>runtime?.search().catch(error=>message(error.message,true));
   check.onclick=async()=>{
     if(!selectedFile||checking)return;checking=true;check.disabled=true;open.disabled=true;browse.disabled=true;matches.disabled=true;candidate=null;add.disabled=true;
-    const version=revision,chosenLine=line,file=selectedFile;message('LSP 正在确认函数身份，首次索引可能需要一些时间…');
+    const version=revision,chosenLine=line,file=selectedFile;message('正在校验入口…');
     try {const result=await api.checkEntry(slug,file.id,chosenLine);if(version!==revision||!dialog.open)return;
       if(line!==chosenLine||path.value.trim()!==file.name){message('文件或选中行已改变，请打开目标文件后重新校验。',true);return;}
       candidate=result.candidateId;message(`可采集：${result.node.label} · ${result.node.file}:${result.node.line}。${result.message}`);add.disabled=false;
@@ -84,8 +84,8 @@ export function entryPicker(api,onAdded,options={}) {
   add.onclick=async()=>{if(!candidate)return;add.disabled=true;const originalSlug=slug,version=revision;try{
     const result=await api.createEntry(slug,{fromId:parent,candidateId:candidate,note:note.value});if(version===revision)dialog.close();onAdded(originalSlug,result.nodeId,result);
   }catch(error){if(version===revision){message(error.message,true);add.disabled=false;}}};
-  return {async open(next,from){dispose();localRevision++;localFile=null;files=[];browse.disabled=true;matches.hidden=true;path.disabled=false;open.disabled=false;slug=next;parent=from;path.value='';note.value='';selectedFile=undefined;check.disabled=true;add.disabled=true;find.disabled=true;selection.textContent='尚未选择代码行';editor.textContent='打开文件后选择代码行。';context.textContent=options.context?.()||'';context.hidden=!context.textContent;dialog.showModal();message('正在读取项目文件…');const version=revision;
-    try{files=await api.entryFiles(slug);if(version!==revision)return;browse.disabled=!files.length;list.replaceChildren(...files.map(f=>{const o=el('option');o.value=f.name;return o;}));message(files.length?'点击“浏览本地文件”选择源码，也可以输入项目内相对路径。':'当前项目没有可选择的 Rust 或 Java 源文件。');}
+  return {async open(next,from){dispose();localRevision++;localFile=null;files=[];browse.disabled=true;matches.hidden=true;path.disabled=true;open.disabled=true;slug=next;parent=from;path.value='';note.value='';selectedFile=undefined;check.disabled=true;add.disabled=true;find.disabled=true;selection.textContent='尚未选择代码行';editor.textContent='打开文件后选择代码行。';context.textContent=options.context?.()||'';context.hidden=!context.textContent;dialog.showModal();message('正在读取项目文件…');const version=revision;
+    try{files=await api.entryFiles(slug);if(version!==revision)return;browse.disabled=!files.length;path.disabled=!files.length;open.disabled=!files.length;list.replaceChildren(...files.map(f=>{const o=el('option');o.value=f.name;return o;}));message(files.length?'点击“浏览本地文件”选择源码，也可以输入项目内相对路径。':'当前项目没有可选择的 Rust 或 Java 源文件。');}
     catch(error){message(error.message,true);}
   }};
 }

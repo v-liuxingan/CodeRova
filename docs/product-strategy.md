@@ -1,10 +1,10 @@
-# Callgraph Visualizer 产品战略
+# CodeRova 产品战略
 
 ## 战略目标
 
 **让开发者面对陌生项目时，能在 10 分钟内建立一个可验证的执行心智模型。**
 
-Callgraph Visualizer 的产品定位是：
+CodeRova 的产品定位是：
 
 > 基于源码证据的项目执行理解工作台。
 

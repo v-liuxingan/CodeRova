@@ -29,8 +29,8 @@ export function newGraph(api, onCreated) {
   };
   let revision = 0;
   dialog.addEventListener('close', () => revision++);
-  return { async open() {
-    dialog.showModal(); const version = ++revision; next.disabled = true; status.textContent = '正在读取项目…'; project.replaceChildren(); title.value = '';
+  return { async open(options = {}) {
+    dialog.showModal(); const version = ++revision; next.disabled = true; status.textContent = '正在读取项目…'; project.replaceChildren(); title.value = options.title || '';
     try {
       const health = await api.health(); if (version !== revision) return;
       const placeholder = el('option', '请选择源码项目'); placeholder.value = ''; placeholder.disabled = true; placeholder.selected = true; project.append(placeholder);

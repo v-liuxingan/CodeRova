@@ -40,6 +40,11 @@ with sync_playwright() as p:
  page.set_viewport_size({'width':1440,'height':960})
  page.goto(BASE+'/')
  page.get_by_role('button',name='新建图',exact=True).click()
+ assert page.get_by_label('分析器',exact=True).count()==0
+ invalid=page.request.post(BASE+'/api/projects/alpha/entry-check',data={'fileId':'unknown','line':1,'engine':'coderova'},headers={'Origin':BASE})
+ assert invalid.status==422
+ invalid=page.request.post(BASE+'/api/graphs/sample/analysis',data={'requestBudget':1,'nodeId':'root','maxDepth':3},headers={'Origin':BASE})
+ assert invalid.status==422
  page.get_by_label('图名称',exact=True).fill('入口验收')
  expect(page.get_by_label('项目',exact=True)).to_have_value('')
  page.get_by_label('项目',exact=True).select_option('alpha')

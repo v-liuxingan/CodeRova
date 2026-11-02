@@ -1,15 +1,26 @@
+## 单一 LSP 采集流程（2026-11-02）
+
+新建、入口校验和续采仅使用语言服务器，按入口文件选择 Rust / Java 适配器。
+旧 entry-check 的可选 engine 字段移除；请求现在只接受 fileId/line。
+旧续采 maxDepth 字段移除；继续使用 requestBudget/nodeId。未知字段返回 422，
+包括旧 engine=coderova/lsp；更新后需刷新旧浏览器页面，不静默回退。
+历史 AST 图仍可读取、编辑和保存，但不允许续采或在其上校验新采集入口。
+前后端按 LSP provider 白名单判断能力；不修改旧图 provider，不删除已有数据。
+新建根节点、草稿采纳、显式保存、单任务和停止语义不变。
+Python 进程桥接、引擎分流及其专用配置不再是应用依赖。
+
 ## 图格式 0.5：关系与来源字段统一（2026-11-01）
 
 本轮是显式跨边界格式迁移。旧图 0.2–0.4 的 edge.from/to/kind/confidence
 分别改为 source/target/relation/confidenceScore；节点与边的 file 改为 sourceFile。
 保留 nodes/edges、节点 kind、数值 line/endLine、边 ID 和 callSiteStatus；不把
-Graphify 的提取标签解释为概率，也不改变 relation 的既有枚举值。
+提取方式标签解释为概率，也不改变 relation 的既有枚举值。
 HTTP 图及候选节点响应、保存和 CLI 导出统一输出新字段；旧字段作为只读别名，
 重复新旧字段和未知字段仍拒绝。已知旧版本序列化为 0.5，未知版本不伪装成新版本。
 浏览器 api.js 在边界统一转换为现有内部模型，内容证据工具使用同一适配器。
 源码读取、草稿 CAS、采纳/保存规则不变；读取旧图不写文件，不批量迁移用户数据。
 布局已独立保存 layouts/<slug>.layout.json，本轮保持布局契约与节点 ID 稳定。
-本轮不引入共享分析视图、数据库或 Graphify 解析器；后续按独立契约演进。
+本轮不引入共享分析视图或数据库。
 验收：旧图读取、新格式输出/回读、多调用点保留、别名冲突拒绝、源码预览、草稿保存和布局隔离。
 
 ## 采集反馈与返回起点（2026-11-01）

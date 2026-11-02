@@ -175,7 +175,7 @@ export function renderCatalog(scenes) {
     projects.get(key).push(entry);
   }
   return document("场景地图", "从场景理解执行，再通过调用图核对源码。", `
-<nav class="page-nav"><span class="wordmark">CALLGRAPH / SCENARIOS</span><a href="/">全部项目与地图 →</a></nav>
+<nav class="page-nav"><span class="wordmark">CodeRova / SCENARIOS</span><a href="/">全部项目与地图 →</a></nav>
 <header><p class="kicker">EXECUTION SEQUENCES</p><h1>场景地图</h1><p class="lead">先读懂谁在协作、消息如何传递，以及执行为什么继续或结束。每张图独立阅读，按需跳转调用图核对源码。</p></header>
 <nav class="project-index" aria-label="按项目阅读">${[...projects].map(([id, entries]) => `<a href="#project-${e(id)}">${e(id === "unassigned" ? "未关联项目" : entries[0].scene.project.label)} <small>${entries.length}</small></a>`).join("")}</nav>
 ${[...projects].map(([id, entries]) => `<section class="scene-list" id="project-${e(id)}"><div class="project-section-heading"><h2>${e(id === "unassigned" ? "未关联项目" : entries[0].scene.project.label)}</h2>${projectLink(entries[0].scene)}</div>${entries.map(({ slug, scene }, i) => `<article class="scene-entry"><span class="number">${String(i + 1).padStart(2, "0")}</span><div><h3><a href="${slug}.html">${e(scene.title)}</a></h3><p>${e(scene.summary)}</p></div><a href="${slug}.html">阅读场景 →</a></article>`).join("\n")}</section>`).join("\n")}`);

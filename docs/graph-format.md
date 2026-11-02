@@ -1,8 +1,7 @@
 # 图数据格式 0.5
 
 本项目以 JSON 保存调用图，布局继续独立存放在 `layouts/<slug>.layout.json`。
-0.5 统一关系方向和来源命名，接近 Graphify 的 `source/target/relation` 概念，
-同时遵守本项目 camelCase 契约。它不是 Graphify graph.json 的直接兼容格式。
+0.5 使用 `source/target/relation` 表达关系方向与类型，并遵守本项目 camelCase 契约。
 
 ## 命名映射
 
@@ -16,10 +15,10 @@
 
 节点的 kind 仍表示符号类型；边的 relation 表示关系。relation 的取值保持 static-call、
 trait-dispatch、async-boundary 等原有语义，不把它们全部压成 calls。
-保留顶层 edges，Graphify 的 links 由将来的导入适配器处理。
+顶层使用 nodes 和 edges 保存节点与关系。
 line/endLine 仍是从 1 开始的数字；节点 line 是声明位置，边 line 是调用位置。
 sourceFile 是相对于可信项目根的路径，不是浏览器可任意指定的本机绝对路径。
-Graphify 的 EXTRACTED/INFERRED/AMBIGUOUS 不是数值概率，不能直接赋给 confidenceScore。
+提取方式或消歧状态不代表数值概率，不能直接赋给 confidenceScore。
 本轮不引入伪造的来源、签名、列号或未知调用位置。
 
 ## 示例

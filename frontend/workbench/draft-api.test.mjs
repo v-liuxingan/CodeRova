@@ -6,6 +6,9 @@ test('collection recognizes Rust and Java without accepting arbitrary providers'
   assert.equal(supportsCollection({analysis:{provider:'eclipse-jdtls / LSP callHierarchy'}}),true);
   assert.equal(supportsCollection({analysis:{provider:'rust-analyzer / LSP callHierarchy'}}),true);
   assert.equal(supportsCollection({analysis:{provider:'eclipse-jdtls-unknown'}}),false);
+  assert.equal(supportsCollection({analysis:{provider:'CodeRova / Java AST'}}),false);
+  assert.equal(supportsCollection({analysis:{provider:'CodeRova / Rust AST'}}),false);
+  assert.equal(supportsCollection({analysis:{provider:'CodeRova / unknown'}}),false);
   assert.equal(supportsCollection({}),false);
 });
 

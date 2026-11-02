@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="public/brand/callgraph-mark.svg" width="80" height="80" alt="Callgraph Visualizer Logo">
+  <img src="public/brand/callgraph-mark.svg" width="80" height="80" alt="CodeRova Logo">
 </p>
-<h1 align="center">Callgraph Visualizer</h1>
+<h1 align="center">CodeRova</h1>
 <p align="center">从入口理解调用流程，在源码中验证每一步。</p>
 <p align="center"><a href="#快速开始">快速开始</a> · <a href="#lsp-配置">LSP 配置</a> · <a href="docs/skills/callgraph-workbench/SKILL.md">使用手册</a> · <a href="LICENSE">MIT License</a></p>
 
@@ -39,7 +39,7 @@
 
 ### Windows 免安装版（推荐）
 
-1. 打开 [GitHub Releases](https://github.com/v-liuxingan/callgraph-visualizer/releases/latest)，下载 `callgraph-visualizer-v版本号-windows-x64.zip`（不是 Source code）。
+1. 打开 [GitHub Releases](https://github.com/v-liuxingan/callgraph-visualizer/releases/latest)，下载 `coderova-v版本号-windows-x64.zip`（不是 Source code）。
 2. **完整解压**到可写目录，双击 `Start.cmd`。启动器自动选择空闲本机端口，服务就绪后打开浏览器。
 3. 保持启动窗口打开；结束使用时按 `Ctrl+C` 停止服务。
 
@@ -51,7 +51,7 @@
 如果 Windows 策略阻止 PowerShell 脚本，请遵循管理员策略；也可在解压目录的终端直接启动：
 
 ```powershell
-.\callgraph-visualizer.exe serve --port 4324 --config callgraph.projects.local.json
+.\coderova.exe serve --port 4324 --config callgraph.projects.local.json
 ```
 
 然后手动访问 http://127.0.0.1:4324/ 。
@@ -81,7 +81,7 @@ cargo run --locked -- serve --port 4324
 
 打开 **http://127.0.0.1:4324/**。首次启动会编译 Rust，后续启动可复用构建结果。终端保持运行，按 `Ctrl+C` 停止。
 
-仓库自带示例图。可先查看 **Callgraph Visualizer** 项目；其他示例的源码目录需要按下一步映射到本机。所有前端资源在本地提供，无需 CDN；首次安装 npm / Cargo 依赖需要联网。
+仓库自带示例图。可先查看 **CodeRova** 项目；其他示例的源码目录需要按下一步映射到本机。所有前端资源在本地提供，无需 CDN；首次安装 npm / Cargo 依赖需要联网。
 
 ### 3. 配置自己的项目
 
@@ -93,7 +93,7 @@ cargo run --locked -- serve --port 4324
   "projects": [
     {
       "id": "callgraph-visualizer",
-      "name": "Callgraph Visualizer",
+      "name": "CodeRova",
       "root": "."
     },
     {
@@ -300,3 +300,14 @@ git push origin v0.1.0
 ## 开源许可证
 
 本项目采用 [MIT License](LICENSE)。第三方组件保留各自的许可证和版权声明，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+
+### CodeRova 分析
+
+平台统一使用 LSP，按源码语言选择语言服务器，不再提供 AST 分流。取舍与实测边界见 [分析器决策](docs/analyzer-decision.md)。
+
+## 名称与兼容
+
+产品统一命名为 **CodeRova**。Windows 发布包使用 `coderova-<版本>-windows-x64.zip`，包内程序为 `coderova.exe`。
+现有 GitHub 仓库地址暂不变；源码构建的 Cargo 包及二进制仍使用 `callgraph-visualizer`，以上源码启动命令可继续使用。
+`callgraph.*.json` 配置、`CALLGRAPH_*` 环境变量、项目 ID 和浏览器偏好键保持兼容，无需迁移已有数据。

@@ -349,8 +349,14 @@ async fn check_entry(
 ) -> Result<Json<serde_json::Value>, AppError> {
     same_origin(&headers)?;
     let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
-    if graph.analysis.is_none() {
-        return Err(AppError::BadRequest("当前图未配置 LSP 分析".into()));
+    if !graph
+        .analysis
+        .as_ref()
+        .is_some_and(|report| crate::analysis::provider::Language::supported(&report.provider))
+    {
+        return Err(AppError::BadRequest(
+            "此图不支持 LSP 采集，请从源码新建图".into(),
+        ));
     }
     check_project_entry(&state, slug, &graph.project_id, input).await
 }
@@ -411,7 +417,7 @@ async fn check_project_entry(
         },
     );
     Ok(Json(
-        serde_json::json!({"candidateId":token,"node":symbol,"message":"LSP 已确认函数身份；实际下游在采集时查询。"}),
+        serde_json::json!({"candidateId":token,"node":symbol,"message":"已确认函数，可配置采集。"}),
     ))
 }
 async fn create_entry(
@@ -558,11 +564,11 @@ async fn start_analysis(
     let report = graph
         .analysis
         .as_ref()
-        .ok_or_else(|| AppError::BadRequest("此图不是 LSP 分析产物".into()))?;
+        .ok_or_else(|| AppError::BadRequest("此图未配置 LSP 分析".into()))?;
     if !crate::analysis::provider::Language::supported(&report.provider)
         || report.pending_nodes.is_empty()
     {
-        return Err(AppError::BadRequest("没有可续采的 LSP 分析边界".into()));
+        return Err(AppError::BadRequest("没有可继续采集的分析边界".into()));
     }
     if !report.pending_nodes.contains(&request.node_id)
         || graph.edges.iter().any(|e| e.from == request.node_id)

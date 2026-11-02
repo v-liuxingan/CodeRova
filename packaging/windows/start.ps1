@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $browserJob = $null
 try {
-    if (!(Test-Path -LiteralPath './callgraph-visualizer.exe') -or !(Test-Path -LiteralPath './public/index.html')) {
+    if (!(Test-Path -LiteralPath './coderova.exe') -or !(Test-Path -LiteralPath './public/index.html')) {
         throw 'Package incomplete. Extract the entire ZIP before starting.'
     }
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
@@ -23,10 +23,10 @@ try {
             }
         }
     }
-    Write-Host "Callgraph Visualizer: $url" -ForegroundColor Cyan
+    Write-Host "CodeRova: $url" -ForegroundColor Cyan
     Write-Host 'Keep this window open. Press Ctrl+C to stop.'
     Write-Host 'Configure source projects in callgraph.projects.local.json, then restart.'
-    & './callgraph-visualizer.exe' serve --host 127.0.0.1 --port $selectedPort --config callgraph.projects.local.json
+    & './coderova.exe' serve --host 127.0.0.1 --port $selectedPort --config callgraph.projects.local.json
     if ($LASTEXITCODE -ne 0) { throw "Server exited with code $LASTEXITCODE" }
 } catch {
     Write-Host $_ -ForegroundColor Red
