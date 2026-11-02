@@ -10,7 +10,7 @@ V2 页面使用内存草稿，新增节点无须先保存即可续采，预览�
 请求 ID → 响应接收方，独立写循环保证消息帧不被取消或并发写入截断。服务器通知与反向请求
 由读循环处理。配置解析集中在 `analysis/config.rs`，语言适配器不再拥有遍历或保存策略。
 
-本地配置 `collection` 默认 concurrency=4、requestTimeoutSeconds=30、maxRetries=3。
+本地配置 `collection` 默认 concurrency=4、requestTimeoutSeconds=15、maxRetries=3。
 并发可设 1–32，已验收 4/8/16；单次查询超时可设 1–300 秒，重试可设 0–3。
 每次尝试使用新 ID；超时结束本地等待，发送 $/cancelRequest，旧 ID 的迟到响应丢弃。
 服务器不保证响应取消，因此不能承诺服务端物理计算被立刻停止。初始化和索引等待有独立超时。
@@ -180,3 +180,60 @@ RPC、校验和检查点时间，再决定是否引入更复杂的调度或增�
 与上一轮 graph-4.json 完整 JSON 相等。前次 14.345 秒，未显示端到端提速，
 且本轮与测试门禁同时运行，不作为严格耗时比较。CLI 不走页面 DraftStore，
 这次真实采集主要验证语义和边界标记未改变。
+
+
+## 协议和开源实现调研与后续改进（2026-11-02）
+
+本轮默认 query timeout 调整为 15 秒，首次之外最多重试 3 次；初始化、索引就绪
+使用独立期限。不能把它解释为整个节点最多 15 秒。取消是协作式的，客户端丢弃
+迟到结果不代表服务端一定停止计算。
+
+- [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)：
+  call hierarchy 支持 opaque data、取消和 partialResultToken。保留服务器 data 原样回传；
+  partial results 需要服务端实际支持，不能只发一个 token 就宣称减少计算或可保存完整结果。
+  本轮没有实现 partial result 接收，不发送该 token。
+- [clangd 请求调度](https://clangd.llvm.org/design/threads)：按文件复用解析结果、
+  丢弃取消工作、有界资源。已借鉴为单轮采集共享 documentSymbol 的按 URI single-flight：
+  并发任务等待同一个 OnceCell，成功结果复用，失败不缓存，下一轮重新建立缓存，
+  防止跨轮源码变化沿用旧符号；取消初始化不会留下永久等待状态。
+- [clangd 索引](https://clangd.llvm.org/design/indexing)：文件粒度磁盘索引、动态层与后台层
+  合并。长期可借鉴源码指纹绑定的查询事实缓存，但需包含服务端版本、配置和依赖变更，
+  尚未加入磁盘结果缓存。
+- [JDT issue 3886](https://github.com/eclipse-jdtls/eclipse.jdt.ls/issues/3886)：
+  最初报告并发查询和全局锁造成慢查询，维护者和报告者后续确认 Zed 存在 prepare/cancel
+  循环；原始单请求性能结论尚需重新测量。不能把 issue 标题作为本项目瓶颈的证明。
+- [JDT CallHierarchyHandler 源码](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/master/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/CallHierarchyHandler.java)：
+  prepare 清理 wrapper 缓存，outgoing 从 range.start 解析。当前声明位置归一化与身份验证
+  保留；不能盲目删 prepare 或假设每个适配器都可安全复用 wrapper。
+
+本机 graphify-custom/graphify/workbench.py 使用 snapshot 和文件 AST 缓存，先批量提取再
+从索引遍历，不需要每条边通过独立语义 RPC 解析；这解释了一部分速度优势。其语法与
+启发式解析没有执行与 JDT 相同的语义工作量，速度不能直接代表同等准确性。
+本项目继续只用 LSP，借鉴缓存、去重与有界并行，不重新接入 AST 引擎。
+
+正确性修复：Java 实现定位逐项隔离失败，保留已成功定位的实现和直接调用；只要实现
+查询不完整，就保留 caller pending，并禁止把剩余一个实现自动当成唯一实现展开。
+JDT 的排序异常与 NPE 属于上游错误，当前保留 issue 和源码位置，不将失败伪装为成功。
+
+实测：Spring refresh 两层、预算40、并发4，新结果完整 JSON 与旧结果一致；
+documentSymbol 133→79（减少40.6%），总耗时15.072秒，未观察到整体显著提速。
+证据 target/spring-shared-symbols-20261102/。
+
+
+## 公共采集器：合并已完成结果（2026-11-02）
+
+这是应用层优化，不是 LSP 协议特性，Rust 和 Java 共用实现。
+并发查询返回后，只取当前 JoinSet 中已经完成的结果，一次合并、一次复制图和检查点校验；
+不等待仍执行的慢请求，不增加定时窗口，不改变按层预算选点或调用点证据。
+一个批次内同步合并与检查点之间没有 await，任务取消不会插入半批处理。
+传输失败仍先处理已经返回的成功事实，再标记未完成节点。
+日志 LSP collector result batches 记录 completed、result_batches 和 largest_batch，
+用于衡量实际节省的检查点次数；没有多个同时完成的结果时，行为与逐个处理相同。
+新增回归验证同时完成的结果能合并、未完成工作不阻塞；完整门禁继续验证 Rust、Java、
+预算、乱序、超时重试、取消、部分成功和草稿保存冲突。
+本轮没有新的同规模 Spring 端到端性能数据，不据此宣称整轮提速。
+
+补充实测：Spring CLI 两层、并发4，14.989秒，177节点229边，与前轮完整 JSON 相等。
+19个完成结果形成19批（largest_batch=1），本次轻量 CLI 回调没有触发结果合并，
+不能据此认定提速。批处理主要针对页面草稿校验较重、多个结果已排队的场景；
+该场景的端到端收益尚未量化。证据 target/spring-batched-results-20261102/。

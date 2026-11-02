@@ -25,7 +25,7 @@ cargo run -- analyze --config callgraph.projects.json --project <project-id> --f
 尖括号是待替换参数，不可原样执行。选择与任务相称的初始深度/预算，必要时断点续采；这些示例数字不是完整性上限。
 输出不得覆盖已有文件。项目根由可信配置决定，不从浏览器提交绝对路径。
 Rust 使用 rust-analyzer；Java 使用 Eclipse JDT LS，配置在服务端 `callgraph.lsp.local.json` 或 `CALLGRAPH_LSP_CONFIG` 指向文件。核对 `src/analysis` 的实际配置契约与本机环境，不猜测 JDK、服务器命令或配置字段。
-并发、超时和重试由同一可信本地配置的 collection 控制：concurrency 默认 4，requestTimeoutSeconds 默认 30，maxRetries 默认 3（首次之外，最多 4 次尝试）。CLI 和页面共用采集器。单节点最终失败仍保留 pendingNodes/issues，其他分支继续；不要把任务结束理解为所有节点成功。超时发送取消通知，服务器可能仍在内部计算；迟到响应不得采纳。
+并发、超时和重试由同一可信本地配置的 collection 控制：concurrency 默认 4，requestTimeoutSeconds 默认 15，maxRetries 默认 3（首次之外，最多 4 次尝试）。CLI 和页面共用采集器。单节点最终失败仍保留 pendingNodes/issues，其他分支继续；不要把任务结束理解为所有节点成功。超时发送取消通知，服务器可能仍在内部计算；迟到响应不得采纳。
 仅采项目内可解析关系。项目根外目标可能只有 issues，而不是必定显示一个外部依赖节点。Rust 默认关闭构建脚本/过程宏，不能为补全图静默开启执行。
 排除使用可重复 `--exclude-path <项目相对文件或目录>`，不是 glob；说明排除原因，不默认删除 tests/vendor 等目录。
 

@@ -2,7 +2,7 @@
 
 本轮为后端采集与集成验证任务，不改变 HTTP 字段或图 schema。
 本地 callgraph.lsp.local.json 增加 collection：concurrency 默认 4（1–32）、
-requestTimeoutSeconds 默认 30（1–300）、maxRetries 默认 3（0–3，首次之外的重试）。
+requestTimeoutSeconds 默认 15（1–300）、maxRetries 默认 3（0–3，首次之外的重试）。
 只允许可信本地配置，不接受浏览器传入命令或路径。
 LSP 独立读写循环按请求 ID 分发，超时发送取消通知并丢弃迟到响应；不将单请求超时视为坏帧。
 每节点只在本轮调度一次，失败保留 pendingNodes/issues；成功关系继续合并，未知下游不伪造节点。

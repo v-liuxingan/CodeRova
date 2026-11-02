@@ -10,6 +10,7 @@ pub(super) struct ImplementationCandidate {
     pub item: CallHierarchyItem,
 }
 
+#[derive(Clone)]
 pub(super) enum Semantics {
     Basic,
     Java(JavaSymbols),
@@ -39,19 +40,28 @@ impl Semantics {
         root: &Path,
         item: &CallHierarchyItem,
         caller: &GraphNode,
-    ) -> Result<Vec<ImplementationCandidate>, String> {
+    ) -> Result<(Vec<ImplementationCandidate>, Vec<String>), String> {
         let Self::Java(java) = self else {
-            return Ok(vec![]);
+            return Ok((vec![], vec![]));
         };
-        let items = java
+        let (items, mut issues) = java
             .implementations(session, root, item, caller.symbol.as_ref())
             .await?;
-        let single = items.len() == 1;
+        let single = items.len() == 1 && issues.is_empty();
         let mut paths = HashMap::new();
         let mut result = vec![];
         for item in items {
-            let mut target = node(root, &item, &mut paths)?;
-            target.symbol = java.describe(session, root, &item).await?;
+            let mut target = match node(root, &item, &mut paths) {
+                Ok(target) => target,
+                Err(e) => {
+                    issues.push(e);
+                    continue;
+                }
+            };
+            match java.describe(session, root, &item).await {
+                Ok(symbol) => target.symbol = symbol,
+                Err(e) => issues.push(e),
+            }
             let edge = GraphEdge {
                 id: stable_id(&format!("implementation:{}:{}", caller.id, target.id)),
                 from: caller.id.clone(),
@@ -85,7 +95,14 @@ impl Semantics {
                 item,
             });
         }
-        Ok(result)
+        if !issues.is_empty() {
+            for candidate in &mut result {
+                candidate.edge.label = "实现".into();
+                candidate.edge.description =
+                    "实现查找未完成，保留已确认实现；需选择后继续采集。".into();
+            }
+        }
+        Ok((result, issues))
     }
 }
 

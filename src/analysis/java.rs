@@ -3,7 +3,14 @@ use super::{lsp::Client, relative_file};
 use crate::model::SymbolInfo;
 use lsp_types::{CallHierarchyItem, DocumentSymbol, Position, Range, SymbolKind};
 use serde_json::{Value, json};
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, Mutex},
+};
+use tokio::sync::OnceCell;
+type FileFacts = (Vec<DocumentSymbol>, String);
+type FileCache = Arc<Mutex<HashMap<String, Arc<OnceCell<FileFacts>>>>>;
 
 pub(super) fn symbol_text(item: &CallHierarchyItem) -> (String, String) {
     let signature = item.name.split(" : ").next().unwrap_or(&item.name);
@@ -19,9 +26,9 @@ pub(super) fn symbol_text(item: &CallHierarchyItem) -> (String, String) {
     (label, owner)
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct JavaSymbols {
-    files: HashMap<String, (Vec<DocumentSymbol>, String)>,
+    files: FileCache,
 }
 
 fn contains(range: Range, p: Position) -> bool {
@@ -202,21 +209,29 @@ impl JavaSymbols {
         item: &CallHierarchyItem,
     ) -> Result<Option<SymbolInfo>, String> {
         let uri = item.uri.to_string();
-        if !self.files.contains_key(&uri) {
-            let file = relative_file(root, &uri)?;
-            let text = std::fs::read_to_string(root.join(file)).map_err(|e| e.to_string())?;
-            let value = session
-                .request(
-                    "textDocument/documentSymbol",
-                    json!({"textDocument":{"uri":uri}}),
-                    180,
-                )
-                .await?;
-            let symbols: Vec<DocumentSymbol> =
-                serde_json::from_value(value).map_err(|e| format!("Java 符号信息不可用：{e}"))?;
-            self.files.insert(uri.clone(), (symbols, masked(&text)));
-        }
-        let (symbols, text) = &self.files[&uri];
+        let cell = self
+            .files
+            .lock()
+            .map_err(|e| e.to_string())?
+            .entry(uri.clone())
+            .or_default()
+            .clone();
+        let (symbols, text) = cell
+            .get_or_try_init(|| async {
+                let file = relative_file(root, &uri)?;
+                let text = std::fs::read_to_string(root.join(file)).map_err(|e| e.to_string())?;
+                let value = session
+                    .request(
+                        "textDocument/documentSymbol",
+                        json!({"textDocument":{"uri":uri}}),
+                        180,
+                    )
+                    .await?;
+                let symbols: Vec<DocumentSymbol> = serde_json::from_value(value)
+                    .map_err(|e| format!("Java 符号信息不可用：{e}"))?;
+                Ok::<_, String>((symbols, masked(&text)))
+            })
+            .await?;
         Ok(facts(symbols, text, item.selection_range.start, None))
     }
 
@@ -226,7 +241,7 @@ impl JavaSymbols {
         root: &Path,
         item: &CallHierarchyItem,
         info: Option<&SymbolInfo>,
-    ) -> Result<Vec<CallHierarchyItem>, String> {
+    ) -> Result<(Vec<CallHierarchyItem>, Vec<String>), String> {
         if item.kind != SymbolKind::METHOD
             || info.is_none_or(|s| {
                 s.modifiers
@@ -234,7 +249,7 @@ impl JavaSymbols {
                     .any(|m| matches!(m.as_str(), "static" | "final" | "private"))
             })
         {
-            return Ok(vec![]);
+            return Ok((vec![], vec![]));
         }
         let response = session
             .request(
@@ -244,12 +259,13 @@ impl JavaSymbols {
             )
             .await?;
         let locations = match response {
-            Value::Null => return Ok(vec![]),
+            Value::Null => return Ok((vec![], vec![])),
             Value::Array(locations) => locations,
             location if location.is_object() => vec![location],
             _ => return Err("Java 实现查询返回了无效位置列表".into()),
         };
         let mut result = vec![];
+        let mut issues = vec![];
         for location in locations {
             let uri = location["uri"]
                 .as_str()
@@ -268,9 +284,21 @@ impl JavaSymbols {
                     json!({"textDocument":{"uri":uri},"position":position}),
                     180,
                 )
-                .await?;
-            let items: Vec<CallHierarchyItem> =
-                serde_json::from_value(value).map_err(|e| format!("实现方法无法定位：{e}"))?;
+                .await;
+            let items: Vec<CallHierarchyItem> = match value.and_then(|value| {
+                serde_json::from_value::<Vec<CallHierarchyItem>>(value)
+                    .map_err(|e| format!("实现方法无法定位：{e}"))
+            }) {
+                Ok(items) if !items.is_empty() => items,
+                Ok(_) => {
+                    issues.push(format!("实现方法无法定位：{uri} {position}"));
+                    continue;
+                }
+                Err(e) => {
+                    issues.push(format!("{uri} {position}: {e}"));
+                    continue;
+                }
+            };
             for candidate in items {
                 if candidate.kind == SymbolKind::METHOD
                     && !(candidate.uri == item.uri
@@ -283,7 +311,7 @@ impl JavaSymbols {
                 }
             }
         }
-        Ok(result)
+        Ok((result, issues))
     }
 }
 

@@ -142,7 +142,15 @@ async fn query_inner(
         .candidates(client, root, &item, &facts.caller)
         .await
     {
-        Ok(candidates) => facts.candidates = candidates,
+        Ok((candidates, issues)) => {
+            facts.candidates = candidates;
+            if !issues.is_empty() {
+                facts.complete = false;
+            }
+            for issue in issues {
+                facts.issue(format!("实现查询未完成：{issue}"));
+            }
+        }
         Err(e) => {
             facts.complete = false;
             facts.issue(format!("候选实现查询失败：{e}"));
@@ -206,7 +214,8 @@ pub async fn collect(
     mut checkpoint: impl FnMut(&CallGraph, &CallGraph, usize) -> Result<(), String>,
 ) -> Result<usize, String> {
     let concurrency = warm.transport.policy().concurrency;
-    let mut workers: Vec<_> = (0..concurrency).map(|_| Semantics::new(language)).collect();
+    let semantics = Semantics::new(language);
+    let mut workers = vec![semantics; concurrency];
     let mut frontier = seeds;
     let mut scheduled = HashSet::new();
     let mut known: HashMap<_, _> = graph
@@ -227,6 +236,8 @@ pub async fn collect(
     let mut ready = false;
     let mut attempts = 0;
     let mut completed = 0;
+    let mut result_batches = 0;
+    let mut largest_batch = 0;
     while !frontier.is_empty() && warm.transport.usable() {
         // Fix frontier order before dispatch: response timing cannot change which
         // same-depth nodes consume a limited budget. Descendants form the next wave.
@@ -295,11 +306,20 @@ pub async fn collect(
             let Some(result) = active.join_next().await else {
                 break;
             };
-            let (semantics, facts) = result.map_err(|e| format!("采集工作任务失败：{e}"))?;
-            workers.push(semantics);
-            completed += 1;
+            // Drain only results already available. Never wait for a slow sibling
+            // to form a batch; the synchronous merge and checkpoint remain atomic
+            // with respect to cancellation of this collection future.
             let before = graph.clone();
-            merge(graph, facts, &mut known, &mut edges, &pruned, &mut next);
+            let mut batch = 0;
+            for finished in ready_results(result, &mut active) {
+                let (semantics, facts) = finished.map_err(|e| format!("采集工作任务失败：{e}"))?;
+                workers.push(semantics);
+                completed += 1;
+                batch += 1;
+                merge(graph, facts, &mut known, &mut edges, &pruned, &mut next);
+            }
+            result_batches += 1;
+            largest_batch = largest_batch.max(batch);
             checkpoint(&before, graph, completed)?;
         }
         if !warm.transport.usable() {
@@ -327,6 +347,12 @@ pub async fn collect(
     report.issues.sort();
     report.issues.dedup();
     checkpoint(&before, graph, completed)?;
+    tracing::info!(
+        completed,
+        result_batches,
+        largest_batch,
+        "LSP collector result batches"
+    );
     Ok(completed)
 }
 fn merge(
@@ -341,7 +367,7 @@ fn merge(
     if let Some(index) = known.get(id) {
         graph.nodes[*index].symbol = facts.caller.symbol.clone();
     }
-    let follow = facts.candidates.len() == 1;
+    let follow = facts.complete && facts.candidates.len() == 1;
     for candidate in facts.candidates {
         if pruned.contains(&candidate.node.id) {
             continue;
@@ -417,5 +443,47 @@ fn add_node(graph: &mut CallGraph, node: GraphNode, known: &mut HashMap<String, 
             .pending_nodes
             .push(node.id.clone());
         graph.nodes.push(node);
+    }
+}
+
+/// Take completed work without introducing a synchronization barrier.
+fn ready_results<T: 'static>(
+    first: Result<T, tokio::task::JoinError>,
+    active: &mut JoinSet<T>,
+) -> Vec<Result<T, tokio::task::JoinError>> {
+    let mut results = vec![first];
+    while let Some(result) = active.try_join_next() {
+        results.push(result);
+    }
+    results
+}
+
+#[cfg(test)]
+mod batching_tests {
+    use super::*;
+    #[tokio::test]
+    async fn completed_results_share_a_checkpoint_without_waiting_for_slow_work() {
+        let mut active = JoinSet::new();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(2);
+        for id in [1, 2] {
+            let tx = tx.clone();
+            active.spawn(async move {
+                tx.send(()).await.unwrap();
+                id
+            });
+        }
+        active.spawn(std::future::pending::<i32>());
+        rx.recv().await.unwrap();
+        rx.recv().await.unwrap();
+        tokio::task::yield_now().await;
+        let first = active.join_next().await.unwrap();
+        let mut batch: Vec<_> = ready_results(first, &mut active)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        batch.sort();
+        assert_eq!(batch, vec![1, 2]);
+        assert_eq!(active.len(), 1);
+        assert!(active.try_join_next().is_none());
     }
 }

@@ -14,7 +14,7 @@ impl Default for Collection {
     fn default() -> Self {
         Self {
             concurrency: 4,
-            request_timeout_seconds: 30,
+            request_timeout_seconds: 15,
             max_retries: 3,
         }
     }
@@ -69,6 +69,13 @@ mod tests {
     #[test]
     fn defaults_and_strict_limits() {
         assert_eq!(Local::parse("{}").unwrap().collection.concurrency, 4);
+        assert_eq!(
+            Local::parse("{}")
+                .unwrap()
+                .collection
+                .request_timeout_seconds,
+            15
+        );
         for c in [4, 8, 16] {
             assert_eq!(
                 Local::parse(&format!(r#"{{"collection":{{"concurrency":{c}}}}}"#))

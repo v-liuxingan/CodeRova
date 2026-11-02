@@ -16,6 +16,7 @@ def main():
  run(sys.executable,str(ROOT/'tests/lsp_analysis_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_session_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_parallel_test.py'))
+ run(sys.executable,str(ROOT/'tests/lsp_java_partial_test.py'))
  with tempfile.TemporaryDirectory(prefix='workbench-gate-',dir=ROOT/'target') as tmp:
   root=Path(tmp);source=root/'source';source.mkdir();(source/'main.rs').write_text('fn main() { child(); }\nfn child() {}\n',encoding='utf-8')
   (source/'Cargo.toml').write_text('[package]\nname="fixture"\nversion="0.1.0"\nedition="2021"\n[[bin]]\nname="fixture"\npath="main.rs"\n',encoding='utf-8')
