@@ -1,4 +1,6 @@
 //! V2 analysis: language-server facts remain separate from execution interpretation.
+mod collector;
+pub mod config;
 pub mod entry;
 mod java;
 mod lsp;
@@ -8,7 +10,7 @@ mod semantics;
 pub(crate) mod session_cache;
 
 use crate::{
-    model::{CallGraph, GraphEdge, GraphNode},
+    model::{CallGraph, GraphNode},
     project_catalog::{FileProjectCatalog, ProjectCatalog},
     validation::{resolve_source_path, validate_graph},
 };
@@ -16,13 +18,13 @@ use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCall};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisReport {
     pub provider: String,
@@ -186,10 +188,10 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         .map_err(|_| "无法生成文件 URI")?
         .to_string();
     let language = provider::Language::for_file(&options.file)?;
-    let mut session = language.start(&root, Some((&options.server, &options.server_args)))?;
+    let session = language.start(&root, Some((&options.server, &options.server_args)))?;
     eprintln!("正在初始化 {}：{}", language.provider(), root.display());
     language
-        .initialize(&mut session, &root, &options.project)
+        .initialize(&session, &root, &options.project)
         .await?;
     session
         .notify(
@@ -209,7 +211,7 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
     let mut first = node(&root, &entry, &mut paths)?;
     let mut semantics = semantics::Semantics::new(language);
     semantics
-        .describe(&mut session, &root, &entry, &mut first)
+        .describe(&session, &root, &entry, &mut first)
         .await?;
     let mut graph = CallGraph {
         schema_version: "0.4".into(),
@@ -239,182 +241,28 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         issues: vec![],
         pruned_node_ids: vec![],
     };
-    let mut known = HashSet::from([first.id.clone()]);
-    let mut depths = HashMap::from([(first.id, 0_u32)]);
-    let mut queue = VecDeque::from([entry]);
-    let mut seen_edges = HashSet::new();
-    let mut requests = 0;
-    while let Some(item) = queue.pop_front() {
-        let mut caller = node(&root, &item, &mut paths)?;
-        match semantics
-            .describe(&mut session, &root, &item, &mut caller)
-            .await
-        {
-            Ok(()) => {
-                if let Some(n) = graph.nodes.iter_mut().find(|n| n.id == caller.id) {
-                    n.symbol = caller.symbol.clone();
-                }
-            }
-            Err(e) => report.issues.push(format!("{}: {e}", caller.id)),
-        }
-        let depth = depths[&caller.id];
-        if let Some(rule) = exclusions.iter().find(|p| excluded(&caller.file, p)) {
-            report.issues.push(format!(
-                "{}: 主动排除下游采集（路径规则 {rule}），保留边界与入向调用证据",
-                caller.id
-            ));
-            report.pending_nodes.push(caller.id);
-            continue;
-        }
-        if depth >= options.max_depth || requests >= options.request_budget {
-            let reason = if depth >= options.max_depth {
-                "达到深度边界"
-            } else {
-                "请求预算耗尽"
-            };
-            report.issues.push(format!("{}: {reason}", caller.id));
-            report.pending_nodes.push(caller.id);
-            continue;
-        }
-        eprintln!("分析 {}（深度 {depth}）", caller.label);
-        requests += 1;
-        let response = match language.outgoing(&mut session, &item).await {
-            Ok(value) => value,
-            Err(error) => {
-                report.issues.push(format!("{}: {error}", caller.id));
-                report.pending_nodes.push(caller.id);
-                if session.usable {
-                    continue;
-                }
-                break;
-            }
-        };
-        if response.is_null() {
-            report
-                .issues
-                .push(format!("{}: 服务器返回 null，不能确认下游", caller.id));
-            report.pending_nodes.push(caller.id);
-            continue;
-        }
-        let calls: Vec<CallHierarchyOutgoingCall> = match serde_json::from_value(response) {
-            Ok(calls) => calls,
-            Err(error) => {
-                report
-                    .issues
-                    .push(format!("{}: 无效调用层级：{error}", caller.id));
-                report.pending_nodes.push(caller.id);
-                continue;
-            }
-        };
-        if let Err(error) = validate_call_ranges(&item, &calls) {
-            report.issues.push(format!("{}: {error}", caller.id));
-            report.pending_nodes.push(caller.id);
-            continue;
-        }
-        match semantics
-            .candidates(&mut session, &root, &item, &caller)
-            .await
-        {
-            Ok(candidates) => {
-                let follow = candidates.len() == 1;
-                for candidate in candidates {
-                    let semantics::ImplementationCandidate {
-                        node: target,
-                        edge,
-                        item: implementation,
-                    } = candidate;
-                    if follow && !depths.contains_key(&target.id) {
-                        depths.insert(target.id.clone(), depth + 1);
-                        queue.push_back(implementation);
-                    }
-                    if known.insert(target.id.clone()) {
-                        report.pending_nodes.push(target.id.clone());
-                        graph.nodes.push(target);
-                    }
-                    if !graph.edges.iter().any(|e| e.id == edge.id) {
-                        graph.edges.push(edge);
-                    }
-                }
-            }
-            Err(e) => report
-                .issues
-                .push(format!("{}: 候选实现查询失败：{e}", caller.id)),
-        }
-        report.pending_nodes.retain(|id| id != &caller.id);
-        report.queried_nodes.push(caller.id.clone());
-        for call in calls {
-            let mut target = match node(&root, &call.to, &mut paths) {
-                Ok(target) => target,
-                Err(error) => {
-                    report
-                        .issues
-                        .push(format!("{} → {}：{error}", caller.label, call.to.name));
-                    continue;
-                }
-            };
-            if let Err(e) = semantics
-                .describe(&mut session, &root, &call.to, &mut target)
-                .await
-            {
-                report.issues.push(format!("{}: {e}", target.id));
-            }
-            if call.from_ranges.is_empty() {
-                report.issues.push(format!(
-                    "{} → {}：缺少调用点，未建立边",
-                    caller.label, target.label
-                ));
-                continue;
-            }
-            if !depths.contains_key(&target.id) {
-                depths.insert(target.id.clone(), depth + 1);
-                if known.insert(target.id.clone()) {
-                    graph.nodes.push(target.clone());
-                }
-                report.pending_nodes.retain(|id| id != &target.id);
-                queue.push_back(call.to);
-            }
-            for range in call.from_ranges {
-                let key = format!(
-                    "{}:{}:{}:{}",
-                    caller.id, target.id, range.start.line, range.start.character
-                );
-                if !seen_edges.insert(key.clone()) {
-                    continue;
-                }
-                graph.edges.push(GraphEdge {
-                    id: stable_id(&key),
-                    from: caller.id.clone(),
-                    to: target.id.clone(),
-                    kind: "static-call".into(),
-                    flow_kind: "normal".into(),
-                    condition: String::new(),
-                    order: None,
-                    label: "静态调用".into(),
-                    call_site_status: "exact".into(),
-                    call_site_note: String::new(),
-                    file: caller.file.clone(),
-                    line: range.start.line + 1,
-                    description: "语言服务器报告的调用关系；调用机制与控制条件尚未进一步分类。"
-                        .into(),
-                    evidence: format!(
-                        "LSP outgoingCalls; UTF-16 call site {}:{}",
-                        range.start.line + 1,
-                        range.start.character + 1
-                    ),
-                    confidence: 1.0,
-                });
-            }
-        }
-    }
-    for item in queue {
-        let id = node(&root, &item, &mut paths)?.id;
-        report.issues.push(format!("{id}: 会话中断，尚未发起请求"));
-        report.pending_nodes.push(id);
-    }
-    // Includes depth/budget boundaries and failed/null queries; never report semantic completeness.
-    report.pending_nodes.sort();
-    report.pending_nodes.dedup();
+    report.pending_nodes.push(first.id.clone());
     graph.analysis = Some(report);
+    let mut warm = session_cache::WarmSession::from_open(session, uri, text);
+    collector::collect(
+        &mut graph,
+        &root,
+        &mut warm,
+        language,
+        vec![collector::Seed {
+            id: first.id,
+            item: Some(entry),
+            depth: 0,
+        }],
+        collector::Options {
+            budget: options.request_budget,
+            max_depth: Some(options.max_depth),
+            exclusions,
+        },
+        |_, _, _| Ok(()),
+    )
+    .await?;
+    let session = warm.transport;
     session.stop().await;
     let validation = validate_graph(&graph, Some(&root));
     if !validation.valid {

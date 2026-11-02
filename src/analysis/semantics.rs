@@ -1,5 +1,5 @@
 //! Optional language capabilities, normalized before graph traversal.
-use super::{java::JavaSymbols, lsp::Session, node, provider::Language, stable_id};
+use super::{java::JavaSymbols, lsp::Client, node, provider::Language, stable_id};
 use crate::model::{GraphEdge, GraphNode};
 use lsp_types::CallHierarchyItem;
 use std::{collections::HashMap, path::Path};
@@ -23,7 +23,7 @@ impl Semantics {
     }
     pub async fn describe(
         &mut self,
-        session: &mut Session,
+        session: &Client,
         root: &Path,
         item: &CallHierarchyItem,
         target: &mut GraphNode,
@@ -35,7 +35,7 @@ impl Semantics {
     }
     pub async fn candidates(
         &mut self,
-        session: &mut Session,
+        session: &Client,
         root: &Path,
         item: &CallHierarchyItem,
         caller: &GraphNode,

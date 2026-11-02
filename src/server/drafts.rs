@@ -203,7 +203,12 @@ pub(super) async fn edit(
             serde_json::json!({"discarded":true})
         }
     };
-    let (graph, was_dirty) = draft.snapshot().map_err(AppError::BadRequest)?;
+    let (graph, was_dirty) = if include_graph {
+        let (graph, dirty) = draft.snapshot().map_err(AppError::BadRequest)?;
+        (Some(graph), dirty)
+    } else {
+        (None, draft.dirty().map_err(AppError::BadRequest)?)
+    };
     let pending_collection = state
         .analysis_jobs
         .state
@@ -222,6 +227,6 @@ pub(super) async fn edit(
             .remove(&id);
     }
     Ok(Json(
-        serde_json::json!({"draftId":if closing {None} else {Some(id)},"dirty":dirty,"changes":draft.changes().map_err(AppError::BadRequest)?,"graph":if include_graph {Some(graph)} else {None},"result":result}),
+        serde_json::json!({"draftId":if closing {None} else {Some(id)},"dirty":dirty,"changes":draft.changes().map_err(AppError::BadRequest)?,"graph":graph,"result":result}),
     ))
 }

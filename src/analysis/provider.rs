@@ -1,11 +1,7 @@
 //! Server launch configuration is local/trusted, never supplied by HTTP clients.
 use super::lsp;
-use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 use url::Url;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,7 +19,7 @@ impl Language {
 
     pub async fn outgoing(
         self,
-        session: &mut lsp::Session,
+        session: &lsp::Client,
         item: &lsp_types::CallHierarchyItem,
     ) -> Result<Value, String> {
         // JDT's cached child wrappers retain the previous caller's call location.
@@ -121,21 +117,17 @@ impl Language {
         root: &Path,
         server: Option<(&Path, &[String])>,
     ) -> Result<lsp::Session, String> {
+        let config = super::config::Local::load()?;
+        let policy = config.collection;
         let (command, args, settings) = match self {
             Self::Rust => {
                 let (s, a) = server.unwrap_or((Path::new("rust-analyzer"), &[]));
                 (s.to_path_buf(), a.to_vec(), json!({}))
             }
             Self::Java => {
-                let path = std::env::var_os("CALLGRAPH_LSP_CONFIG")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("callgraph.lsp.local.json"));
-                let config: Local = serde_json::from_str(
-                    &fs::read_to_string(&path)
-                        .map_err(|e| format!("读取 Java LSP 配置 {} 失败：{e}", path.display()))?,
-                )
-                .map_err(|e| e.to_string())?;
-                let java = config.java;
+                let java = config
+                    .java
+                    .ok_or("Java LSP 未配置，请填写本地配置中的 java")?;
                 let workspace = java
                     .workspace_root
                     .join(super::stable_id(&root.to_string_lossy()));
@@ -151,13 +143,12 @@ impl Language {
                 (java.command, args, java.settings)
             }
         };
-        let mut session = lsp::Session::start(&command, &args, root)?;
-        session.settings = settings;
+        let session = lsp::Session::start(&command, &args, root, policy, settings)?;
         Ok(session)
     }
     pub async fn initialize(
         self,
-        session: &mut lsp::Session,
+        session: &lsp::Client,
         root: &Path,
         name: &str,
     ) -> Result<(), String> {
@@ -169,7 +160,7 @@ impl Language {
                 json!({"checkOnSave":false,"cargo":{"buildScripts":{"enable":false}},"procMacro":{"enable":false}})
             }
             Self::Java => {
-                json!({"settings":session.settings,"extendedClientCapabilities":{"classFileContentsSupport":false}})
+                json!({"settings":session.settings(),"extendedClientCapabilities":{"classFileContentsSupport":false}})
             }
         };
         let init=session.request("initialize",json!({"processId":std::process::id(),"rootUri":uri,"workspaceFolders":[{"uri":uri,"name":name}],"capabilities":{"general":{"positionEncodings":["utf-16"]},"workspace":{"configuration":true},"textDocument":{"documentSymbol":{"hierarchicalDocumentSymbolSupport":true}},"window":{"workDoneProgress":true},"experimental":{"serverStatusNotification":true}},"initializationOptions":options}),120).await?;
@@ -187,21 +178,6 @@ impl Language {
         Ok(())
     }
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Local {
-    java: Java,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Java {
-    command: PathBuf,
-    args: Vec<String>,
-    workspace_root: PathBuf,
-    #[serde(default)]
-    settings: Value,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

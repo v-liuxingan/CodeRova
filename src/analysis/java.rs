@@ -1,5 +1,5 @@
 //! JDT-specific symbol facts. No graph traversal or persistence policy lives here.
-use super::{lsp::Session, relative_file};
+use super::{lsp::Client, relative_file};
 use crate::model::SymbolInfo;
 use lsp_types::{CallHierarchyItem, DocumentSymbol, Position, Range, SymbolKind};
 use serde_json::{Value, json};
@@ -197,7 +197,7 @@ fn facts(
 impl JavaSymbols {
     pub async fn describe(
         &mut self,
-        session: &mut Session,
+        session: &Client,
         root: &Path,
         item: &CallHierarchyItem,
     ) -> Result<Option<SymbolInfo>, String> {
@@ -222,7 +222,7 @@ impl JavaSymbols {
 
     pub async fn implementations(
         &mut self,
-        session: &mut Session,
+        session: &Client,
         root: &Path,
         item: &CallHierarchyItem,
         info: Option<&SymbolInfo>,

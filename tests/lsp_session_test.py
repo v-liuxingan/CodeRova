@@ -20,7 +20,7 @@ def peer(log):
    if not line:return
    if line==b'\r\n':break
    if line.lower().startswith(b'content-length:'):length=int(line.split(b':')[1])
-  req=json.loads(sys.stdin.buffer.read(length));method=req.get('method');rid=req.get('id');record({'method':method})
+  req=json.loads(sys.stdin.buffer.read(length));method=req.get('method');rid=req.get('id');record({'method':method,'process':os.getpid()})
   if method=='initialize':send({'id':rid,'result':{'capabilities':{'callHierarchyProvider':True}}})
   elif method=='initialized':send({'method':'language/status','params':{'type':'Started'}})
   elif method=='textDocument/didOpen':uri=req['params']['textDocument']['uri']
@@ -40,8 +40,9 @@ def run():
  with tempfile.TemporaryDirectory(prefix='lsp-session-',dir=ROOT/'target') as tmp:
   root=Path(tmp);source=root/'src';source.mkdir();file=source/'Entry.java';file.write_text('void entry() {}\n',encoding='utf-8')
   graphs=root/'graphs';graphs.mkdir();log=root/'peer.jsonl'
-  projects=root/'projects.json';projects.write_text(json.dumps({'schemaVersion':'0.1','projects':[{'id':'fixture','name':'Fixture','root':str(source)},{'id':'other','name':'Other','root':str(root/'other')}]}),encoding='utf-8')
+  projects=root/'projects.json';projects.write_text(json.dumps({'schemaVersion':'0.1','projects':[{'id':'fixture','name':'Fixture','root':str(source)},{'id':'other','name':'Other','root':str(root/'other')},{'id':'third','name':'Third','root':str(root/'third')}]}),encoding='utf-8')
   (root/'other').mkdir();(root/'other'/'Entry.java').write_text('void entry() {}\n',encoding='utf-8')
+  (root/'third').mkdir();(root/'third'/'Entry.java').write_text('void entry() {}\n',encoding='utf-8')
   config=root/'lsp.json';config.write_text(json.dumps({'java':{'command':sys.executable,'args':[str(Path(__file__).resolve()),'--peer',str(log)],'workspaceRoot':str(root/'workspace'),'settings':{}}}),encoding='utf-8')
   env=os.environ.copy();env['CALLGRAPH_LSP_CONFIG']=str(config)
   with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
@@ -72,7 +73,10 @@ def run():
    assert starts()==1,records()
    file.write_text('void entry() { }\n',encoding='utf-8');check();assert starts()==2
    check('other');assert starts()==3
-   b=check();assert starts()==4
+   b=check();assert starts()==3
+   for _ in range(3):
+    check('other');b=check()
+   assert starts()==3,records()
    graph=api('/api/graphs',{'projectId':'fixture','candidateId':b['candidateId'],'title':'cancel'})
    endpoint='/api/graphs/'+graph['slug']+'/analysis';Path(str(log)+'.slow').touch()
    api(endpoint,{'requestBudget':1,'nodeId':graph['nodeId']})
@@ -83,12 +87,18 @@ def run():
    for _ in range(100):
     if api(endpoint)['status']!='running':break
     time.sleep(.05)
-   Path(str(log)+'.slow').unlink();check();assert starts()==5,records()
+   Path(str(log)+'.slow').unlink();check();assert starts()==4,records()
    last_pid=[r['pid'] for r in records() if 'pid' in r][-1];os.kill(last_pid,9);time.sleep(.1)
-   check();assert starts()==6,records()
+   check();assert starts()==5,records()
    config_data=json.loads(config.read_text());config_data['java']['settings']={'changed':True};config.write_text(json.dumps(config_data),encoding='utf-8')
+   check();assert starts()==6,records()
+   # A third project evicts the least-recently-used idle server, not the hot one.
+   other_pid=[r['pid'] for r in records() if 'pid' in r][2]
+   check('third');assert starts()==7,records()
+   assert any(r.get('process')==other_pid and r.get('method')=='shutdown' for r in records())
    check();assert starts()==7,records()
-   print('LSP session PASS: check/check/collect share one process; source/project changes and cancellation replace sessions')
+   check('other');assert starts()==8,records()
+   print('LSP session PASS: project A/B/A reuses 2 servers; third project evicts LRU; source/config changes, cancellation and dead-process recovery remain safe')
   finally:
    server.terminate();server.wait(timeout=10)
    # Forced test-server termination cannot run Rust shutdown hooks.

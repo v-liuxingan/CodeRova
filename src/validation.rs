@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -41,6 +41,7 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     let mut source_locations = Vec::new();
+    let mut source_files = HashMap::new();
 
     if !matches!(graph.schema_version.as_str(), "0.2" | "0.3" | "0.4" | "0.5") {
         errors.push(format!(
@@ -132,7 +133,12 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
         }
         if let Some(root) = source_root {
             source_locations.push(check_source_location(
-                root, "node", &node.id, &node.file, node.line,
+                root,
+                "node",
+                &node.id,
+                &node.file,
+                node.line,
+                &mut source_files,
             ));
         }
     }
@@ -191,8 +197,14 @@ pub fn validate_graph(graph: &CallGraph, source_root: Option<&Path>) -> Validati
                 if let Some(root) = source_root
                     && let Some((file, line)) = edge.exact_call_site()
                 {
-                    source_locations
-                        .push(check_source_location(root, "edge", &edge.id, file, line));
+                    source_locations.push(check_source_location(
+                        root,
+                        "edge",
+                        &edge.id,
+                        file,
+                        line,
+                        &mut source_files,
+                    ));
                 }
             }
             CALL_SITE_VIRTUAL_NODE | CALL_SITE_OMITTED_NODES => {
@@ -252,13 +264,23 @@ fn check_source_location(
     id: &str,
     file: &str,
     line: u32,
+    files: &mut HashMap<String, (bool, Option<usize>)>,
 ) -> SourceLocationStatus {
-    let path = source_root.join(file);
-    let exists = path.is_file();
-    let line_in_range = exists
-        && fs::read_to_string(&path)
-            .map(|content| line as usize <= content.lines().count())
-            .unwrap_or(false);
+    // Scope the snapshot to one validation pass: each source file is read once,
+    // while every node and call site still gets its own location diagnostic.
+    let (exists, lines) = *files.entry(file.to_owned()).or_insert_with(|| {
+        let path = source_root.join(file);
+        let exists = path.is_file();
+        let lines = if exists {
+            fs::read_to_string(&path)
+                .ok()
+                .map(|content| content.lines().count())
+        } else {
+            None
+        };
+        (exists, lines)
+    });
+    let line_in_range = lines.is_some_and(|count| line as usize <= count);
     SourceLocationStatus {
         target_type: target_type.to_owned(),
         id: id.to_owned(),
@@ -350,6 +372,41 @@ mod tests {
                 confidence: 1.0,
             }],
         }
+    }
+
+    #[test]
+    fn source_checks_refresh_between_passes_and_preserve_each_diagnostic() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+        let source = dir.path().join("src/main.rs");
+        fs::write(&source, "one\ntwo\n").unwrap();
+        let mut input = graph();
+        input.nodes[1].line = 2;
+        input.edges[0].line = 3;
+        let report = validate_graph(&input, Some(dir.path()));
+        assert_eq!(report.source_locations.len(), 3);
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.source_locations[2].id, "a-b");
+        fs::write(&source, "one\n").unwrap();
+        assert_eq!(validate_graph(&input, Some(dir.path())).errors.len(), 2);
+        fs::write(&source, [0xff]).unwrap();
+        let unreadable = validate_graph(&input, Some(dir.path()));
+        assert_eq!(unreadable.errors.len(), 3);
+        assert!(
+            unreadable
+                .source_locations
+                .iter()
+                .all(|location| location.exists)
+        );
+        fs::remove_file(source).unwrap();
+        let missing = validate_graph(&input, Some(dir.path()));
+        assert_eq!(missing.errors.len(), 3);
+        assert!(
+            missing
+                .source_locations
+                .iter()
+                .all(|location| !location.exists)
+        );
     }
 
     #[test]

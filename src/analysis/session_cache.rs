@@ -16,10 +16,11 @@ use std::{
 };
 
 use tokio::sync::Mutex;
+const MAX_SESSIONS: usize = 2;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 #[derive(Default)]
 pub struct SessionCache {
-    slot: Mutex<Option<Cached>>,
+    slot: Mutex<Vec<Cached>>,
     shutting_down: AtomicBool,
 }
 struct Cached {
@@ -27,7 +28,7 @@ struct Cached {
     session: WarmSession,
     returned: Instant,
 }
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Key {
     root: PathBuf,
     language: &'static str,
@@ -45,6 +46,13 @@ pub struct Lease {
 }
 
 impl WarmSession {
+    pub fn from_open(transport: Session, uri: String, text: String) -> Self {
+        Self {
+            transport,
+            opened: HashMap::from([(uri, text)]),
+        }
+    }
+
     pub async fn open(&mut self, uri: &str, language: Language, text: &str) -> Result<(), String> {
         if let Some(previous) = self.opened.get(uri) {
             if previous != text {
@@ -79,8 +87,14 @@ impl Lease {
             fingerprint,
         };
         let mut slot = owner.slot.lock().await;
-        let cached = slot.take();
-        if let Some(mut cached) = cached {
+        if owner.shutting_down.load(Ordering::Relaxed) {
+            return Err("语言服务器缓存正在关闭".into());
+        }
+        if let Some(index) = slot
+            .iter()
+            .position(|cached| cached.key.root == key.root && cached.key.language == key.language)
+        {
+            let mut cached = slot.remove(index);
             if cached.key == key
                 && cached.returned.elapsed() < IDLE_TIMEOUT
                 && cached.session.transport.is_alive()?
@@ -96,10 +110,15 @@ impl Lease {
             }
             cached.session.transport.stop().await;
         }
+        // Reserve room before starting a cold process; keep the most recently
+        // returned sessions. Never evict or share an active lease.
+        if slot.len() >= MAX_SESSIONS {
+            slot.remove(0).session.transport.stop().await;
+        }
         let started = Instant::now();
-        let mut transport = language.start(&key.root, None)?;
+        let transport = language.start(&key.root, None)?;
         language
-            .initialize(&mut transport, &key.root, "callgraph")
+            .initialize(&transport, &key.root, "callgraph")
             .await?;
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),
@@ -119,7 +138,7 @@ impl Lease {
     }
     pub async fn release(self) {
         if self.owner.shutting_down.load(Ordering::Relaxed)
-            || !self.session.transport.usable
+            || !self.session.transport.usable()
             || self.session.opened.values().map(String::len).sum::<usize>() > 32 * 1024 * 1024
         {
             return;
@@ -130,10 +149,16 @@ impl Lease {
         if owner.shutting_down.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(old) = slot.take() {
-            old.session.transport.stop().await;
+        if let Some(index) = slot.iter().position(|cached| {
+            cached.key.root == self.key.root && cached.key.language == self.key.language
+        }) {
+            slot.remove(index).session.transport.stop().await;
         }
-        *slot = Some(Cached {
+        if slot.len() >= MAX_SESSIONS {
+            slot.remove(0).session.transport.stop().await;
+        }
+        let expiry_key = self.key.clone();
+        slot.push(Cached {
             key: self.key,
             session: self.session,
             returned,
@@ -142,10 +167,12 @@ impl Lease {
         tokio::spawn(async move {
             tokio::time::sleep(IDLE_TIMEOUT).await;
             let mut slot = owner.slot.lock().await;
-            if slot.as_ref().is_some_and(|c| c.returned == returned)
-                && let Some(old) = slot.take()
+            // An older timer must not expire a session that has since been reused.
+            if let Some(index) = slot
+                .iter()
+                .position(|cached| cached.key == expiry_key && cached.returned == returned)
             {
-                old.session.transport.stop().await;
+                slot.remove(index).session.transport.stop().await;
             }
         });
     }
@@ -201,8 +228,8 @@ impl SessionCache {
     pub async fn shutdown(&self) {
         self.shutting_down.store(true, Ordering::Relaxed);
         let mut slot = self.slot.lock().await;
-        if let Some(old) = slot.take() {
-            old.session.transport.stop().await;
+        for cached in slot.drain(..) {
+            cached.session.transport.stop().await;
         }
     }
 }

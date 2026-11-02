@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CallGraph {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -24,7 +24,7 @@ pub struct CallGraph {
     pub edges: Vec<GraphEdge>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphPhase {
     pub id: String,
@@ -34,7 +34,7 @@ pub struct GraphPhase {
     pub order: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -61,7 +61,7 @@ pub struct GraphNode {
 }
 
 /// Language-neutral presentation facts; language adapters own extraction.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SymbolInfo {
     pub owner_kind: String,
@@ -76,7 +76,7 @@ fn default_node_state() -> String {
     "expanded".to_owned()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphEdge {
     pub id: String,
@@ -428,10 +428,14 @@ fn serialize_graph_version<S: serde::Serializer>(
     version: &str,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(match version {
+    serializer.serialize_str(output_graph_version(version))
+}
+
+fn output_graph_version(version: &str) -> &str {
+    match version {
         "0.2" | "0.3" | "0.4" | "0.5" => "0.5",
         other => other,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -504,5 +508,22 @@ mod graph_format_tests {
             "9.0"
         );
         assert!(!crate::validation::validate_graph(&graph, None).valid);
+    }
+}
+
+impl CallGraph {
+    /// Compare persisted content without allocating JSON trees. Known legacy
+    /// versions serialize identically; reading them must not create a dirty draft.
+    pub fn same_content(&self, other: &Self) -> bool {
+        if self.schema_version == other.schema_version {
+            return self == other;
+        }
+        if output_graph_version(&self.schema_version) != output_graph_version(&other.schema_version)
+        {
+            return false;
+        }
+        let mut normalized = other.clone();
+        normalized.schema_version.clone_from(&self.schema_version);
+        self == &normalized
     }
 }

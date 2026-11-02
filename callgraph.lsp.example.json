@@ -20,5 +20,10 @@
     ],
     "workspaceRoot": "E:/caches/callgraph-jdtls",
     "settings": {}
+  },
+  "collection": {
+    "concurrency": 4,
+    "requestTimeoutSeconds": 30,
+    "maxRetries": 3
   }
 }

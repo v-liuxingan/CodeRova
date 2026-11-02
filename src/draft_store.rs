@@ -44,6 +44,11 @@ impl DraftStore {
         pair.last_access = Instant::now();
         Ok((pair.current.clone(), pair.dirty))
     }
+    pub fn dirty(&self) -> Result<bool, String> {
+        let mut state = self.graphs.lock().map_err(|e| e.to_string())?;
+        state.last_access = Instant::now();
+        Ok(state.dirty)
+    }
     pub fn changes(&self) -> Result<serde_json::Value, String> {
         let pair = self.graphs.lock().map_err(|e| e.to_string())?;
         let old_nodes: std::collections::HashSet<_> =
@@ -80,13 +85,10 @@ impl GraphStore for DraftStore {
             return Err("草稿不能修改其他图".into());
         }
         let mut pair = self.graphs.lock().map_err(|e| e.to_string())?;
-        if serde_json::to_value(&pair.current).map_err(|e| e.to_string())?
-            != serde_json::to_value(before).map_err(|e| e.to_string())?
-        {
+        if !pair.current.same_content(before) {
             return Err("草稿已变化，请重新加载".into());
         }
-        pair.dirty = serde_json::to_value(&pair.baseline).map_err(|e| e.to_string())?
-            != serde_json::to_value(after).map_err(|e| e.to_string())?;
+        pair.dirty = !pair.baseline.same_content(after);
         pair.current = after.clone();
         pair.last_access = Instant::now();
         Ok(())
@@ -113,6 +115,67 @@ mod tests {
     use super::*;
     use crate::graph_store::FileGraphStore;
     #[test]
+    fn content_comparison_preserves_wire_versions_and_nested_changes() {
+        let legacy: CallGraph = serde_json::from_str(r#"{"schemaVersion":"0.4","projectId":"p","title":"original","root":"r","nodes":[],"edges":[]}"#).unwrap();
+        let current: CallGraph =
+            serde_json::from_value(serde_json::to_value(&legacy).unwrap()).unwrap();
+        assert!(legacy.same_content(&current));
+        let mut changed = current.clone();
+        changed.analysis = Some(crate::analysis::AnalysisReport {
+            provider: "test".into(),
+            scope: "project".into(),
+            max_depth: 0,
+            request_budget: 4,
+            queried_nodes: vec![],
+            pending_nodes: vec!["r".into()],
+            issues: vec![],
+            pruned_node_ids: vec![],
+        });
+        assert!(!current.same_content(&changed));
+        changed = current.clone();
+        changed.schema_version = "future".into();
+        assert!(!legacy.same_content(&changed));
+    }
+
+    /// Opt-in benchmark on a real collected graph, never edits the input file.
+    #[test]
+    #[ignore]
+    fn benchmark_checkpoint_comparison() {
+        let file = std::env::var("CODEROVA_BENCH_GRAPH").expect("set CODEROVA_BENCH_GRAPH");
+        let graph: CallGraph = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+        let mut after = graph.clone();
+        after.description.push_str(" benchmark change");
+        let rounds = 30;
+        let start = Instant::now();
+        for _ in 0..rounds {
+            assert_eq!(
+                serde_json::to_value(&graph).unwrap(),
+                serde_json::to_value(&graph).unwrap()
+            );
+            assert_ne!(
+                serde_json::to_value(&graph).unwrap(),
+                serde_json::to_value(&after).unwrap()
+            );
+            std::hint::black_box(after.clone());
+        }
+        let old = start.elapsed();
+        let start = Instant::now();
+        for _ in 0..rounds {
+            assert!(graph.same_content(std::hint::black_box(&graph)));
+            assert!(!graph.same_content(&after));
+            std::hint::black_box(after.clone());
+        }
+        eprintln!(
+            "checkpoint comparison: nodes={} edges={} rounds={} JSON={:?} typed={:?}",
+            graph.nodes.len(),
+            graph.edges.len(),
+            rounds,
+            old,
+            start.elapsed()
+        );
+    }
+
+    #[test]
     fn edits_are_isolated_until_explicit_save_and_conflicts_preserve_draft() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("graph.json"), r#"{"schemaVersion":"0.4","projectId":"p","title":"original","root":"r","nodes":[],"edges":[]}"#).unwrap();
@@ -127,6 +190,10 @@ mod tests {
         assert!(!first.expired_clean(Duration::ZERO));
         assert_eq!(store.load("graph").unwrap().title, "original");
         assert_eq!(second.load("graph").unwrap().title, "original");
+        assert!(first.checkpoint("graph", &original, &edited).is_err());
+        first.checkpoint("graph", &edited, &original).unwrap();
+        assert!(!first.snapshot().unwrap().1);
+        first.checkpoint("graph", &original, &edited).unwrap();
         first.save().unwrap();
         assert_eq!(store.load("graph").unwrap().title, "first");
         assert!(!first.snapshot().unwrap().1);
