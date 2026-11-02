@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='portable space-', dir=root / 'target') 
                     time.sleep(.1)
             else:
                 raise AssertionError('Packaged server did not become ready')
-            for path in ['/', '/brand/callgraph-mark.svg', '/vendor/workbench/workbench.js']:
+            for path in ['/', '/brand/coderova-mark.svg', '/vendor/workbench/workbench.js']:
                 with urlopen(f'http://127.0.0.1:{port}{path}') as response:
                     assert response.status == 200
             print('Windows ZIP smoke test PASS (no Rust or Node on PATH)')

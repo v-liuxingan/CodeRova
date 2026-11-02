@@ -1,6 +1,7 @@
 from branch_controls import click_branch
 import subprocess,tempfile,pathlib,os
 from playwright.sync_api import sync_playwright,expect
+pathlib.Path('target/test-artifacts').mkdir(parents=True,exist_ok=True)
 BASE=os.environ.get('CALLGRAPH_TEST_URL','http://127.0.0.1:4322')
 with tempfile.TemporaryDirectory(prefix='edge-menu-') as d:
  bundle=pathlib.Path(d)/'bundle.js'
@@ -27,6 +28,6 @@ with tempfile.TemporaryDirectory(prefix='edge-menu-') as d:
     assert label['transform']==[['translate',*expected]],label
 
   page.evaluate("async()=>{const g=window.__testGraph;await g.zoomTo(1,false);await g.focusElement('root',false);}");page.wait_for_timeout(300)
-  page.screenshot(path='tests/artifacts/edge-style-preview/wide-fanout-cubic.png')
+  page.screenshot(path='target/test-artifacts/wide-fanout-cubic.png')
   assert not errors,errors
   b.close();print('G6 wide fanout: 21 distinct cubic branches, both orientations, no shared straight spine PASS')

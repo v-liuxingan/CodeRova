@@ -12,6 +12,20 @@ with sync_playwright() as p:
  edge=wire['edges'][0]
  assert (edge['source'],edge['target'],edge['relation'])==('root','child','static-call')
  assert 'confidenceScore' in edge and not {'from','to','kind','confidence','file'}.intersection(edge)
+ # Batch descriptions are atomic draft edits; source evidence is immutable.
+ endpoint=BASE+'/api/graphs/sample/draft'
+ headers={'Origin':BASE}
+ opened=page.request.post(endpoint,headers=headers,data={'operation':{'action':'read'}}).json()
+ did=opened['draftId']
+ def edit(op):return page.request.post(endpoint,headers=headers,data={'draftId':did,'operation':op})
+ assert edit({'action':'describe','edits':[{'targetType':'node','id':'root','description':'入口职责'},{'targetType':'edge','id':'call','description':'调用含义'}]}).ok
+ changed=edit({'action':'read'}).json()['graph']
+ assert changed['nodes'][0]['description']=='入口职责' and changed['edges'][0]['description']=='调用含义'
+ assert page.request.get(BASE+'/api/graphs/sample').json()==wire
+ assert not edit({'action':'describe','edits':[{'targetType':'node','id':'root','description':'不应应用'},{'targetType':'node','id':'missing','description':'x'}]}).ok
+ assert edit({'action':'read'}).json()['graph']==changed
+ assert edit({'action':'describe','edits':[{'targetType':'node','id':'root','description':'x','sourceFile':'x'}]}).status==422
+ assert edit({'action':'discard'}).ok
  errors=[];requests=[]
  page.on('pageerror',lambda error:errors.append(str(error)))
  page.on('request',lambda request:requests.append(request.url))
@@ -26,6 +40,17 @@ with sync_playwright() as p:
  search.fill('');page.locator('a[href="/?graph=sample"]').click()
  expect(page.locator('#fit')).to_be_enabled();expect(page.locator('#canvas canvas').first).to_be_visible()
  page.select_option('#symbols','child');expect(page.locator('#selection-title')).to_have_text('child');expect(page.locator('#source .focus')).to_be_visible()
+ page.get_by_role('button',name='编辑描述',exact=True).click()
+ desc=page.get_by_role('dialog',name='编辑描述',exact=True)
+ desc.get_by_text('批量编辑 JSON',exact=True).click()
+ desc.get_by_label('批量描述 JSON').fill('[{"targetType":"node","id":"child","description":"用户补充的职责"}]')
+ desc.get_by_role('button',name='应用到草稿',exact=True).click()
+ expect(desc).not_to_be_visible()
+ expect(page.locator('#selection-description')).to_have_text('用户补充的职责')
+ assert page.request.get(BASE+'/api/graphs/sample').json()==wire
+ page.once('dialog',lambda dialog:dialog.accept())
+ page.locator('#discard-edits').click()
+ expect(page.locator('#edit-bar')).not_to_be_visible()
  page.locator('header a[href="/"]').last.click();expect(page.locator('#home-title')).to_be_visible()
  page.go_back();expect(page.locator('#fit')).to_be_enabled()
  page.goto(BASE+'/v2/?graph=sample')
@@ -48,6 +73,27 @@ with sync_playwright() as p:
  page.get_by_label('图名称',exact=True).fill('入口验收')
  expect(page.get_by_label('项目',exact=True)).to_have_value('')
  page.get_by_label('项目',exact=True).select_option('alpha')
+ expect(page.locator('.project-lsp')).to_be_visible()
+ expect(page.get_by_role('button',name='启动 LSP',exact=True)).to_be_enabled()
+ for style in ['light','dark']:
+  page.evaluate('(value)=>document.documentElement.dataset.theme=value',style)
+  page.wait_for_timeout(200) # let theme color transitions settle before visual capture
+  for width in [1440,390]:
+   page.set_viewport_size({'width':width,'height':960})
+   select=page.locator('.project-select-row select').bounding_box();button=page.locator('.project-connect').bounding_box()
+   assert abs(select['y']-button['y'])<1 and abs(select['height']-button['height'])<1,(select,button)
+   assert page.get_by_role('dialog',name='新建图',exact=True).evaluate('(node)=>node.scrollWidth<=node.clientWidth')
+   page.screenshot(path=str(Path(__file__).resolve().parents[1]/f'target/project-setup-{style}-{width}.png'))
+ page.set_viewport_size({'width':1440,'height':960})
+ # Native selection is stubbed here; catalog persistence has backend coverage.
+ page.route('**/api/projects/select-directory',lambda route:route.fulfill(json={'selectionId':'test-selection','name':'Local project','root':'E:/source/Local project'}))
+ page.route('**/api/projects',lambda route:route.fulfill(json={'id':'alpha','name':'alpha','root':'fixture','rootExists':True}))
+ page.get_by_role('button',name='接入项目',exact=True).click()
+ connect=page.get_by_role('dialog',name='接入项目',exact=True)
+ expect(connect.get_by_label('项目名称')).to_have_value('Local project')
+ connect.get_by_role('button',name='接入项目',exact=True).click()
+ expect(connect).not_to_be_visible()
+ page.unroute('**/api/projects/select-directory');page.unroute('**/api/projects')
  page.get_by_role('button',name='选择根节点',exact=True).click()
  picker=page.get_by_role('dialog',name='选择根节点',exact=True)
  expect(picker.get_by_role('button',name='浏览本地文件',exact=True)).to_be_enabled()

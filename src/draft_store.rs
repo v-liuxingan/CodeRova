@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 struct DraftState {
-    baseline: CallGraph,
-    current: CallGraph,
+    baseline: Arc<CallGraph>,
+    current: Arc<CallGraph>,
     dirty: bool,
     last_access: Instant,
 }
@@ -18,7 +18,7 @@ pub struct DraftStore {
 }
 impl DraftStore {
     pub fn new(slug: String, original: Arc<dyn GraphStore>) -> Result<Self, String> {
-        let graph = original.load(&slug)?;
+        let graph = Arc::new(original.load(&slug)?);
         Ok(Self {
             slug,
             collection: std::sync::atomic::AtomicBool::new(false),
@@ -42,7 +42,7 @@ impl DraftStore {
     pub fn snapshot(&self) -> Result<(CallGraph, bool), String> {
         let mut pair = self.graphs.lock().map_err(|e| e.to_string())?;
         pair.last_access = Instant::now();
-        Ok((pair.current.clone(), pair.dirty))
+        Ok(((*pair.current).clone(), pair.dirty))
     }
     pub fn dirty(&self) -> Result<bool, String> {
         let mut state = self.graphs.lock().map_err(|e| e.to_string())?;
@@ -89,7 +89,7 @@ impl GraphStore for DraftStore {
             return Err("草稿已变化，请重新加载".into());
         }
         pair.dirty = !pair.baseline.same_content(after);
-        pair.current = after.clone();
+        pair.current = Arc::new(after.clone());
         pair.last_access = Instant::now();
         Ok(())
     }
@@ -182,11 +182,19 @@ mod tests {
         let store: Arc<dyn GraphStore> = Arc::new(FileGraphStore::new(dir.path().into()));
         let first = DraftStore::new("graph".into(), store.clone()).unwrap();
         let second = DraftStore::new("graph".into(), store.clone()).unwrap();
+        {
+            let state = first.graphs.lock().unwrap();
+            assert!(Arc::ptr_eq(&state.baseline, &state.current));
+        }
         let original = first.load("graph").unwrap();
         let mut edited = original.clone();
         edited.title = "first".into();
         first.checkpoint("graph", &original, &edited).unwrap();
         assert!(first.snapshot().unwrap().1);
+        {
+            let state = first.graphs.lock().unwrap();
+            assert!(!Arc::ptr_eq(&state.baseline, &state.current));
+        }
         assert!(!first.expired_clean(Duration::ZERO));
         assert_eq!(store.load("graph").unwrap().title, "original");
         assert_eq!(second.load("graph").unwrap().title, "original");
@@ -195,6 +203,10 @@ mod tests {
         assert!(!first.snapshot().unwrap().1);
         first.checkpoint("graph", &original, &edited).unwrap();
         first.save().unwrap();
+        {
+            let state = first.graphs.lock().unwrap();
+            assert!(Arc::ptr_eq(&state.baseline, &state.current));
+        }
         assert_eq!(store.load("graph").unwrap().title, "first");
         assert!(!first.snapshot().unwrap().1);
         assert!(first.expired_clean(Duration::ZERO));
@@ -210,5 +222,55 @@ mod tests {
             .collection
             .store(true, std::sync::atomic::Ordering::Relaxed);
         assert!(second.expired_clean(Duration::from_secs(15 * 60)));
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DescriptionEdit {
+    pub target_type: String,
+    pub id: String,
+    pub description: String,
+}
+impl DraftStore {
+    pub fn describe(&self, edits: Vec<DescriptionEdit>) -> Result<usize, String> {
+        if edits.is_empty() || edits.len() > 5000 {
+            return Err("每批需包含1–5000项".into());
+        }
+        let before = self.load(&self.slug)?;
+        let mut after = before.clone();
+        let nodes: std::collections::HashMap<_, _> = before
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.id.as_str(), i))
+            .collect();
+        let edges: std::collections::HashMap<_, _> = before
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.id.as_str(), i))
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for edit in &edits {
+            if edit.description.chars().count() > 16000
+                || !seen.insert((&edit.target_type, &edit.id))
+            {
+                return Err("描述过长或目标重复".into());
+            }
+            let target = match edit.target_type.as_str() {
+                "node" => nodes
+                    .get(edit.id.as_str())
+                    .map(|i| &mut after.nodes[*i].description),
+                "edge" => edges
+                    .get(edit.id.as_str())
+                    .map(|i| &mut after.edges[*i].description),
+                _ => None,
+            }
+            .ok_or_else(|| format!("描述目标不存在：{} {}", edit.target_type, edit.id))?;
+            target.clone_from(&edit.description);
+        }
+        self.checkpoint(&self.slug, &before, &after)?;
+        Ok(edits.len())
     }
 }

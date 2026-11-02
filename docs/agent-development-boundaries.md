@@ -1,3 +1,41 @@
+## CodeRova 工程命名统一（2026-11-02）
+
+Cargo包、crate、源码二进制统一为coderova；Windows源码产物为coderova.exe，
+CLI版本/帮助、日志target、Windows打包默认输入与测试程序定位同步更新。
+前端导出API类由CallgraphApi改为CodeRovaApi，仓库内调用方同步迁移；HTTP接口不变。
+Logo源文件改为public/brand/coderova-mark.svg，页面、生成源和打包检查同步更新。
+配置文件callgraph.*、CALLGRAPH_*变量、浏览器偏好键、图ID/格式维持兼容；
+GitHub链接和真实源码checkout目录保留实际名称，不将真实路径替换成不存在的新路径。
+
+## 项目接入与主动 LSP 生命周期（2026-11-02）
+
+显式跨边界集成任务。新增 POST /api/projects/select-directory，由服务端打开Windows
+本机目录选择器，返回selectionId/name/root；取消返回cancelled=true。凭据10分钟有效，
+同一时刻只开一个目录选择器。POST /api/projects仅接受selectionId/name，持久化到
+服务启动时加载的项目配置；浏览器不能提交root、命令或任意路径。ID由服务端生成，
+重复目录返回已有项目。原先只有配置文件接入，现支持页面接入；配置原有条目保留。
+
+GET /api/projects/{project}/lsp/{language}返回state/message；language仅rust/java。
+POST同一路径仅接受action=start/stop；启动后台执行并立即返回starting，状态可轮询，
+失败返回failed及原因。运行中重复start复用并固定会话；启动中stop取消并等待任务退出。
+采集或入口校验使用中的会话拒绝stop。手动启动会话不会按5分钟空闲回收，也不被普通
+缓存逐出；缓存已被固定会话占满时需先停止一个。应用关闭取消预热、停止缓存会话。
+状态running表示服务器已启动并完成适配器当前就绪等待，不保证整个项目已完整索引。
+自动入口校验/采集仍可按原规则启动，未改变查询预算/超时/重试或草稿保存协议。
+
+前端适配在api.js，首页项目设置和新建图复用控制器；新项目没有图也可从首页访问。
+HTTP/stdio测试验证幂等启动、复用、固定容量、启动取消、使用保护；项目目录持久化
+单元验证重启恢复/去重，浏览器测试目录选择部分使用桩，不把它当作真实原生对话框验收。
+
+## 批量描述编辑和目录读取（2026-11-02）
+
+集成任务：新增草稿 operation describe，edits 为1–5000项，项只接受 targetType
+(node/edge)、id、description（最多16000字符）。未知字段、重复目标、缺失目标拒绝；
+整批原子应用，不改变源码位置和拓扑，不直接写文件；采集中拒绝编辑。结果返回 updated，
+随后 read 查看草稿、save 显式保存。原接口无此动作；原有请求/响应字段不变。
+public/js/api.js 暴露 describeGraph，e2e验证整批回滚、磁盘隔离及字段限制。
+目录接口响应不变；存储逐张释放完整图，只累积摘要，保持原解析校验。
+
 ## 有界并发与失败隔离（2026-11-02）
 
 本轮为后端采集与集成验证任务，不改变 HTTP 字段或图 schema。
@@ -155,7 +193,7 @@ Java 启动参数仅从服务端本地 callgraph.lsp.local.json（或 CALLGRAPH_
 - `POST /api/graph-trash/{slug}/restore` → `{slug, archived:false}`，恢复原目录，遇同名活动图拒绝覆盖。
 - `DELETE /api/graph-trash/{slug}` → `{slug, deleted:true}`，永久删除本机归档图文件；不能删除活动图。界面二次确认，源码和布局保留。
 服务端仅接收经过校验的 slug，路径由图索引决定，回收站不在静态文件托管目录。
-前端通过 CallgraphApi 使用这些接口；拖动跨分组复用已有 category PUT 接口并真实移动配置。
+前端通过 CodeRovaApi 使用这些接口；拖动跨分组复用已有 category PUT 接口并真实移动配置。
 项目归属不变，不允许通过树拖拽修改 source projectId。展开状态、同组排序和空分组仅保存在
 当前浏览器，写入失败明确提示。删除项目和非空分组不提供批量操作。
 目标是减少目录扫描与切换成本；验证折叠、键盘访问、移动、恢复、刷新、错误恢复与选中上下文。
@@ -351,7 +389,7 @@ UTF-8/二进制检查、单行长度和整文件行数预算。浏览器不得�
 ## 前端内部边界
 
 ```text
-CallgraphApi
+CodeRovaApi
     ├── GraphState / TraceNavigator
     ├── Layout adapter ── LayeredLayout
     ├── RendererRegistry ── SvgRenderer

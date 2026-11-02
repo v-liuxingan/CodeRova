@@ -1,5 +1,6 @@
 mod drafts;
 mod graph_creation;
+mod project_setup;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,6 +42,7 @@ pub struct AppState {
     entry_candidates:
         Arc<std::sync::Mutex<std::collections::HashMap<String, crate::analysis::entry::Candidate>>>,
     entry_check_busy: Arc<std::sync::atomic::AtomicBool>,
+    project_services: Arc<project_setup::Services>,
     drafts: Arc<
         std::sync::Mutex<std::collections::HashMap<String, Arc<crate::draft_store::DraftStore>>>,
     >,
@@ -66,6 +68,7 @@ impl AppState {
             analysis_draft_id: None,
             entry_candidates: Arc::default(),
             entry_check_busy: Arc::default(),
+            project_services: Arc::default(),
             drafts: Arc::default(),
         }
     }
@@ -736,6 +739,15 @@ pub async fn serve(
             post(graph_creation::check),
         )
         .route("/api/health", get(health))
+        .route(
+            "/api/projects/select-directory",
+            post(project_setup::select_directory),
+        )
+        .route("/api/projects", post(project_setup::register))
+        .route(
+            "/api/projects/{project}/lsp/{language}",
+            get(project_setup::status).post(project_setup::control),
+        )
         .route("/api/graphs/{slug}/source-files", get(list_entry_files))
         .route(
             "/api/graphs/{slug}/source-files/{file}",
@@ -803,7 +815,10 @@ pub async fn serve(
         .map_err(|error| format!("无法监听 {address}：{error}"))?;
     tracing::info!("visualizer running at http://{address}");
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(state.analysis_jobs.sessions.clone()))
+        .with_graceful_shutdown(shutdown_signal(
+            state.analysis_jobs.sessions.clone(),
+            state.project_services.clone(),
+        ))
         .await
         .map_err(|error| format!("服务异常退出：{error}"))
 }
@@ -839,8 +854,12 @@ async fn security_headers(request: Request, next: Next) -> Response {
     response
 }
 
-async fn shutdown_signal(sessions: Arc<crate::analysis::session_cache::SessionCache>) {
+async fn shutdown_signal(
+    sessions: Arc<crate::analysis::session_cache::SessionCache>,
+    projects: Arc<project_setup::Services>,
+) {
     let _ = tokio::signal::ctrl_c().await;
+    projects.shutdown().await;
     sessions.shutdown().await;
 }
 
@@ -859,20 +878,11 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 }
 
 async fn list_graphs(State(state): State<AppState>) -> Result<Json<Vec<GraphSummary>>, AppError> {
-    let graphs = state.graph_store.list().map_err(AppError::Internal)?;
-    let mut summaries = Vec::with_capacity(graphs.len());
-    for (slug, graph) in graphs {
-        summaries.push(GraphSummary {
-            slug,
-            title: graph.title,
-            category_id: graph.category_id,
-            category: graph.category,
-            description: graph.description,
-            project_id: graph.project_id,
-            node_count: graph.nodes.len(),
-            edge_count: graph.edges.len(),
-        });
-    }
+    let store = state.graph_store.clone();
+    let mut summaries = tokio::task::spawn_blocking(move || store.summaries())
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(AppError::Internal)?;
     summaries.sort_by(|left, right| left.title.cmp(&right.title));
     Ok(Json(summaries))
 }

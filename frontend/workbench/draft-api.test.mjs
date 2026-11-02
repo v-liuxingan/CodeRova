@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CallgraphApi, supportsCollection } from '../../public/js/api.js';
+import { CodeRovaApi, supportsCollection } from '../../public/js/api.js';
 
 test('collection recognizes Rust and Java without accepting arbitrary providers',()=>{
   assert.equal(supportsCollection({analysis:{provider:'eclipse-jdtls / LSP callHierarchy'}}),true);
@@ -20,7 +20,7 @@ test('draft queue releases graph responses, serializes mutations and survives a 
     return Response.json({draftId:body.operation.action==='discard'?null:'session',dirty:false,graph:{nodes:Array(100).fill({id:'node'})},result:{},changes:{}});
   };
   try {
-    const api=new CallgraphApi({drafts:true});
+    const api=new CodeRovaApi({drafts:true});
     await api.draftOperation('graph',{action:'read'});
     assert.equal(api.queues.size,0);assert.equal(api.drafts.get('graph').graph,undefined);
     await assert.rejects(api.createEntry('graph',{}),/response lost/);
@@ -35,7 +35,7 @@ test('cancelled queued source request creates no draft session', async()=>{
   const original=globalThis.fetch;let requests=0;
   globalThis.fetch=async()=>{requests++;return Response.json({});};
   try {
-    const api=new CallgraphApi({drafts:true}),abort=new AbortController();abort.abort();
+    const api=new CodeRovaApi({drafts:true}),abort=new AbortController();abort.abort();
     await assert.rejects(api.draftOperation('graph',{action:'read'},abort.signal),{name:'AbortError'});
     assert.equal(requests,0);assert.equal(api.drafts.size,0);assert.equal(api.queues.size,0);
   }finally{globalThis.fetch=original;}

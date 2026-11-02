@@ -176,10 +176,7 @@ impl Session {
                         let reply = if let Some(error) = value.get("error") {
                             Err(Failure {
                                 message: error.to_string(),
-                                retryable: matches!(
-                                    error["code"].as_i64(),
-                                    Some(-32603 | -32801 | -32802)
-                                ),
+                                retryable: matches!(error["code"].as_i64(), Some(-32802)),
                             })
                         } else {
                             value

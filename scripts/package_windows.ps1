@@ -1,5 +1,5 @@
 param([Parameter(Mandatory)][ValidatePattern('^v?\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$')][string]$Version,
-      [string]$Binary = 'target/release/callgraph-visualizer.exe')
+      [string]$Binary = 'target/release/coderova.exe')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root

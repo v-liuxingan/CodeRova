@@ -5,7 +5,7 @@ root `AGENTS.md`.
 
 Preserve these boundaries:
 
-- Use `CallgraphApi` for server communication; UI controllers do not call
+- Use `CodeRovaApi` for server communication; UI controllers do not call
   filesystem or editor processes.
 - Keep graph state, layout, renderer, theme, navigation policy, inspector
   workbench, and source-code surface implementations replaceable.

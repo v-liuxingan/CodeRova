@@ -1,6 +1,6 @@
-import { CallgraphApi } from '../js/api.js';
+import { CodeRovaApi } from '../js/api.js';
 
-const api = new CallgraphApi(), home = document.getElementById('project-home');
+const api = new CodeRovaApi(), home = document.getElementById('project-home');
 document.querySelector('.header-actions a[href="/"]').hidden = true;
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -69,14 +69,14 @@ function render() {
   projects.replaceChildren();
   indexLinks.replaceChildren();
   const query = search.value.trim().toLocaleLowerCase();
-  const ids = new Set([...catalog.map(g => g.projectId), ...scenes.map(s => s.projectId)]);
+  const ids = new Set([...names.keys(), ...catalog.map(g => g.projectId), ...scenes.map(s => s.projectId)]);
   let count = 0;
   for (const id of ids) {
     const name = names.get(id) || scenes.find(s => s.projectId === id)?.projectLabel || id || '未分类项目';
     const matches = item => `${name} ${item.title} ${item.category || ''}`.toLocaleLowerCase().includes(query);
     const graphs = catalog.filter(g => g.projectId === id && matches(g));
     const sequences = scenes.filter(s => s.projectId === id && matches(s));
-    if (!graphs.length && !sequences.length) continue;
+    if (!graphs.length && !sequences.length && (query && !name.toLocaleLowerCase().includes(query))) continue;
     count += graphs.length + sequences.length;
     const section = el('section', null, 'home-project'); section.id = `project-${id}`;
     const jump = el('a'); jump.href = `#${encodeURIComponent(section.id)}`;
@@ -84,7 +84,15 @@ function render() {
     indexLinks.append(jump);
     const head = el('div', null, 'home-project-heading');
     head.append(el('h2', name), el('span', [graphs.length && `${graphs.length} 张调用图`, sequences.length && `${sequences.length} 张场景地图`].filter(Boolean).join(' · ')));
+    if(names.has(id)) {
+      const settings=el('button','项目设置');settings.type='button';settings.onclick=async()=>{
+        try{const {newGraph}=await import('/vendor/workbench/new-graph.js');creator ||= newGraph(api,result=>location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));await creator.open({projectId:id,settings:true});}catch(e){feedback.textContent=e.message;}
+      };head.append(settings);
+    }
     section.append(head);
+    if(!graphs.length&&!sequences.length) {
+      const empty=el('p','暂无调用图。');const add=el('button','新建图');add.onclick=async()=>{const {newGraph}=await import('/vendor/workbench/new-graph.js');creator ||= newGraph(api,result=>location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));await creator.open({projectId:id});};section.append(empty,add);
+    }
     const groups = new Map();
     for (const graph of graphs) {
       const group = graph.category || '调用图';
@@ -120,7 +128,7 @@ try {
   catalog = results[0].value;
   if (results[1].status === 'fulfilled') names = new Map((results[1].value.projects || []).map(p => [p.id, p.name]));
   if (results[2].status === 'fulfilled') scenes = results[2].value.scenes || [];
-  summary.textContent = `${new Set([...catalog.map(g => g.projectId), ...scenes.map(s => s.projectId)]).size} 个项目 · ${catalog.length} 张调用图 · ${scenes.length} 张场景地图`;
+  summary.textContent = `${new Set([...names.keys(), ...catalog.map(g => g.projectId), ...scenes.map(s => s.projectId)]).size} 个项目 · ${catalog.length} 张调用图 · ${scenes.length} 张场景地图`;
   render();
   if (results[2].status === 'rejected') feedback.textContent = '场景目录暂时不可用，调用图仍可访问。刷新可重试。';
   const project = new URL(location.href).searchParams.get('project');
@@ -130,3 +138,9 @@ try {
   feedback.textContent = error.message;
   const retry = el('button', '重新加载'); retry.onclick = () => location.reload(); home.append(retry);
 }
+
+window.addEventListener('projects-changed',async()=>{
+  try{const health=await api.health();names=new Map((health.projects||[]).map(p=>[p.id,p.name]));
+    summary.textContent=`${new Set([...names.keys(),...catalog.map(g=>g.projectId),...scenes.map(s=>s.projectId)]).size} 个项目 · ${catalog.length} 张调用图 · ${scenes.length} 张场景地图`;render();
+  }catch(e){feedback.textContent=e.message;}
+});

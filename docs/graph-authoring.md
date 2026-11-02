@@ -12,8 +12,7 @@
 两类图均不要求模型编写首页、页面或目录索引。
 
 生成后统一运行 `npm run build:scenes`、`npm run check:content -- --project <项目ID>`。
-诊断和基线更新见 [生成与证据检查](content-verification.md)，真实项目样例和验收材料见
-[Qoreon 验收](qoreon-acceptance.md)。
+诊断和基线更新见 [生成与证据检查](content-verification.md)。
 
 | 要生成的内容 | 模型交付 | 必读规范 | 生成/校验 |
 | --- | --- | --- | --- |

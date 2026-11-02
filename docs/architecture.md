@@ -26,7 +26,7 @@ UI controller
        ├── InspectorWorkbenchController
        ├── LayoutPersistenceController
        ├── ResizablePanelController
-       └── CallgraphApi
+       └── CodeRovaApi
 ```
 
 核心原则是数据模型不依赖存储、HTTP、编辑器或图形技术。
@@ -106,7 +106,7 @@ VSCode Insiders、JetBrains、远程开发桥接或仅复制位置的实现都�
 
 ### `SourcePreviewController`
 
-连续步进默认通过 `CallgraphApi` 获取网页内源码上下文，不触发外部协议，因此浏览器持续
+连续步进默认通过 `CodeRovaApi` 获取网页内源码上下文，不触发外部协议，因此浏览器持续
 持有键盘焦点。控制器负责请求取消、有限 LRU 缓存、异步竞态检查和相邻节点/调用边预取。
 `Inspector` 把同一目标适配为详情内容和源码内容，源码 DOM 渲染继续委托给独立的
 `SourcePreviewView`。

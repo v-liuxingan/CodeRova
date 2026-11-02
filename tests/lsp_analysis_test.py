@@ -85,7 +85,7 @@ def peer(mode):
 
 
 def run():
-    binary = Path(os.environ.get("CALLGRAPH_TEST_BINARY", ROOT / "target/debug/callgraph-visualizer.exe"))
+    binary = Path(os.environ.get("CALLGRAPH_TEST_BINARY", ROOT / "target/debug/coderova.exe"))
     with tempfile.TemporaryDirectory(prefix="callgraph-lsp-") as directory:
         root = Path(directory)
         (root / "test.rs").write_text("fn a() { b(); b(); }\nfn b() { a(); a(); }\nfn c() {}\n", encoding="utf-8")

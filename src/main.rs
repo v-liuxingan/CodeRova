@@ -3,15 +3,15 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use callgraph_visualizer::graph_store::read_graph_file;
-use callgraph_visualizer::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
-use callgraph_visualizer::project_catalog::{FileProjectCatalog, ProjectCatalog};
-use callgraph_visualizer::server::serve;
-use callgraph_visualizer::validation::{resolve_source_path, validate_graph};
 use clap::{Parser, Subcommand};
+use coderova::graph_store::read_graph_file;
+use coderova::navigation::{SourceLinkBuilder, VscodeUriLinkBuilder};
+use coderova::project_catalog::{FileProjectCatalog, ProjectCatalog};
+use coderova::server::serve;
+use coderova::validation::{resolve_source_path, validate_graph};
 
 #[derive(Debug, Parser)]
-#[command(version, about = "本地源码调用链可视化工具")]
+#[command(version, about = "CodeRova · 本地源码调用链分析工作台")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -89,7 +89,7 @@ async fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "callgraph_visualizer=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "coderova=info,tower_http=info".into()),
         )
         .init();
 
@@ -116,21 +116,19 @@ async fn main() -> ExitCode {
             server_args,
             output,
         } => {
-            callgraph_visualizer::analysis::analyze(
-                callgraph_visualizer::analysis::AnalyzeOptions {
-                    config,
-                    project,
-                    file,
-                    line,
-                    column,
-                    max_depth,
-                    request_budget,
-                    exclude_paths,
-                    server,
-                    server_args,
-                    output,
-                },
-            )
+            coderova::analysis::analyze(coderova::analysis::AnalyzeOptions {
+                config,
+                project,
+                file,
+                line,
+                column,
+                max_depth,
+                request_budget,
+                exclude_paths,
+                server,
+                server_args,
+                output,
+            })
             .await
         }
         Commands::Serve {

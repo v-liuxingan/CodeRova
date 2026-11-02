@@ -62,7 +62,7 @@ G6 默认按调用路径展示。不同调用者共享的方法分别显示为�
 **50 层不是 50 个节点。** Codex 交互启动样例深度不足 50 层，默认仍展示
 4,144 个节点、8,688 条边；宽图应由用户调低层数或切换节点模式。
 这轮渐进展示不能自动解决该默认配置下的全部大图重绘成本，不能把节点模式的性能当作
-50 层默认模式的性能。原始验收基线见 [Codex 启动验收](codex-startup-acceptance.md)。
+50 层默认模式的性能。历史验收报告和调试产物已清理，当前验收请重新运行对应测试。
 
 ## 验证
 
@@ -90,7 +90,7 @@ python frontend/workbench/path_e2e.py
 14,722 ms，render 13,391 ms，拖拽帧间隔 P95 333.3 ms，选择至源码展示
 15,465 ms。相比旧基线 33,746 ms，首屏等待减少，但连续交互仍不合格。
 页面 DOM 从 18,122 降至 4,504。数据见
-[默认 50 层指标](../tests/artifacts/codex-startup/browser-expanded-metrics-layers50.json)。
+对应历史调试产物已清理，这些数字不作为当前验收结果。
 
 开发过程中另测的 50 节点窗口约 1,086 ms 可操作、拖拽帧 P95 16.8 ms；
 该结果仅说明减少渲染范围的效果，**不是当前默认 50 层的成绩**。
@@ -127,8 +127,7 @@ python frontend/workbench/path_e2e.py
 | 页面 DOM 元素 | 2404 | 465 | 465 |
 
 这些是本机单次浏览器样例测量，可能随缓存、机器与图结构波动，不是生产性能承诺。
-数据见 `tests/artifacts/codex-startup/browser-expanded-metrics-before-demand.json` 与
-`browser-expanded-metrics-final-demand.json`。挂载节点数包含跨视口连线的离屏端点，
+对应历史调试产物已清理。挂载节点数包含跨视口连线的离屏端点，
 不能将挂载量解释成原始图被裁减。
 
 验证增加：

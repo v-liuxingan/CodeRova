@@ -1,3 +1,4 @@
+import { editDescriptions } from './description-editor.js';
 import { newGraph } from './new-graph.js';
 import { sidebarWidths } from './sidebar-widths.js';
 import { sourceNavigation } from './source-navigation.js';
@@ -21,9 +22,9 @@ import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
 import { RenderWindow, viewportBounds, containsBounds } from './render-window.js';
-import { CallgraphApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
+import { CodeRovaApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
-const api = new CallgraphApi({drafts:true});
+const api = new CodeRovaApi({drafts:true});
 const $ = (id) => document.getElementById(id);
 const sourceNavigationController = sourceNavigation({api, toggle:$('click-source'), button:$('open-source'), editor:$('source-editor'), notify:status});
 const collectionOrigins=new Map();
@@ -115,7 +116,7 @@ const tree = new LibraryTree({
     const next = graphs.find(g => g.projectId === current?.projectId) || graphs[0];
     if (next) return navigate(next.slug);
     wantedSlug = undefined; activeSlug = undefined; routeVersion++;
-    sourceRequest?.abort(); renderer?.destroy(); renderer = null; current = null;
+    sourceRequest?.abort(); renderer?.destroy(); renderer = null; current = null; symbolSearchGraph = null; symbolSearch = [];
     resetInspector(); $('symbols').replaceChildren(); $('title').textContent = '选择一个调用图';
     $('summary').textContent = '目录为空，可从回收站恢复调用图。'; $('stats').textContent = '—';
     $('coverage').hidden = true; $('fit').disabled = true;
@@ -356,10 +357,13 @@ function renderCoverage(analysis) {
 }
 
 let symbolMatches = [], symbolOffset = 0;
+let symbolSearchGraph = null, symbolSearch = [];
 function appendSymbols() {
   const fragment = document.createDocumentFragment();
+  const existing = new Set([...$('symbols').options].map(option => option.value));
   for (const item of symbolMatches.slice(symbolOffset, symbolOffset + 100)) {
-    if ([...$('symbols').options].some(option => option.value === item.id)) continue;
+    if (existing.has(item.id)) continue;
+    existing.add(item.id);
     const option = node('option', item.label); option.title = `${item.file}:${item.line}`; option.value = item.id; fragment.append(option);
   }
   symbolOffset = Math.min(symbolOffset + 100, symbolMatches.length); $('symbols').append(fragment);
@@ -369,7 +373,12 @@ function appendSymbols() {
 }
 function renderSymbols() {
   const query = $('symbol-filter').value.trim().toLowerCase();
-  symbolMatches = (current?.nodes || []).filter(item => !hiddenNodes.get(wantedSlug)?.has(item.id)).filter(item => `${item.label} ${item.file} ${item.id}`.toLowerCase().includes(query));
+  if (symbolSearchGraph !== current) {
+    symbolSearchGraph = current;
+    symbolSearch = (current?.nodes || []).map(item => ({item, text:`${item.label} ${item.file} ${item.id}`.toLowerCase()}));
+  }
+  const hidden = hiddenNodes.get(wantedSlug);
+  symbolMatches = symbolSearch.filter(({item,text}) => !hidden?.has(item.id) && text.includes(query)).map(({item}) => item);
   symbolOffset = 0;
   $('symbol-load-status').textContent = '';
   const placeholder = node('option', '选择节点…'); placeholder.value = '';
@@ -450,6 +459,20 @@ async function select(type, id, focus = false, clicked = false) {
   $('inspector-heading').textContent=type==='node'?'节点详情':item.kind==='trait-dispatch'?'多态关系':'调用详情';
   $('source').hidden=false;
   $('node-actions-panel').replaceChildren();
+  const describe = node('button','编辑描述');
+  describe.onclick = () => editDescriptions(api,wantedSlug,{targetType:type,id:item.sourceId || item.id,description:item.description}, changes => {
+    for(const change of changes) {
+      const list = change.targetType === 'node' ? current.nodes : current.edges;
+      const original = list.find(value => value.id === change.id);
+      if(original) original.description = change.description;
+      const values = change.targetType === 'node' ? graphIndex.nodes.values() : graphIndex.edges.values();
+      for(const value of values) if((value.sourceId || value.id) === change.id)value.description = change.description;
+    }
+    $('selection-description').textContent = item.description || '';
+    $('selection-notes').hidden = !item.description;
+    edits.update();
+  });
+  $('node-actions-panel').append(describe);
   $('selection-notes').open=false;
   $('selection-title').textContent = type === 'node' ? item.label : `${graphIndex.nodes.get(item.from)?.label || item.from} → ${graphIndex.nodes.get(item.to)?.label || item.to}`;
   $('selection-description').textContent = (item.pathCycle ? '回环引用：递归或已标注的回环关系，不再向下复制。' : item.pathReference ? '共享方法在当前路径中的引用，与其他引用对应同一份源码。' : '') + (item.description || item.role || item.evidence || '');

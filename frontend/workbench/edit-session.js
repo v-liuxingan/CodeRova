@@ -9,7 +9,8 @@ export function editSession(api, currentSlug, reload) {
     $('save-edits').disabled=!dirty||busy;$('discard-edits').disabled=!dirty||busy;
     $('edit-bar').hidden=!dirty&&!busy&&$('restore-hidden').hidden;
     const c=state?.changes;
-    $('edit-state').textContent=busy?'处理中…':dirty?`未保存 · 新增 ${c?.addedNodes||0} / 删除 ${c?.removedNodes||0} 个节点 · 连线 +${c?.addedEdges||0} / −${c?.removedEdges||0}`:'已保存';
+    const hasTopologyChanges=c && ['addedNodes','removedNodes','addedEdges','removedEdges'].some(key=>c[key]);
+    $('edit-state').textContent=busy?'处理中…':dirty&&!hasTopologyChanges?'未保存修改':dirty?`未保存 · 新增 ${c?.addedNodes||0} / 删除 ${c?.removedNodes||0} 个节点 · 连线 +${c?.addedEdges||0} / −${c?.removedEdges||0}`:'已保存';
     $('edit-state').dataset.dirty=String(dirty);
   }
   api.onDraftChange=update;

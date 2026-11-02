@@ -19,10 +19,15 @@ async function request(path, options) {
   }
   return normalizeGraphResponse(body);
 }
-export class CallgraphApi {
+export class CodeRovaApi {
+  describeGraph(slug, edits) { return this.draftOperation(slug, {action:'describe', edits}); }
+  selectProjectDirectory() { return request('/api/projects/select-directory', {method:'POST'}); }
+  registerProject(selectionId, name) { return request('/api/projects', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selectionId,name})}); }
+  lspStatus(project, language, signal) { return request(`/api/projects/${encodeURIComponent(project)}/lsp/${encodeURIComponent(language)}`, {signal}); }
+  controlLsp(project, language, action) { return request(`/api/projects/${encodeURIComponent(project)}/lsp/${encodeURIComponent(language)}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})}); }
   projectFiles(project) { return request(`/api/projects/${encodeURIComponent(project)}/source-files`); }
   projectSource(project, file) { return request(`/api/projects/${encodeURIComponent(project)}/source-files/${encodeURIComponent(file)}`); }
-  checkProjectEntry(project, fileId, line) { return request(`/api/projects/${encodeURIComponent(project)}/entry-check`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line})}); }
+  checkProjectEntry(project, fileId, line, signal) { return request(`/api/projects/${encodeURIComponent(project)}/entry-check`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
   createGraph(data) { return request('/api/graphs', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
 
   constructor({ drafts = false } = {}) {
@@ -117,7 +122,7 @@ export class CallgraphApi {
   }
   entryFiles(slug) { return request(`/api/graphs/${encodeURIComponent(slug)}/source-files`); }
   entrySource(slug, id) { return request(`/api/graphs/${encodeURIComponent(slug)}/source-files/${encodeURIComponent(id)}`); }
-  checkEntry(slug, fileId, line) { return request(`/api/graphs/${encodeURIComponent(slug)}/entry-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line})}); }
+  checkEntry(slug, fileId, line) { return request(`/api/graphs/${encodeURIComponent(slug)}/entry-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
   createEntry(slug, data) { if(this.useDrafts)return this.draftOperation(slug,{action:"entry",request:data}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/entries`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   pruneNode(slug, nodeId, revision) { if(this.useDrafts)return this.draftOperation(slug,{action:"prune",request:{nodeId,apply:Boolean(revision),...(revision?{revision}:{})}}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/prune`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nodeId,apply:Boolean(revision),...(revision?{revision}:{})})}); }
   loadGraph(slug) {

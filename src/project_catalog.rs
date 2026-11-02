@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 
 /// Resolves a stable project id to the local checkout root for this machine.
 pub trait ProjectCatalog: Send + Sync {
+    fn register(&self, _name: &str, _root: &Path) -> Result<ResolvedProject, String> {
+        Err("当前项目目录不支持接入项目".into())
+    }
+
     fn resolve_root(&self, project_id: &str) -> Result<PathBuf, String>;
     fn projects(&self) -> Vec<ResolvedProject>;
 }
@@ -21,7 +25,8 @@ pub struct ResolvedProject {
 
 #[derive(Debug, Clone)]
 pub struct FileProjectCatalog {
-    projects: HashMap<String, ResolvedProject>,
+    projects: std::sync::Arc<std::sync::Mutex<HashMap<String, ResolvedProject>>>,
+    config_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,20 +84,71 @@ impl FileProjectCatalog {
                 },
             );
         }
-        Ok(Self { projects })
+        Ok(Self {
+            projects: std::sync::Arc::new(std::sync::Mutex::new(projects)),
+            config_path: path.canonicalize().map_err(|e| e.to_string())?,
+        })
     }
 }
 
 impl ProjectCatalog for FileProjectCatalog {
+    fn register(&self, name: &str, root: &Path) -> Result<ResolvedProject, String> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 120 {
+            return Err("项目名称需为1–120个字符".into());
+        }
+        let root = root.canonicalize().map_err(|e| e.to_string())?;
+        if !root.is_dir() {
+            return Err("请选择源码目录".into());
+        }
+        let mut projects = self.projects.lock().map_err(|e| e.to_string())?;
+        if let Some(existing) = projects
+            .values()
+            .find(|p| p.root.canonicalize().ok().as_ref() == Some(&root))
+        {
+            return Ok(existing.clone());
+        }
+        let id = format!(
+            "project-{}",
+            crate::analysis::stable_id(&root.to_string_lossy())
+        );
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&self.config_path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        let entries = value["projects"].as_array_mut().ok_or("项目配置格式无效")?;
+        if entries.iter().any(|p| p["id"] == id) {
+            return Err("项目配置已变化，请重启后重试".into());
+        }
+        entries.push(serde_json::json!({"id":id,"name":name,"root":root}));
+        let content = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+        crate::graph_store::write_atomic(&self.config_path, &content)?;
+        let project = ResolvedProject {
+            id,
+            name: name.into(),
+            root,
+            root_exists: true,
+        };
+        projects.insert(project.id.clone(), project.clone());
+        Ok(project)
+    }
+
     fn resolve_root(&self, project_id: &str) -> Result<PathBuf, String> {
         self.projects
+            .lock()
+            .map_err(|e| e.to_string())?
             .get(project_id)
             .map(|project| project.root.clone())
             .ok_or_else(|| format!("项目配置中不存在 projectId：{project_id}"))
     }
 
     fn projects(&self) -> Vec<ResolvedProject> {
-        let mut projects = self.projects.values().cloned().collect::<Vec<_>>();
+        let mut projects = self
+            .projects
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
         projects.sort_by(|left, right| left.id.cmp(&right.id));
         projects
     }
@@ -120,6 +176,38 @@ fn resolve_config_base(path: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registration_persists_and_reuses_existing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("projects.json");
+        fs::write(&config, r#"{"schemaVersion":"0.1","projects":[]}"#).unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let catalog = FileProjectCatalog::from_file(&config).unwrap();
+        let project = catalog.register("New project", &source).unwrap();
+        assert_eq!(
+            catalog.resolve_root(&project.id).unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert_eq!(
+            catalog.register("Duplicate", &source).unwrap().id,
+            project.id
+        );
+        assert_eq!(
+            FileProjectCatalog::from_file(&config)
+                .unwrap()
+                .projects()
+                .len(),
+            1
+        );
+        assert!(catalog.register("", &source).is_err());
+        assert!(
+            catalog
+                .register("Missing", &dir.path().join("missing"))
+                .is_err()
+        );
+    }
 
     #[test]
     fn resolves_relative_roots_from_config_location() {

@@ -62,7 +62,7 @@ Rust 适配依赖 rust-analyzer 的索引就绪通知；Java 已接入 Eclipse J
 - `src/analysis/mod.rs`：项目内路径解析、调用点收集、环去重、深度/请求预算和导出。
 - `CallGraph.analysis`：提供者、分析范围、预算、已查询/待查询符号、范围与失败说明。
 - `static-call`：分析器报告的静态关系，机制未分类；不自动填条件、执行顺序或业务职责。
-- `frontend/workbench/entry.js`：G6 适配和阅读交互；`CallgraphApi` 仍是浏览器 API 边界。
+- `frontend/workbench/entry.js`：G6 适配和阅读交互；`CodeRovaApi` 仍是浏览器 API 边界。
 
 静态查询返回空数组只表示服务器未报告下游。跨项目目标记录为边界说明，不伪造节点；
 不同调用点分别保留为边。节点身份在相同源码快照上稳定，修改行列后可能改变。

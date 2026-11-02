@@ -2,7 +2,7 @@
 import json,os,pathlib,socket,subprocess,tempfile,time
 from playwright.sync_api import sync_playwright,expect
 ROOT=pathlib.Path(__file__).resolve().parents[2]
-BINARY=ROOT/'target/collection-review/debug/callgraph-visualizer.exe'
+BINARY=ROOT/'target/collection-review/debug/coderova.exe'
 with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
  root=pathlib.Path(tmp);project=root/'project';(project/'src').mkdir(parents=True)
  (project/'Cargo.toml').write_text('[package]\nname="resume_fixture"\nversion="0.1.0"\nedition="2021"\n')

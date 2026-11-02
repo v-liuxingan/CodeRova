@@ -4,7 +4,7 @@
 use super::{lsp::Session, provider::Language};
 use serde_json::json;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
@@ -22,6 +22,8 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 pub struct SessionCache {
     slot: Mutex<Vec<Cached>>,
     shutting_down: AtomicBool,
+    active: Arc<std::sync::Mutex<HashSet<(PathBuf, String)>>>,
+    pinned: std::sync::Mutex<HashSet<(PathBuf, String)>>,
 }
 struct Cached {
     key: Key,
@@ -38,11 +40,23 @@ pub struct WarmSession {
     pub transport: Session,
     opened: HashMap<String, String>,
 }
+struct Activity {
+    active: Arc<std::sync::Mutex<HashSet<(PathBuf, String)>>>,
+    key: (PathBuf, String),
+}
+impl Drop for Activity {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active.lock() {
+            active.remove(&self.key);
+        }
+    }
+}
 pub struct Lease {
     owner: Arc<SessionCache>,
     key: Key,
     pub session: WarmSession,
     pub reused: bool,
+    _activity: Activity,
 }
 
 impl WarmSession {
@@ -72,6 +86,19 @@ impl Lease {
         language: Language,
     ) -> Result<Self, String> {
         let root = root.canonicalize().map_err(|e| e.to_string())?;
+        let activity_key = (root.clone(), language.id().to_owned());
+        if !owner
+            .active
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(activity_key.clone())
+        {
+            return Err("语言服务器正在使用，请稍后再试".into());
+        }
+        let activity = Activity {
+            active: owner.active.clone(),
+            key: activity_key,
+        };
         let snapshot_started = Instant::now();
         let snapshot_root = root.clone();
         let fingerprint = tokio::task::spawn_blocking(move || fingerprint(&snapshot_root))
@@ -96,7 +123,12 @@ impl Lease {
         {
             let mut cached = slot.remove(index);
             if cached.key == key
-                && cached.returned.elapsed() < IDLE_TIMEOUT
+                && (cached.returned.elapsed() < IDLE_TIMEOUT
+                    || owner
+                        .pinned
+                        .lock()
+                        .unwrap()
+                        .contains(&(key.root.clone(), key.language.to_owned())))
                 && cached.session.transport.is_alive()?
             {
                 tracing::info!(language = key.language, "LSP warm session reused");
@@ -106,17 +138,29 @@ impl Lease {
                     key,
                     session: cached.session,
                     reused: true,
+                    _activity: activity,
                 });
             }
             cached.session.transport.stop().await;
         }
         // Reserve room before starting a cold process; keep the most recently
         // returned sessions. Never evict or share an active lease.
-        if slot.len() >= MAX_SESSIONS {
-            slot.remove(0).session.transport.stop().await;
+        while slot.len() + owner.active.lock().unwrap().len() > MAX_SESSIONS {
+            let index = slot
+                .iter()
+                .position(|c| {
+                    !owner
+                        .pinned
+                        .lock()
+                        .unwrap()
+                        .contains(&(c.key.root.clone(), c.key.language.to_owned()))
+                })
+                .ok_or("已达到运行上限，请先停止一个语言服务器")?;
+            slot.remove(index).session.transport.stop().await;
         }
         let started = Instant::now();
         let transport = language.start(&key.root, None)?;
+        drop(slot);
         language
             .initialize(&transport, &key.root, "callgraph")
             .await?;
@@ -125,7 +169,6 @@ impl Lease {
             language = key.language,
             "LSP cold initialization"
         );
-        drop(slot);
         Ok(Self {
             owner,
             key,
@@ -134,6 +177,7 @@ impl Lease {
                 opened: HashMap::new(),
             },
             reused: false,
+            _activity: activity,
         })
     }
     pub async fn release(self) {
@@ -155,7 +199,17 @@ impl Lease {
             slot.remove(index).session.transport.stop().await;
         }
         if slot.len() >= MAX_SESSIONS {
-            slot.remove(0).session.transport.stop().await;
+            let index = slot.iter().position(|c| {
+                !owner
+                    .pinned
+                    .lock()
+                    .unwrap()
+                    .contains(&(c.key.root.clone(), c.key.language.to_owned()))
+            });
+            let Some(index) = index else {
+                return;
+            };
+            slot.remove(index).session.transport.stop().await;
         }
         let expiry_key = self.key.clone();
         slot.push(Cached {
@@ -163,10 +217,19 @@ impl Lease {
             session: self.session,
             returned,
         });
+        drop(self._activity);
         drop(slot);
         tokio::spawn(async move {
             tokio::time::sleep(IDLE_TIMEOUT).await;
             let mut slot = owner.slot.lock().await;
+            if owner
+                .pinned
+                .lock()
+                .unwrap()
+                .contains(&(expiry_key.root.clone(), expiry_key.language.to_owned()))
+            {
+                return;
+            }
             // An older timer must not expire a session that has since been reused.
             if let Some(index) = slot
                 .iter()
@@ -225,6 +288,56 @@ fn fingerprint(root: &Path) -> Result<u64, String> {
     Ok(hash.finish())
 }
 impl SessionCache {
+    pub async fn status(&self, root: &Path, language: Language) -> Result<&'static str, String> {
+        let root = root.canonicalize().map_err(|e| e.to_string())?;
+        if self
+            .active
+            .lock()
+            .map_err(|e| e.to_string())?
+            .contains(&(root.clone(), language.id().into()))
+        {
+            return Ok("busy");
+        }
+        let mut slot = self.slot.lock().await;
+        if let Some(cached) = slot
+            .iter_mut()
+            .find(|c| c.key.root == root && c.key.language == language.id())
+            && cached.session.transport.is_alive()?
+        {
+            return Ok("running");
+        }
+        Ok("stopped")
+    }
+    pub fn pin(&self, root: &Path, language: Language) -> Result<(), String> {
+        self.pinned.lock().map_err(|e| e.to_string())?.insert((
+            root.canonicalize().map_err(|e| e.to_string())?,
+            language.id().into(),
+        ));
+        Ok(())
+    }
+    pub async fn stop_project(&self, root: &Path, language: Language) -> Result<(), String> {
+        let root = root.canonicalize().map_err(|e| e.to_string())?;
+        if self
+            .active
+            .lock()
+            .map_err(|e| e.to_string())?
+            .contains(&(root.clone(), language.id().into()))
+        {
+            return Err("语言服务器正在使用，请先停止采集或等待入口校验完成".into());
+        }
+        let mut slot = self.slot.lock().await;
+        self.pinned
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&(root.clone(), language.id().into()));
+        if let Some(i) = slot
+            .iter()
+            .position(|c| c.key.root == root && c.key.language == language.id())
+        {
+            slot.remove(i).session.transport.stop().await;
+        }
+        Ok(())
+    }
     pub async fn shutdown(&self) {
         self.shutting_down.store(true, Ordering::Relaxed);
         let mut slot = self.slot.lock().await;

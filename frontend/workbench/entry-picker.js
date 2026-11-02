@@ -26,9 +26,9 @@ export function entryPicker(api,onAdded,options={}) {
     }
   };
   note.hidden=!!options.hideNote;dialog.append(header,intro,context,tools,status,editor,note,footer);document.body.append(dialog);
-  let slug,parent,files=[],runtime,selectedFile,line=1,candidate,revision=0,checking=false,localRevision=0,localFile;
+  let slug,parent,files=[],runtime,selectedFile,line=1,candidate,revision=0,checking=false,localRevision=0,localFile,checkingRequest;
   browse.disabled=true;
-  const dispose=()=>{revision++;runtime?.dispose();runtime=null;candidate=null;};
+  const dispose=()=>{revision++;checkingRequest?.abort();checkingRequest=null;checking=false;runtime?.dispose();runtime=null;candidate=null;};
   dialog.addEventListener('close',()=>{dispose();localRevision++;localFile=null;});close.onclick=()=>dialog.close();
   path.addEventListener('input',()=>{candidate=null;add.disabled=true;});
   open.onclick=async()=>{
@@ -74,12 +74,12 @@ export function entryPicker(api,onAdded,options={}) {
   find.onclick=()=>runtime?.search().catch(error=>message(error.message,true));
   check.onclick=async()=>{
     if(!selectedFile||checking)return;checking=true;check.disabled=true;open.disabled=true;browse.disabled=true;matches.disabled=true;candidate=null;add.disabled=true;
-    const version=revision,chosenLine=line,file=selectedFile;message('正在校验入口…');
-    try {const result=await api.checkEntry(slug,file.id,chosenLine);if(version!==revision||!dialog.open)return;
+    const version=revision,chosenLine=line,file=selectedFile;checkingRequest=new AbortController();message('正在校验入口…');
+    try {const result=await api.checkEntry(slug,file.id,chosenLine,checkingRequest.signal);if(version!==revision||!dialog.open)return;
       if(line!==chosenLine||path.value.trim()!==file.name){message('文件或选中行已改变，请打开目标文件后重新校验。',true);return;}
       candidate=result.candidateId;message(`可采集：${result.node.label} · ${result.node.file}:${result.node.line}。${result.message}`);add.disabled=false;
     }catch(error){if(version===revision)message(`无法添加：${error.message}`,true);}
-    finally{checking=false;check.disabled=!selectedFile;open.disabled=false;browse.disabled=!files.length;matches.disabled=false;}
+    finally{if(version===revision){checking=false;checkingRequest=null;check.disabled=!selectedFile;open.disabled=false;browse.disabled=!files.length;matches.disabled=false;}}
   };
   add.onclick=async()=>{if(!candidate)return;add.disabled=true;const originalSlug=slug,version=revision;try{
     const result=await api.createEntry(slug,{fromId:parent,candidateId:candidate,note:note.value});if(version===revision)dialog.close();onAdded(originalSlug,result.nodeId,result);

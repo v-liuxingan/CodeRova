@@ -35,8 +35,9 @@ with sync_playwright() as p:
         # Keep the 8-pixel allowance for arrow tips; residual dimming is much larger.
         if differences > 8:
             from pathlib import Path
-            Path('tests/artifacts/codex-startup/highlight-actual.png').write_bytes(left)
-            Path('tests/artifacts/codex-startup/highlight-baseline.png').write_bytes(right)
+            Path('target/test-artifacts').mkdir(parents=True,exist_ok=True)
+            Path('target/test-artifacts/highlight-actual.png').write_bytes(left)
+            Path('target/test-artifacts/highlight-baseline.png').write_bytes(right)
         assert differences <= 8, f'{differences} pixels differ'
 
     for theme in ["light", "dark"]:

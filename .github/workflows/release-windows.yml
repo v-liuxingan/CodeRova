@@ -1,4 +1,4 @@
-name: Windows portable release
+name: CodeRova Windows release
 on:
   push:
     tags: ['v*']
@@ -54,7 +54,7 @@ jobs:
           python tests/windows_package_test.py
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-x64
+          name: coderova-windows-x64
           path: target/packages/*.zip*
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')

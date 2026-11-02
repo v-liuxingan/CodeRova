@@ -1,6 +1,7 @@
 from branch_controls import click_branch
 import subprocess,tempfile,pathlib,os
 from playwright.sync_api import sync_playwright,expect
+pathlib.Path('target/test-artifacts').mkdir(parents=True,exist_ok=True)
 BASE=os.environ.get('CALLGRAPH_TEST_URL','http://127.0.0.1:4322')
 with tempfile.TemporaryDirectory(prefix='edge-menu-') as d:
  bundle=pathlib.Path(d)/'bundle.js'
@@ -23,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='edge-menu-') as d:
    expect(page.locator('#edge-context-menu')).to_be_visible()
   right_click('a','b');expect(page.get_by_role('menuitem',name='收起下游')).to_be_enabled()
   expect(page.locator('#canvas')).to_have_attribute('data-selection','')
-  page.screenshot(path='tests/artifacts/edge-style-preview/edge-context-menu.png')
+  page.screenshot(path='target/test-artifacts/edge-context-menu.png')
   page.keyboard.press('Escape');expect(page.locator('#edge-context-menu')).to_be_hidden()
   right_click('a','b');page.get_by_role('menuitem',name='收起下游').click()
   expect(page.locator('#canvas')).to_have_attribute('data-displayed-nodes','5')

@@ -1,6 +1,7 @@
 from branch_controls import click_branch
 import subprocess,tempfile,pathlib,os
 from playwright.sync_api import sync_playwright,expect
+pathlib.Path('target/test-artifacts').mkdir(parents=True,exist_ok=True)
 BASE=os.environ.get('CALLGRAPH_TEST_URL','http://127.0.0.1:4322')
 with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
  bundle=pathlib.Path(d)/'bundle.js'
@@ -30,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   page.fill('#symbol-filter','');expect(page.locator('#symbols option')).to_have_count(101)
   page.click('#symbols-more');expect(page.locator('#symbols option')).to_have_count(201)
   choose(root)
-  page.screenshot(path='tests/artifacts/codex-startup/node-actions-light.png')
+  page.screenshot(path='target/test-artifacts/node-actions-light.png')
   before=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',root)
   card_size=page.evaluate('(id)=>({height:window.__testGraph.getNodeData(id).data.height,zoom:window.__testGraph.getZoom()})',root)
   click_branch(page,root,'collapse')
@@ -43,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   assert page.evaluate('(id)=>({height:window.__testGraph.getNodeData(id).data.height,zoom:window.__testGraph.getZoom()})',root)==card_size
   expect(page.locator('#source .focus').first).to_be_visible()
   page.select_option('#appearance','dark');expect(page.locator('#appearance')).to_be_enabled()
-  page.screenshot(path='tests/artifacts/codex-startup/node-actions-dark.png')
+  page.screenshot(path='target/test-artifacts/node-actions-dark.png')
   # Dragging from an action must neither move the card nor invoke the action.
   point=page.evaluate('(id)=>{const g=window.__testGraph,n=g.getNodeData(id),p=g.getElementPosition(id);return g.getViewportByCanvas([p[0],p[1]+n.data.height/2+14]);}',root)
   box=page.locator('#canvas').bounding_box();x,y=box['x']+point[0],box['y']+point[1]
@@ -64,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   box=overview.bounding_box();page.mouse.move(box['x']+70,box['y']+70);page.mouse.down();page.mouse.move(box['x']+110,box['y']+80,steps=6);page.mouse.up()
   overview.press('ArrowRight')
   assert page.evaluate('window.__testGraph.getNodeData().length')<logical
-  page.screenshot(path='tests/artifacts/codex-startup/minimap-navigation.png')
+  page.screenshot(path='target/test-artifacts/minimap-navigation.png')
   assert not errors,errors
   print(f'On-demand G6: {logical} logical / {mounted} mounted; offscreen search, source, remount positions, overview LOD, themes and paged symbols PASS')
   browser.close()

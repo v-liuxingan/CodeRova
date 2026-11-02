@@ -12,6 +12,9 @@ pub(super) struct Request {
 #[serde(tag = "action", rename_all = "camelCase", deny_unknown_fields)]
 enum Operation {
     Read {},
+    Describe {
+        edits: Vec<crate::draft_store::DescriptionEdit>,
+    },
     Analyze {
         request: ResumeRequest,
     },
@@ -116,6 +119,20 @@ pub(super) async fn edit(
     let closing = matches!(input.operation, Operation::Discard {});
     let result = match input.operation {
         Operation::Read {} => serde_json::Value::Null,
+        Operation::Describe { edits } => {
+            let jobs = state
+                .analysis_jobs
+                .state
+                .lock()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+            if jobs.1.status == "running" && jobs.1.draft_id.as_deref() == Some(&id) {
+                return Err(AppError::BadRequest(
+                    "请等待采集结束或停止后编辑描述".into(),
+                ));
+            }
+            drop(jobs);
+            serde_json::json!({"updated":draft.describe(edits).map_err(AppError::BadRequest)?})
+        }
         Operation::Analyze { request } => {
             let result =
                 start_analysis(State(local), AxumPath(slug.clone()), headers, Json(request))

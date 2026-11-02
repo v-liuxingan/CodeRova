@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::model::CallGraph;
+use crate::model::{CallGraph, GraphSummary};
 
 pub const DEFAULT_CATEGORY_ID: &str = "uncategorized";
 pub const DEFAULT_CATEGORY: &str = "未分类";
@@ -15,6 +15,13 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// A database, remote catalog, or generated graph source can implement this
 /// trait without changing the HTTP or rendering layers.
 pub trait GraphStore: Send + Sync {
+    fn summaries(&self) -> Result<Vec<GraphSummary>, String> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .map(|(slug, graph)| graph_summary(slug, graph))
+            .collect())
+    }
     fn create(&self, _slug: &str, _graph: &CallGraph) -> Result<(), String> {
         Err("当前存储不支持新建图".into())
     }
@@ -186,6 +193,17 @@ impl GraphStore for FileGraphStore {
         // Same-directory rename preserves every byte and its original category. No source files or layouts are touched.
         fs::rename(source, target).map_err(|e| format!("无法更新回收站：{e}"))
     }
+    fn summaries(&self) -> Result<Vec<GraphSummary>, String> {
+        let _guard = self.operation_lock.lock().map_err(|e| e.to_string())?;
+        // Release each graph before loading the next; the catalog retains only summaries.
+        self.index()?
+            .into_iter()
+            .map(|(slug, path)| {
+                self.read_indexed_graph(&path)
+                    .map(|graph| graph_summary(slug, graph))
+            })
+            .collect()
+    }
     fn list(&self) -> Result<Vec<(String, CallGraph)>, String> {
         let _operation_guard = self
             .operation_lock
@@ -307,7 +325,7 @@ fn validate_category(category_id: &str, category: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn write_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("图谱路径缺少父目录：{}", path.display()))?;
@@ -502,10 +520,42 @@ fn validate_slug(slug: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn graph_summary(slug: String, graph: CallGraph) -> GraphSummary {
+    GraphSummary {
+        slug,
+        title: graph.title,
+        category_id: graph.category_id,
+        category: graph.category,
+        description: graph.description,
+        project_id: graph.project_id,
+        node_count: graph.nodes.len(),
+        edge_count: graph.edges.len(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn summaries_match_full_graphs_and_refresh_external_edits_and_trash() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileGraphStore::new(dir.path().into());
+        write_graph(dir.path(), "a.json", "analysis", "First");
+        let summary = store.summaries().unwrap().remove(0);
+        let expected = graph_summary("a".into(), store.load("a").unwrap());
+        assert_eq!(
+            serde_json::to_value(summary).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        write_graph(dir.path(), "a.json", "analysis", "Changed");
+        assert_eq!(store.summaries().unwrap()[0].title, "Changed");
+        store.set_archived("a", true).unwrap();
+        assert!(store.summaries().unwrap().is_empty());
+        store.set_archived("a", false).unwrap();
+        assert_eq!(store.summaries().unwrap().len(), 1);
+    }
 
     #[test]
     fn creation_does_not_overwrite_active_or_archived_graphs() {

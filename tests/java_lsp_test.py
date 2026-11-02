@@ -9,7 +9,7 @@ import time
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARY = ROOT / os.environ.get('CALLGRAPH_JAVA_TEST_BINARY', 'target/java-lsp-test/debug/callgraph-visualizer.exe')
+BINARY = ROOT / os.environ.get('CALLGRAPH_JAVA_TEST_BINARY', 'target/java-lsp-test/debug/coderova.exe')
 with tempfile.TemporaryDirectory(prefix='java-lsp-', dir=ROOT/'target') as tmp:
     folder = Path(tmp)
     launch=json.loads(Path(os.environ.get('CALLGRAPH_LSP_CONFIG',ROOT/'callgraph.lsp.local.json')).read_text(encoding='utf-8'))

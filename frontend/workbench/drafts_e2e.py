@@ -2,7 +2,7 @@
 import json,pathlib,socket,subprocess,tempfile,time,os
 from playwright.sync_api import sync_playwright,expect
 ROOT=pathlib.Path(__file__).resolve().parents[2]
-BINARY=ROOT/os.environ.get('CALLGRAPH_TEST_BINARY','target/frontend-e2e/debug/callgraph-visualizer.exe')
+BINARY=ROOT/os.environ.get('CALLGRAPH_TEST_BINARY','target/frontend-e2e/debug/coderova.exe')
 with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
  root=pathlib.Path(tmp);project=root/'project';project.mkdir();(project/'main.rs').write_text('fn main() {}\n')
  config=root/'projects.json';config.write_text(json.dumps({'schemaVersion':'0.1','projects':[{'id':'fixture','name':'fixture','root':str(project)}]}))

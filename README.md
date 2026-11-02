@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/brand/callgraph-mark.svg" width="80" height="80" alt="CodeRova Logo">
+  <img src="public/brand/coderova-mark.svg" width="80" height="80" alt="CodeRova Logo">
 </p>
 <h1 align="center">CodeRova</h1>
 <p align="center">从入口理解调用流程，在源码中验证每一步。</p>
@@ -72,8 +72,8 @@
 在 PowerShell、Git Bash 或终端执行：
 
 ```sh
-git clone https://github.com/v-liuxingan/callgraph-visualizer.git
-cd callgraph-visualizer
+git clone https://github.com/v-liuxingan/callgraph-visualizer.git CodeRova
+cd CodeRova
 npm ci
 npm run build:frontend
 cargo run --locked -- serve --port 4324
@@ -140,12 +140,12 @@ cargo build --release --locked
 
 ```powershell
 # Windows PowerShell
-.\target\release\callgraph-visualizer.exe serve --port 4324 --config callgraph.projects.local.json
+.\target\release\coderova.exe serve --port 4324 --config callgraph.projects.local.json
 ```
 
 ```sh
 # Linux / macOS；Windows Git Bash 则使用 .exe 后缀
-./target/release/callgraph-visualizer serve --port 4324 --config callgraph.projects.local.json
+./target/release/coderova serve --port 4324 --config callgraph.projects.local.json
 ```
 
 部署时需携带 `public/` 及所需配置、图数据；单独复制可执行文件不包含前端。已编译程序运行不需要 Node.js。默认监听 `127.0.0.1`，面向本机使用；不传 `--port` 时默认端口为 `4317`。
@@ -331,5 +331,28 @@ git push origin v0.1.0
 ## 名称与兼容
 
 产品统一命名为 **CodeRova**。Windows 发布包使用 `coderova-<版本>-windows-x64.zip`，包内程序为 `coderova.exe`。
-现有 GitHub 仓库地址暂不变；源码构建的 Cargo 包及二进制仍使用 `callgraph-visualizer`，以上源码启动命令可继续使用。
+现有 GitHub 仓库地址暂不变；源码构建的 Cargo 包和二进制统一为 `coderova`（Windows 为 `coderova.exe`）。旧构建产物不会自动改名，请重新构建并使用新程序。
 `callgraph.*.json` 配置、`CALLGRAPH_*` 环境变量、项目 ID 和浏览器偏好键保持兼容，无需迁移已有数据。
+
+
+### 从页面接入项目与准备 LSP
+
+首页“新建图”→“接入项目”打开Windows本机目录选择器，选择源码目录并确认项目名称。
+项目写入启动时所用的项目配置文件，重启后仍可选择；不需要手工填写项目ID。
+现有项目在首页“项目设置”或新建图窗口中可启动/停止语言服务器；单语言自动识别，
+混合Rust/Java项目可切换语言。新接入项目没有图也会显示在首页。
+
+主动启动会在后台准备服务器；可继续选文件，入口校验会等待该准备完成。
+关闭窗口不会停止主动启动的服务器。手动会话不按5分钟空闲回收，自动会话保持原策略；
+源码/配置变化、进程异常和缓存资源限制仍可能导致重新启动。当前会话容量为2，
+固定会话占满时请先停止一个；使用中需先停止采集或等待校验结束，再停止服务器。
+“已启动”不保证整个项目的语义索引全部完成，首次查询仍可能需要等待。
+Java仍需在本地LSP配置中安装并配置JDT LS/JDK，Rust需要rust-analyzer可启动。
+主动启停不改变采集预算、15秒单次超时、失败边界和显式保存流程。
+
+AI接口：`POST /api/projects/select-directory`返回短期selectionId（本机用户选择目录），
+`POST /api/projects`提交`{"selectionId":"选择凭据","name":"项目名称"}`。
+仅接受选择凭据，不接受浏览器提交的绝对路径。目录选择器目前支持Windows。
+`GET /api/projects/{project}/lsp/{rust|java}`读取state/message；
+`POST`同路径提交`{"action":"start"}`或`{"action":"stop"}`。
+启动异步返回starting，轮询直到running/failed；重复启动复用，不另起进程。

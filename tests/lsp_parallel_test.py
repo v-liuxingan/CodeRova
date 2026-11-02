@@ -47,9 +47,13 @@ def peer(mode, log):
                 record({'end': req['id']})
                 return
             if index == 3 or (index == 4 and attempt == 1):
-                send({'id': req['id'], 'error': {'code': -32603, 'message': 'fixture transient/internal error'}})
+                send({'id': req['id'], 'error': {'code': -32802, 'message': 'fixture server cancelled'}})
                 record({'end': req['id']})
                 return
+        if mode == 'failures' and index in [6,7]:
+            send({'id':req['id'],'error':{'code':-32603 if index == 6 else -32801,'message':'permanent or source changed'}})
+            record({'end':req['id']})
+            return
         time.sleep(.05 + (index % 4) * .015)  # Deliberate out-of-order completion.
         if index == 0:
             result = [{'to': item(n), 'fromRanges': [{'start': {'line': 0, 'character': 2}, 'end': {'line': 0, 'character': 3}}]} for n in range(1, LEAVES+1)]
@@ -133,9 +137,10 @@ def run():
                     assert any('连接中断' in issue for issue in graph['analysis']['issues'])
                 elif mode == 'failures':
                     assert counts[1] == 4 and counts[3] == 4 and counts[2] == 2 and counts[4] == 2, counts
+                    assert counts[6] == counts[7] == 1, counts
                     failed = {n['label'] for n in graph['nodes'] if n['id'] in graph['analysis']['pendingNodes']}
-                    assert failed == {'f1', 'f3', 'f5'}, failed
-                    assert len(graph['analysis']['queriedNodes']) == LEAVES-2
+                    assert failed == {'f1', 'f3', 'f5', 'f6', 'f7'}, failed
+                    assert len(graph['analysis']['queriedNodes']) == LEAVES-4
                     assert sum('cancel' in row for row in records) >= 5
                 else:
                     assert not graph['analysis']['pendingNodes']

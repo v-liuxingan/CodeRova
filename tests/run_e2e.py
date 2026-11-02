@@ -11,7 +11,7 @@ def main():
  run('npm.cmd' if os.name=='nt' else 'npm','run','build:frontend')
  target=Path(env.get('CALLGRAPH_E2E_TARGET_DIR',ROOT/'target/workbench-e2e'))
  run('cargo','build','--quiet','--target-dir',str(target))
- binary=(target/'debug'/('callgraph-visualizer.exe' if os.name=='nt' else 'callgraph-visualizer')).resolve()
+ binary=(target/'debug'/('coderova.exe' if os.name=='nt' else 'coderova')).resolve()
  env['CALLGRAPH_TEST_BINARY']=str(binary)
  run(sys.executable,str(ROOT/'tests/lsp_analysis_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_session_test.py'))

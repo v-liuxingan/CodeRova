@@ -13,7 +13,7 @@
 1. 读取 `callgraph.projects.json` 的可信项目配置和入口源码。项目根不通过浏览器提交。
 2. 用 `analyze` 创建初始图（参数以 `analyze --help` 为准），例如：
    ```powershell
-   .\target\frontend-e2e\debug\callgraph-visualizer.exe analyze --config callgraph.projects.json --project <project-id> --file src/main.rs --line 1 --column 4 --max-depth 1 --request-budget 20 --output graphs/example.json
+   .\target\frontend-e2e\debug\coderova.exe analyze --config callgraph.projects.json --project <project-id> --file src/main.rs --line 1 --column 4 --max-depth 1 --request-budget 20 --output graphs/example.json
    ```
 3. GET `/api/graphs` 获取真实 slug，再读取图，逐个补齐符合条件的待采叶子。
 4. 遇消息、事件或回调边界，读取源文件，定位接收函数，执行 entry-check，再 entries。
@@ -143,3 +143,22 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 5. 使用现有草稿采集接口配置预算，从返回的根符号开始采集。采集不会因创建而自动启动；采纳/保存仍是独立动作。
 
 不得使用浏览器提供的任意绝对路径代替项目与文件 ID。校验失败或源码变化时重新选行校验，不能自行构造候选令牌。
+
+
+## 采集后补充描述（单条或批量）
+
+在节点或连线详情点击“编辑描述”。默认编辑单条；展开“批量编辑 JSON”可粘贴数组。
+应用只进入草稿，画布不重新适配；点击保存才更新文件。采集进行中不接受描述编辑。
+也可供AI使用同一草稿接口：先read取得draftId，然后POST以下操作，之后read核对、save保存。
+
+```json
+{"draftId":"read返回的ID","operation":{"action":"describe","edits":[
+  {"targetType":"node","id":"真实节点ID","description":"补充的节点职责"},
+  {"targetType":"edge","id":"真实边ID","description":"补充的调用说明"}
+]}}
+```
+
+每批1–5000项，每条描述最多16000字符；同时受HTTP请求体限制。目标不存在、重复目标、
+未知字段或类型错误会拒绝整批，不会部分应用。只能改description，源码位置、身份、
+关系、调用顺序和采集状态不变。重复路径引用使用原始sourceId，不使用视图生成的ID。
+补充描述是采集后动作，采集器不推测业务含义。

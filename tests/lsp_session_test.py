@@ -2,6 +2,7 @@
 import json, os, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 ROOT=Path(__file__).resolve().parents[1]
 
 def peer(log):
@@ -21,7 +22,9 @@ def peer(log):
    if line==b'\r\n':break
    if line.lower().startswith(b'content-length:'):length=int(line.split(b':')[1])
   req=json.loads(sys.stdin.buffer.read(length));method=req.get('method');rid=req.get('id');record({'method':method,'process':os.getpid()})
-  if method=='initialize':send({'id':rid,'result':{'capabilities':{'callHierarchyProvider':True}}})
+  if method=='initialize':
+   if Path(log+'.slowinit').exists():time.sleep(30)
+   send({'id':rid,'result':{'capabilities':{'callHierarchyProvider':True}}})
   elif method=='initialized':send({'method':'language/status','params':{'type':'Started'}})
   elif method=='textDocument/didOpen':uri=req['params']['textDocument']['uri']
   elif method=='textDocument/documentSymbol':send({'id':rid,'result':[{'name':'entry','kind':6,'range':span,'selectionRange':selection}]})
@@ -98,6 +101,51 @@ def run():
    assert any(r.get('process')==other_pid and r.get('method')=='shutdown' for r in records())
    check();assert starts()==7,records()
    check('other');assert starts()==8,records()
+   # Explicit lifecycle reuses the same lease cache as normal entry/collection.
+   def control(project,action):return api(f'/api/projects/{project}/lsp/java',{'action':action})
+   def lsp(project):return api(f'/api/projects/{project}/lsp/java')
+   def running(project):
+    for _ in range(200):
+     state=lsp(project)
+     if state['state']!='starting':return state
+     time.sleep(.05)
+    raise AssertionError(state)
+   for project in ['fixture','other','third']:control(project,'stop')
+   baseline=starts()
+   control('fixture','start');control('fixture','start')
+   assert running('fixture')['state']=='running'
+   assert starts()==baseline+1,records()
+   check();assert starts()==baseline+1
+   control('other','start');assert running('other')['state']=='running'
+   control('third','start');assert running('third')['state']=='failed'
+   assert starts()==baseline+2,records()
+   control('other','stop');control('third','start');assert running('third')['state']=='running'
+   control('fixture','stop');assert lsp('fixture')['state']=='stopped'
+   Path(str(log)+'.slowinit').touch();control('fixture','start')
+   for _ in range(100):
+    if starts()>=baseline+4:break
+    time.sleep(.05)
+   observed=time.perf_counter();assert lsp('third')['state']=='running';assert time.perf_counter()-observed<1
+   control('fixture','stop');assert lsp('fixture')['state']=='stopped'
+   Path(str(log)+'.slowinit').unlink()
+   control('fixture','start');assert running('fixture')['state']=='running'
+   b=check();graph=api('/api/graphs',{'projectId':'fixture','candidateId':b['candidateId'],'title':'busy'})
+   endpoint='/api/graphs/'+graph['slug']+'/analysis';Path(str(log)+'.slow').touch()
+   before_calls=sum(r.get('method')=='callHierarchy/outgoingCalls' for r in records())
+   api(endpoint,{'requestBudget':1,'nodeId':graph['nodeId']})
+   for _ in range(100):
+    if sum(r.get('method')=='callHierarchy/outgoingCalls' for r in records())>before_calls:break
+    time.sleep(.05)
+   try:control('fixture','stop');raise AssertionError('active server was stopped')
+   except HTTPError as e:assert e.code==400
+   api(endpoint,method='DELETE')
+   for _ in range(100):
+    if api(endpoint)['status']!='running':break
+    time.sleep(.05)
+   Path(str(log)+'.slow').unlink();control('fixture','stop');control('third','stop')
+   try:api('/api/projects',{'selectionId':'invented','name':'x','root':str(source)});raise AssertionError('browser path accepted')
+   except HTTPError as e:assert e.code==422
+   print('Explicit LSP lifecycle PASS: duplicate start, warm entry reuse, pinned capacity, stop, startup cancellation and active-use protection')
    print('LSP session PASS: project A/B/A reuses 2 servers; third project evicts LRU; source/config changes, cancellation and dead-process recovery remain safe')
   finally:
    server.terminate();server.wait(timeout=10)

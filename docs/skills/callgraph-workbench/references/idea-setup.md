@@ -47,7 +47,7 @@ Get-Process idea64 -ErrorAction SilentlyContinue | Select-Object Path
 用用户授权范围内的一个源码文件，构造真实链接：
 
 ```powershell
-$sourceFile = 'E:\projects\callgraph-visualizer\src\navigation.rs'
+$sourceFile = 'E:\projects\CodeRova\src\navigation.rs'
 $link = 'idea://open?file=' + [Uri]::EscapeDataString($sourceFile) + '&line=22&column=1'
 $handler = Join-Path $env:LOCALAPPDATA 'CallgraphVisualizer\Open-IdeaLink.ps1'
 & powershell.exe -NoProfile -File $handler -Link $link -ValidateOnly

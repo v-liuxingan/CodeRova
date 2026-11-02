@@ -5,6 +5,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+(ROOT/'target/test-artifacts').mkdir(parents=True,exist_ok=True)
 directory = Path(os.environ['CALLGRAPH_TEST_GRAPHS']).resolve()
 assert directory == (ROOT / 'tests/.tmp-graphs').resolve()
 BASE = os.environ['CALLGRAPH_TEST_URL']
@@ -79,7 +80,7 @@ with sync_playwright() as p:
     assert page.locator('.tree-project[open]').count() == 0
     page.locator('#filter').fill('validate_graph')
     assert page.locator('.tree-project[open]').count() > 0
-    page.screenshot(path=str(ROOT / 'tests/artifacts/v2-library.png'))
+    page.screenshot(path=str(ROOT / 'target/test-artifacts/library.png'))
     assert not errors, errors
     browser.close()
 print('V2 library: drag, archive, restore, permanent deletion, collapse, search passed')
