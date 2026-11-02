@@ -46,7 +46,7 @@ composer.onsubmit = async event => {
   try {
     const {newGraph} = await import('/vendor/workbench/new-graph.js');
     creator ||= newGraph(api, result => location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));
-    await creator.open({title:analysisName.value.trim()});
+    await creator.open({title:analysisName.value.trim(), returnFocus:create});
   } catch(error) { startError.textContent = error.message; }
   finally { create.disabled = false; }
 };

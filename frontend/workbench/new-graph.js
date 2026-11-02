@@ -1,9 +1,21 @@
 import { projectLsp } from './project-lsp.js';
 import { entryPicker } from './entry-picker.js';
 const el = (tag, text) => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
+function icon(path) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+  const shape = document.createElementNS(svg.namespaceURI, 'path'); shape.setAttribute('d', path); svg.append(shape); return svg;
+}
+function dialogHeader(dialog, heading) {
+  const header = el('div'); header.className = 'creation-heading';
+  const close = el('button'); close.type = 'button'; close.className = 'creation-close'; close.setAttribute('aria-label', '关闭');
+  close.append(icon('M6 6l12 12M18 6 6 18')); close.onclick = () => dialog.close();
+  header.append(heading, close); return {header, close};
+}
 export function newGraph(api, onCreated) {
   const dialog = el('dialog'); dialog.className = 'new-graph-dialog'; dialog.setAttribute('aria-label', '新建图');
   const heading = el('h2', '新建图');
+  const {header} = dialogHeader(dialog, heading);
   const project = el('select'); project.id = 'new-graph-project';
   const title = el('input'); title.id = 'new-graph-title'; title.maxLength = 160; title.placeholder = '例如：应用启动流程';
   const projectLabel = el('label', '项目'); projectLabel.htmlFor = project.id;
@@ -15,7 +27,7 @@ export function newGraph(api, onCreated) {
   const status = el('p'); status.setAttribute('role', 'status');
   const actions = el('div'); actions.className = 'new-graph-actions';
   const cancel = el('button', '取消'), next = el('button', '选择根节点'); next.className = 'primary';
-  actions.append(cancel, next); dialog.append(heading, projectLabel, projectRow, titleLabel, title, lsp.element, status, actions); document.body.append(dialog);
+  actions.append(cancel, next); dialog.append(header, titleLabel, title, projectLabel, projectRow, lsp.element, status, actions); document.body.append(dialog);
   let chosenProject, chosenTitle;
   connect.onclick=async()=>{
     const openedRevision=revision;
@@ -24,15 +36,18 @@ export function newGraph(api, onCreated) {
       const selected=await api.selectProjectDirectory();if(!dialog.open || openedRevision!==revision)return;if(selected.cancelled){status.textContent='';return;}
       const confirm=el('dialog');confirm.className='new-graph-dialog';confirm.setAttribute('aria-label','接入项目');
       const h=el('h2','接入项目'),nameLabel=el('label','项目名称'),name=el('input'),root=el('p',selected.root),feedback=el('p'),buttons=el('div');
+      const confirmationHeader=dialogHeader(confirm,h);
+      const sourceLabel=el('p','源文件夹'),source=el('div');sourceLabel.className='project-source-label';source.className='project-source';
+      source.append(icon('M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 3h18'),root);
       nameLabel.htmlFor='connect-project-name';name.id=nameLabel.htmlFor;name.value=selected.name;name.maxLength=120;root.className='project-root';feedback.setAttribute('role','alert');
       const back=el('button','取消'),apply=el('button','接入项目');apply.className='primary';buttons.className='new-graph-actions';buttons.append(back,apply);
       back.onclick=()=>confirm.close();confirm.addEventListener('close',()=>confirm.remove(),{once:true});
       let registering=false;confirm.addEventListener('cancel',event=>{if(registering)event.preventDefault();});
-      apply.onclick=async()=>{registering=true;apply.disabled=true;back.disabled=true;try{const item=await api.registerProject(selected.selectionId,name.value);
+      apply.onclick=async()=>{registering=true;apply.disabled=true;back.disabled=true;confirmationHeader.close.disabled=true;try{const item=await api.registerProject(selected.selectionId,name.value);
         let option=[...project.options].find(o=>o.value===item.id);if(!option){option=el('option',item.name);option.value=item.id;option.dataset.root=item.root;project.append(option);}
         project.value=item.id;window.dispatchEvent(new CustomEvent('projects-changed'));next.disabled=false;status.textContent='';confirm.close();void lsp.setProject(item.id);
-      }catch(e){feedback.textContent=e.message;}finally{registering=false;apply.disabled=false;back.disabled=false;}};
-      confirm.append(h,nameLabel,name,root,feedback,buttons);dialog.append(confirm);confirm.showModal();name.focus();
+      }catch(e){feedback.textContent=e.message;}finally{registering=false;apply.disabled=false;back.disabled=false;confirmationHeader.close.disabled=false;}};
+      confirm.append(confirmationHeader.header,nameLabel,name,sourceLabel,source,feedback,buttons);dialog.append(confirm);confirm.showModal();name.focus();
     }catch(e){status.textContent=e.message;}finally{connect.disabled=false;}
   };
   const selectedFiles=new Map();
@@ -65,9 +80,15 @@ export function newGraph(api, onCreated) {
     if (!project.value || !title.value.trim()) { status.textContent = '请选择项目并填写图名称。'; return; }
     chosenProject = project.value; chosenTitle = title.value.trim(); dialog.close(); void picker.open(chosenProject);
   };
-  let revision = 0;
-  dialog.addEventListener('close', event => {if(event.target===dialog){revision++;lsp.close();}});
+  let revision = 0, returnFocus;
+  dialog.addEventListener('close', event => {
+    if(event.target===dialog){
+      revision++;lsp.close();
+      if(!document.querySelector('dialog[open]') && returnFocus?.isConnected) returnFocus.focus();
+    }
+  });
   return { async open(options = {}) {
+    returnFocus=options.returnFocus || document.activeElement;
     heading.textContent=options.settings?'项目设置':'新建图';dialog.setAttribute('aria-label',heading.textContent);title.hidden=titleLabel.hidden=next.hidden=Boolean(options.settings);cancel.textContent=options.settings?'完成':'取消';
     dialog.showModal(); const version = ++revision; next.disabled = true; status.textContent = '正在读取项目…'; project.replaceChildren(); title.value = options.title || '';
     try {
