@@ -270,15 +270,12 @@ fn check_source_location(
     // while every node and call site still gets its own location diagnostic.
     let (exists, lines) = *files.entry(file.to_owned()).or_insert_with(|| {
         let path = source_root.join(file);
-        let exists = path.is_file();
-        let lines = if exists {
-            fs::read_to_string(&path)
-                .ok()
-                .map(|content| content.lines().count())
-        } else {
-            None
-        };
-        (exists, lines)
+        // Successful reads already prove the file exists. Avoid a separate
+        // metadata syscall for every readable file in every checkpoint pass.
+        match fs::read_to_string(&path) {
+            Ok(content) => (true, Some(content.lines().count())),
+            Err(_) => (path.is_file(), None),
+        }
     });
     let line_in_range = lines.is_some_and(|count| line as usize <= count);
     SourceLocationStatus {

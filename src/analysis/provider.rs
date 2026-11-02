@@ -42,6 +42,10 @@ impl Language {
                 || prepared[0].name != item.name
                 || prepared[0].selection_range != item.selection_range
             {
+                tracing::warn!(expected_name = %item.name, uri = ?item.uri,
+                    expected_selection = ?item.selection_range,
+                    actual = ?prepared.iter().map(|p| (&p.name, &p.uri, p.selection_range)).collect::<Vec<_>>(),
+                    "Java declaration identity mismatch");
                 return Err("Java 方法身份发生变化，拒绝使用旧调用位置".into());
             }
         }

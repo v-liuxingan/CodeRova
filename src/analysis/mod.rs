@@ -62,6 +62,8 @@ fn validate_call_ranges(
             || key(range.end) > key(item.range.end)
             || key(range.start) > key(range.end)
         {
+            tracing::warn!(caller = %item.name, uri = ?item.uri,
+                declaration = ?item.range, call_site = ?range, "LSP call range outside declaration");
             return Err("语言服务器返回的调用点不在当前方法范围内，未采纳此查询结果".into());
         }
     }
