@@ -74,6 +74,28 @@
 
 以下是源码构建方式。
 
+### macOS 源码运行（Apple Silicon / Intel）
+
+目前不提供 Mac 预编译包。安装 Xcode Command Line Tools（`xcode-select --install`）、Rust stable 和 Node.js 22+ 后，在终端执行：
+
+```sh
+git clone https://github.com/v-liuxingan/CodeRova.git
+cd CodeRova
+npm ci
+npm run build:frontend
+printf '%s\n' '{"schemaVersion":"0.1","projects":[]}' > callgraph.projects.local.json
+cargo build --release --locked
+./target/release/coderova serve --port 4324 --config callgraph.projects.local.json
+```
+
+上面的空配置初始化命令仅用于首次克隆，不要覆盖已有配置。打开 **http://127.0.0.1:4324/**，通过“新建项目/接入项目”选择自己的源码目录；也可按下文手工填写配置，路径例如 `/Users/me/projects/my-app`。
+
+服务从仓库根目录运行，需保留 `public/`；终端关闭或按 `Ctrl+C` 后服务停止。编译完成后，日常启动不需要 Node.js。系统文件/目录选择使用 macOS 自带的对话框，需要本机图形登录会话；SSH 或无桌面环境使用配置文件和页面内文件列表。
+
+只阅读图无需 LSP；采集 Rust 时按下文安装 rust-analyzer。采集 Java 时，将配置中的 `command` 改为本机 JDK 的 `bin/java`（可用 `/usr/libexec/java_home` 查询），JDT LS 的 `-configuration` 指向发行包中对应 Mac 架构的目录；JDK、JDT LS 与项目构建工具需匹配本机架构。不要沿用 Windows 的 `.exe`、盘符或 `config_win`。`workspaceRoot` 可设为 `/Users/me/Library/Caches/CodeRova/jdtls`，JSON 内使用实际绝对路径，不使用 `~` 或 `$HOME`。
+
+仓库包含 Apple Silicon / Intel 的 macOS 源码验证工作流，执行构建、后端测试和浏览器集成检查，不上传可执行文件或创建 Release。原生对话框的交互及真实 Java/Rust 项目采集仍需 Mac 实机验收；跨目标 `cargo check` 不能替代运行验证。
+
 ### 1. 准备环境
 
 - Git。

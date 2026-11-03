@@ -111,9 +111,37 @@ async fn choose_path(root: Option<PathBuf>) -> Result<Option<PathBuf>, String> {
     .await
     .map_err(|e| e.to_string())
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+async fn choose_path(root: Option<PathBuf>) -> Result<Option<PathBuf>, String> {
+    // AppKit dialogs need a main-thread event loop, which this headless HTTP
+    // server does not own. The system script host owns the native dialog instead.
+    // Pass paths as argv, never interpolate them into executable script text.
+    let mut command = tokio::process::Command::new("/usr/bin/osascript");
+    command
+        .arg("-e")
+        .arg(include_str!("select_path_macos.applescript"));
+    if let Some(root) = root {
+        command.arg(root);
+    }
+    let output = command
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "无法打开系统选择器：{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let path = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    // osascript appends one newline; preserve whitespace in actual file names.
+    let path = path.strip_suffix('\n').unwrap_or(&path);
+    Ok((!path.is_empty()).then(|| PathBuf::from(path)))
+}
+#[cfg(not(any(windows, target_os = "macos")))]
 async fn choose_path(_root: Option<PathBuf>) -> Result<Option<PathBuf>, String> {
-    Err("本机选择器目前支持 Windows；请使用项目文件列表或配置文件".into())
+    Err("本机选择器目前支持 Windows 和 macOS；请使用项目文件列表或配置文件".into())
 }
 pub(super) async fn select_graph_file(
     State(state): State<AppState>,
@@ -171,6 +199,12 @@ fn selected_file(
             .is_symlink()
         {
             return Err("请选择当前项目内的源文件，不支持符号链接".into());
+        }
+        // The catalog already trusts the resolved project root. macOS has
+        // system aliases such as /var -> /private/var above that boundary.
+        // Check this component first so an internal link back to root is rejected.
+        if ancestor.canonicalize().is_ok_and(|path| path == root) {
+            break;
         }
     }
     let selected = selected.canonicalize().map_err(|e| e.to_string())?;
@@ -418,6 +452,26 @@ impl Services {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn picker_accepts_project_parent_alias_but_rejects_internal_symlinks() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("real");
+        let root = parent.join("项目 with spaces");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/入口.rs"), "fn main() {}").unwrap();
+        let alias = dir.path().join("alias");
+        symlink(&parent, &alias).unwrap();
+        let selected = alias.join("项目 with spaces/src/入口.rs");
+        assert_eq!(selected_file(&root, &selected).unwrap().name, "src/入口.rs");
+        symlink(root.join("src"), root.join("linked")).unwrap();
+        assert!(selected_file(&root, &root.join("linked/入口.rs")).is_err());
+        symlink(root.join("src/入口.rs"), root.join("linked.rs")).unwrap();
+        assert!(selected_file(&root, &root.join("linked.rs")).is_err());
+        symlink(&root, root.join("back")).unwrap();
+        assert!(selected_file(&root, &root.join("back/src/入口.rs")).is_err());
+    }
     #[test]
     fn file_selection_is_project_scoped_and_preserves_unicode() {
         let dir = tempfile::tempdir().unwrap();

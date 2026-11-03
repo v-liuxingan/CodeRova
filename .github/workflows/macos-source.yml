@@ -1,0 +1,42 @@
+name: macOS source compatibility
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add rustfmt clippy
+      - name: Verify backend and native dialog syntax
+        run: |
+          cargo fmt --check
+          cargo test --locked
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          osacompile -o "$RUNNER_TEMP/select-path.scpt" src/server/select_path_macos.applescript
+      - name: Verify composed application
+        run: |
+          npm ci
+          python -m pip install playwright
+          python -m playwright install chromium
+          python tests/run_e2e.py
+      # Source verification only: no release packages or uploaded executables.

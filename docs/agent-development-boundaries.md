@@ -1,3 +1,17 @@
+## macOS 源码兼容（2026-11-03）
+
+后端兼容性与文档集成任务，不改变 HTTP 请求/响应或浏览器适配器。
+旧行为：非 Windows 调用系统选择器返回“不支持”；新行为：macOS 通过系统
+`/usr/bin/osascript` 打开原生文件/目录对话框，取消仍返回 cancelled=true。
+项目路径仅来自服务端目录，通过进程 argv 传入固定脚本，不插值到脚本或 shell。
+不在 Tokio 工作线程直接调用依赖 AppKit 主线程事件循环的对话框。
+选择结果继续经过目录枚举和项目边界校验；校验在已信任的项目根目录停止，
+允许 macOS /var 等项目根上方的系统别名，项目内部的符号链接仍拒绝。
+新增 Unix 路径别名/内部符号链接回归测试与 Mac 双架构源码 CI；不制作发布包。
+
+系统对话框参考：[Apple 文件/目录选择文档](https://developer.apple.com/library/archive/documentation/LanguagesUtilities/Conceptual/MacAutomationScriptingGuide/PromptforaFileorFolder.html)。
+CI runner 选择参考：[GitHub runner 文档](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+
 ## 资料库存储、重命名与图视图服务控制（2026-11-03）
 
 本轮是明确的跨边界集成任务。旧存储把说明混在图文件中，空分组仅在浏览器保存。
