@@ -19,15 +19,19 @@
 
 ## 页面预览
 
+**创建入口** — 输入想理解的流程，从项目内源码建立调用图。
+
+![创建入口](docs/images/create-entry-v012.png)
+
 **项目资料库** — 按项目统一浏览调用图与场景地图。
 
-![项目资料库](docs/images/project-library.jpg)
+![项目资料库](docs/images/project-library-v012.png)
 
 **调用图工作台** — 从入口逐层展开，结合调用位置、缩略图与源码定位理解分支。
 
-![调用图工作台](docs/images/callgraph-workbench.jpg)
+![调用图工作台](docs/images/callgraph-workbench-v012.png)
 
-截图来自本地实际运行页面；项目列表和已采集内容取决于你的本机数据。
+截图更新于 2026-11-03，来自 v0.1.2 界面和 CodeRova 自身示例图的隔离演示资料库；未包含个人业务项目源码。项目列表和已采集内容取决于你的本机数据。
 
 ## 能做什么
 
