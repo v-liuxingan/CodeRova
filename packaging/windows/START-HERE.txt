@@ -16,7 +16,7 @@ Upgrade: extract into a NEW folder, then copy your graphs/, layouts/,
 callgraph.projects.local.json and optional callgraph.lsp.local.json across.
 Never overwrite existing data/config with the empty package defaults.
 
-Manual: https://github.com/v-liuxingan/callgraph-visualizer#readme
+Manual: https://github.com/v-liuxingan/CodeRova#readme
 Unsigned scripts may be blocked by Windows policy. Follow your administrator's
 policy, or run the executable directly from a terminal in this folder:
 coderova.exe serve --port 4324 --config callgraph.projects.local.json

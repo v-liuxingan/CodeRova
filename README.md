@@ -49,7 +49,7 @@
 
 ### Windows 免安装版（推荐）
 
-1. 打开 [GitHub Releases](https://github.com/v-liuxingan/callgraph-visualizer/releases/latest)，下载 `coderova-v版本号-windows-x64.zip`（不是 Source code）。
+1. 打开 [GitHub Releases](https://github.com/v-liuxingan/CodeRova/releases/latest)，下载 `coderova-v版本号-windows-x64.zip`（不是 Source code）。
 2. **完整解压**到可写目录，双击 `Start.cmd`。启动器自动选择空闲本机端口，服务就绪后打开浏览器。
 3. 保持启动窗口打开；结束使用时按 `Ctrl+C` 停止服务。
 
@@ -82,7 +82,7 @@
 在 PowerShell、Git Bash 或终端执行：
 
 ```sh
-git clone https://github.com/v-liuxingan/callgraph-visualizer.git CodeRova
+git clone https://github.com/v-liuxingan/CodeRova.git CodeRova
 cd CodeRova
 npm ci
 npm run build:frontend
@@ -349,7 +349,7 @@ git push origin v0.1.0
 ## 名称与兼容
 
 产品统一命名为 **CodeRova**。Windows 发布包使用 `coderova-<版本>-windows-x64.zip`，包内程序为 `coderova.exe`。
-现有 GitHub 仓库地址暂不变；源码构建的 Cargo 包和二进制统一为 `coderova`（Windows 为 `coderova.exe`）。旧构建产物不会自动改名，请重新构建并使用新程序。
+GitHub 仓库已迁移至 `v-liuxingan/CodeRova`；源码构建的 Cargo 包和二进制统一为 `coderova`（Windows 为 `coderova.exe`）。旧构建产物不会自动改名，请重新构建并使用新程序。
 `callgraph.*.json` 配置、`CALLGRAPH_*` 环境变量、项目 ID 和浏览器偏好键保持兼容，无需迁移已有数据。
 
 
