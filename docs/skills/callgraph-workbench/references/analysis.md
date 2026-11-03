@@ -40,7 +40,7 @@ Rust 使用 rust-analyzer；Java 使用 Eclipse JDT LS，配置在服务端 `cal
 ```
 
 ```json
-{"draftId":"服务返回值","operation":{"action":"analyze","request":{"nodeId":"真实待采叶子ID","requestBudget":100}}}
+{"draftId":"服务返回值","operation":{"action":"analyze","request":{"nodeId":"现存源码节点ID","requestBudget":100,"maxDepth":3,"maxNodes":100}}}
 ```
 
 | 目的 | operation |
@@ -65,7 +65,10 @@ save 遇基线冲突应保留草稿并核对磁盘，不强行覆盖。服务重
 
 ## 续采策略
 
-从草稿 read 的 analysis.pendingNodes 中选择原始图无出边的节点；屏幕上无可见子节点并不足够。
+从草稿 read 的 nodes 中选择本轮关注的现存源码节点；已查询节点、有出边节点也可作为起点。不要使用前端 view-ref-* 路径引用 ID。
+maxDepth 为 1–100，起点是第 0 层；maxNodes 为 1–10000，只限制本轮新增唯一节点。两个字段均可省略，不使用 0 表示不限；requestBudget 仍必填，为 1–1000 的查询保护。
+每轮内部去重，历史 queriedNodes 不阻止本轮重新查询。节点按稳定符号 ID 合并，边按调用双方及调用点行列合并；平行调用点、已有说明与人工边保留。重新采集不自动删除历史关系，因此不是源码全量同步。
+addedNodes/addedEdges 是本轮相对基线的新增唯一 ID 数，totalNodes/totalEdges 是图总量；completed 是返回的查询数，画布实例数不是新增数。
 启动后轮询 analysisStatus；遇全局任务占用，不不断重提，也不停止别人的任务。
 任务完成后重新 read，比较 queriedNodes、pendingNodes、issues 与实际新增关系；无进展时定位原因。
 受预算、超时和任务范围约束，不盲目循环到 pending 清零。停止可能需等待正在执行的 LSP 请求结束，再检查最终状态。
@@ -78,7 +81,7 @@ save 遇基线冲突应保留草稿并核对磁盘，不强行覆盖。服务重
 2. GET `/api/graphs/{slug}/source-files` 获取 fileId；GET `/source-files/{fileId}` 读取文件。
 3. POST `/entry-check`，请求 `{"fileId":"...","line":42}`；使用实际行号。校验返回 candidateId 与 node。
 4. 在同一草稿调用 entry，fromId 使用源符号 ID，note 写明消息、通道或注册关系及源码位置。
-5. read 确认新节点/人工边，再从新待采叶子 analyze。无需为了续采先保存节点。
+5. read 确认新节点/人工边，再从新源码节点 analyze。无需为了续采先保存节点。
 
 拒绝的入口应重新定位，不伪造 candidateId 或手填未经核验的符号。图已有合适符号时可用 link，避免重复生成同一入口。
 人工关联的虚线不是 LSP 证明的直接调用；多态边同样可能是虚线，审阅数据区分语义。
@@ -97,7 +100,7 @@ save 遇基线冲突应保留草稿并核对磁盘，不强行覆盖。服务重
 ## 从页面新建图
 
 主页或左侧目录点击“新建图”，选择已配置项目、填写名称，打开源文件并选择函数所在行。
-校验通过后点击“创建图”：此步只保存根节点。随后配置请求预算并点击“开始采集”；
+项目级校验只核对文件和源码位置，返回 verification=source-position，不等待 LSP，也不声称已识别函数。点击“创建图”只保存待解析位置根节点；首次采集由 LSP 确认并替换为真实函数，失败保留位置供重试。随后配置采集深度与新增节点上限并点击“开始采集”；
 取消配置仍保留根节点图。采集结果先预览，采纳并保存后才更新图文件。
 AI 可使用项目级 source-files、entry-check 和 POST /api/graphs 接口；请求契约见
 `docs/agent-development-boundaries.md` 的“新建根节点图”。不要直接传本机路径替代 fileId。
@@ -126,10 +129,10 @@ AI 可使用项目级 source-files、entry-check 和 POST /api/graphs 接口；�
 
 首页“新建图”→“接入项目”打开Windows本机目录选择器，选择源码目录并确认项目名称。
 项目写入启动时所用的项目配置文件，重启后仍可选择；不需要手工填写项目ID。
-现有项目在首页“项目设置”或新建图窗口中可启动/停止语言服务器；单语言自动识别，
+现有项目在首页“项目设置”、新建图窗口或工作台“语言服务器”工具栏面板中可启动/停止语言服务器；单语言自动识别，
 混合Rust/Java项目可切换语言。新接入项目没有图也会显示在首页。
 
-主动启动会在后台准备服务器；可继续选文件，入口校验会等待该准备完成。
+主动启动会在后台准备服务器；新建图的位置校验不等待 LSP。已有图添加人工入口仍执行 LSP 函数校验。
 关闭窗口不会停止主动启动的服务器。手动会话不按5分钟空闲回收，自动会话保持原策略；
 源码/配置变化、进程异常和缓存资源限制仍可能导致重新启动。当前会话容量为2，
 固定会话占满时请先停止一个；使用中需先停止采集或等待校验结束，再停止服务器。
@@ -140,6 +143,8 @@ Java仍需在本地LSP配置中安装并配置JDT LS/JDK，Rust需要rust-analyz
 AI接口：`POST /api/projects/select-directory`返回短期selectionId（本机用户选择目录），
 `POST /api/projects`提交`{"selectionId":"选择凭据","name":"项目名称"}`。
 仅接受选择凭据，不接受浏览器提交的绝对路径。目录选择器目前支持Windows。
-`GET /api/projects/{project}/lsp/{rust|java}`读取state/message；
+`GET /api/projects/{project}/lsp/{rust|java}`读取state/message/serverType；
 `POST`同路径提交`{"action":"start"}`或`{"action":"stop"}`。
 启动异步返回starting，轮询直到running/failed；重复启动复用，不另起进程。
+
+资料库位置、说明分离和配置变更的生效时机见[配置与备份](configuration.md)。备份必须包含隐藏说明快照，不能只复制图 JSON。

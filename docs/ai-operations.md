@@ -5,7 +5,7 @@
 持久化检查点，仅用于明确需要边采边保存的任务。不要将直接接口当作可放弃的预览。
 
 平台采用 CLI 创建初始图、HTTP 操作已加载图。AI 不必模拟点击；人和 AI 使用相同的数据
-校验、叶子判定、检查点和减枝算法。平台不会自行推断消息路由：AI 阅读源码后负责选择
+校验、源码节点身份检查、检查点和减枝算法。平台不会自行推断消息路由：AI 阅读源码后负责选择
 接收入口、提供依据，并检查产出。LSP 查询结束也不等于动态调用或业务语义完整。
 
 ## 从源码到可阅读结果
@@ -15,7 +15,7 @@
    ```powershell
    .\target\frontend-e2e\debug\coderova.exe analyze --config callgraph.projects.json --project <project-id> --file src/main.rs --line 1 --column 4 --max-depth 1 --request-budget 20 --output graphs/example.json
    ```
-3. GET `/api/graphs` 获取真实 slug，再读取图，逐个补齐符合条件的待采叶子。
+3. GET `/api/graphs` 获取真实 slug，再读取图，按目标流程选择现存源码节点继续采集。
 4. 遇消息、事件或回调边界，读取源文件，定位接收函数，执行 entry-check，再 entries。
    保存说明必须准确表达推断依据；虚线是人工关联，不是 LSP 证明的直接调用。
 5. 对明确不属于目标场景的节点先预览减枝范围，再提交版本。不要仅为了图小就删除真实分支。
@@ -36,7 +36,7 @@ python -X utf8 scripts/atlas_agent.py --base http://127.0.0.1:4323 request POST 
 Origin，服务继续拒绝未知字段和任意文件路径。退出码：0 成功，1 请求失败，2 续采未收敛。
 `finished=true` 仅表示没有 pendingNodes，不代表无未知动态调用或无主动排除。
 自动续采不会无限重试同一个失败叶子。待采非叶子或未解析叶子返回 unresolvedBoundaries；
-AI 应检查原因，不应绕过叶子策略。超时发出停止请求，当前 LSP 请求可能稍后才完成并保存。
+这是 collect 脚本仍采用的保守选择策略，不是服务器限制；可用草稿 analyze 从现存源码节点定向续采。超时发出停止请求，当前 LSP 请求可能稍后才完成并保存。
 任务状态目前是服务内单任务，不支持多个 AI 同时编排；脚本退出后应 GET 状态再决定下一步。
 
 ## HTTP 操作表
@@ -53,7 +53,7 @@ AI 应检查原因，不应绕过叶子策略。超时发出停止请求，当�
 | 添加人工入口 | POST /entries | `{ "fromId":"...", "candidateId":"...", "note":"源码依据" }` |
 | 关联已有图符号 | POST /links | `{ "fromId":"...", "targetGraph":"...", "targetId":"...", "note":"依据" }` |
 | 撤销人工关联 | DELETE /links/{edgeId} | 仅删除人工边，保留节点 |
-| 启动定向续采 | POST /analysis | `{ "nodeId":"...", "requestBudget":100 }`；仅待采真实叶子 |
+| 启动定向续采 | POST /analysis | `{ "nodeId":"...", "requestBudget":100 }`；任意现存可采源码节点，可另传 maxDepth/maxNodes |
 | 查询 / 停止 | GET /analysis、DELETE /analysis | status、completed、pending、message |
 | 减枝预览 | POST /prune | `{ "nodeId":"...", "apply":false }` |
 | 提交减枝 | POST /prune | `{ "nodeId":"...", "apply":true, "revision":"预览返回值" }` |
@@ -104,7 +104,7 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 暂存采集示例（先 read 获取 draftId）：
 
 ```json
-{"draftId":"...","operation":{"action":"analyze","request":{"nodeId":"待采叶子 ID","requestBudget":100}}}
+{"draftId":"...","operation":{"action":"analyze","request":{"nodeId":"现存源码节点 ID","requestBudget":100}}}
 ```
 
 轮询 analysisStatus，停止用 stopAnalysis；两者不带 request，状态位于 result。
@@ -137,10 +137,10 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 
 1. `GET /api/health` 选择已配置且 `rootExists=true` 的项目。
 2. `GET /api/projects/{projectId}/source-files` 获取文件 ID；`GET /api/projects/{projectId}/source-files/{fileId}` 读取源文件。
-3. `POST /api/projects/{projectId}/entry-check`，请求 `{ "fileId": "服务器返回的 ID", "line": 1 }`；行号从 1 开始，必须位于可采集函数中。
+3. `POST /api/projects/{projectId}/entry-check`，请求 `{ "fileId": "服务器返回的 ID", "line": 1 }`；行号从 1 开始，检查文件内非空源码位置；返回 verification=source-position，不启动 LSP、不确认函数。
 4. `POST /api/graphs`，请求 `{ "projectId": "项目 ID", "candidateId": "校验返回的令牌", "title": "流程名称" }`。
-   返回 `{ "slug": "新图 ID", "nodeId": "根符号 ID" }`。该动作明确保存一张只有根节点的图，成功后令牌失效。
-5. 使用现有草稿采集接口配置预算，从返回的根符号开始采集。采集不会因创建而自动启动；采纳/保存仍是独立动作。
+   返回 `{ "slug": "新图 ID", "nodeId": "待解析位置节点 ID" }`。该动作明确保存一张只有根节点的图，成功后令牌失效。
+5. 使用现有草稿采集接口配置预算，从返回的位置节点开始采集，由 LSP 确认真实函数并更新引用。采集不会因创建而自动启动；采纳/保存仍是独立动作。
 
 不得使用浏览器提供的任意绝对路径代替项目与文件 ID。校验失败或源码变化时重新选行校验，不能自行构造候选令牌。
 
@@ -162,3 +162,30 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 未知字段或类型错误会拒绝整批，不会部分应用。只能改description，源码位置、身份、
 关系、调用顺序和采集状态不变。重复路径引用使用原始sourceId，不使用视图生成的ID。
 补充描述是采集后动作，采集器不推测业务含义。
+
+## 定向采集限制与统计
+
+`requestBudget` 必填，范围 1–1000，限制本轮符号查询；重试不算新符号。可选 `maxDepth` 为 1–100（起点第 0 层），`maxNodes` 为 1–10000（仅新增唯一节点）。省略字段解除对应限制，不能用 0 替代。页面允许两项都留空，但仍发送查询保护预算。
+
+```json
+{"draftId":"服务返回值","operation":{"action":"analyze","request":{"nodeId":"现存源码节点ID","requestBudget":1000,"maxDepth":3,"maxNodes":100}}}
+```
+
+每轮重新查询所选范围，环与共享下游在本轮去重。节点按稳定符号 ID、边按调用方/目标/调用点行列合并；保留已有说明、人工关系和不同调用点的平行边，不自动移除旧事实。失败保留已获证据与待采边界。`addedNodes/addedEdges` 为本轮新增唯一 ID 数，`totalNodes/totalEdges` 为图总量，`completed` 为已返回查询数；不能用画布引用数或入口替换计算新增量。
+
+## 资料库与项目操作
+
+| 操作 | 接口及请求 |
+| --- | --- |
+| 读取资料库位置 | `GET /api/storage`，含 root、nextRoot、configFile、restartRequired、commandLineOverride |
+| 设置下次启动位置 | `POST /api/storage`，`{"selectionId":"系统目录选择凭据"}`；不接受路径、不搬迁旧数据 |
+| 读取目录别名与分组 | `GET /api/library` |
+| 项目目录显示名 | `POST /api/library`，`{"action":"renameDirectory","projectId":"...","name":"..."}` |
+| 创建/重命名分组 | `POST /api/library`，`{"action":"upsertGroup","projectId":"...","groupId":"...","name":"..."}`；使用稳定 ID |
+| 删除分组元数据 | `POST /api/library`，`{"action":"deleteGroup","projectId":"...","groupId":"..."}`；不等于归档组内图 |
+| 图重命名 | `PUT /api/graphs/{slug}/title`，`{"title":"..."}`；slug 不变，先处理草稿冲突 |
+| 本机选择源文件 | `POST /api/projects/{projectId}/select-file` 或 `POST /api/graphs/{slug}/select-file`；返回 id/name 或 cancelled |
+
+目录选择凭据来自 `POST /api/projects/select-directory`。原生选择器需要本机交互；自动化不能伪造路径或 selectionId。文件必须属于项目枚举目录，拒绝符号链接、构建目录和项目外文件。项目注册与 LSP 启停参见 [分析操作](skills/callgraph-workbench/references/analysis.md)。
+
+图 GET 仍返回合成后的事实与说明，API 使用者不直接编辑 `_annotations` 快照引用。磁盘结构、配置优先级与备份见[配置与备份](skills/callgraph-workbench/references/configuration.md)。
