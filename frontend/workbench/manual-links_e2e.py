@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 """Real rust-analyzer + isolated HTTP server + page checkpoint continuation."""
 import json,os,pathlib,socket,subprocess,tempfile,time
 from playwright.sync_api import sync_playwright,expect
@@ -28,9 +32,9 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    endpoint=base+'/api/graphs/fixture/analysis'
    assert page.request.post(endpoint,data={'requestBudget':1,'nodeId':'missing'},headers={'Origin':base}).status==400
    page.goto(base+'/?graph=fixture');expect(page.locator('#fit')).to_be_enabled()
-   page.select_option('#symbols',initial['root'])
+   select_option(page,'#symbols',initial['root'])
    response=page.request.post(base+'/api/graphs/fixture/links',data={'fromId':initial['root'],'targetGraph':'receiver','targetId':target,'note':'消息处理后续，人工核验'},headers={'Origin':base});assert response.ok,response.text()
-   page.reload();page.select_option('#symbols',target)
+   page.reload();select_option(page,'#symbols',target)
    saved=json.loads(output.read_text(encoding='utf-8'));link=saved['edges'][0]
    assert link['kind']=='async-boundary' and link['callSiteStatus']=='omitted-nodes'
    assert link['line']==0 and link['confidence']==0 and link['to']==target

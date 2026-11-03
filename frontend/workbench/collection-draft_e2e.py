@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 """Real rust-analyzer + isolated HTTP server + page checkpoint continuation."""
 import json,os,pathlib,socket,subprocess,tempfile,time
 from playwright.sync_api import sync_playwright,expect
@@ -44,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    # Page flow: configure -> collect -> preview -> discard, then collect -> accept.
    page.goto(base+'/?graph=fixture');expect(page.locator('#fit')).to_be_enabled()
    def collect():
-    page.select_option('#symbols',seed)
+    select_option(page,'#symbols',seed)
     page.get_by_role('button',name='继续采集',exact=True).click()
     page.locator('#resume-budget').fill('1')
     page.get_by_role('button',name='开始采集',exact=True).click()

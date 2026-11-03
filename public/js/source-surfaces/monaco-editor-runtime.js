@@ -10,7 +10,7 @@ export class MonacoEditorRuntime {
     this.searchIndex = -1;
     this.lastQuery = "";
     this.wrapped = false;
-    this.fontSize = 12;
+    this.fontSize = 13;
   }
 
   get name() {
@@ -23,6 +23,7 @@ export class MonacoEditorRuntime {
 
   async mount(container, preview) {
     const { monaco } = await loadMonaco();
+    this.preview=preview;this.container=container;
     registerThemes(monaco);
     container.dataset.startLine = String(preview.startLine);
     container.dataset.focusLine = String(preview.focusLine);
@@ -54,7 +55,10 @@ export class MonacoEditorRuntime {
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fixedOverflowWidgets: true,
-      lineNumbersMinChars: 4,
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 12,
+      glyphMargin: false,
+      scrollbar: {verticalScrollbarSize:8,horizontalScrollbarSize:8,useShadows:false},
       lineNumbers: (line) => String(preview.startLine + line - 1),
       showFoldingControls: "always",
       folding: true,
@@ -68,7 +72,7 @@ export class MonacoEditorRuntime {
       fontLigatures: true,
       fontSize: this.fontSize,
       lineHeight: 21,
-      padding: { top: 12, bottom: 20 },
+      padding: { top: 14, bottom: 18 },
       contextmenu: true,
       links: false,
       hover: { enabled: false },
@@ -79,15 +83,20 @@ export class MonacoEditorRuntime {
       selectionHighlight: !preview.selectable,
       bracketPairColorization: { enabled: true },
       guides: { bracketPairs: true, indentation: true },
-      wordWrap: "off",
+      wordWrap: preview.wrap ? "on" : "off",
       mouseWheelZoom: true,
       smoothScrolling: false,
       cursorSmoothCaretAnimation: "off",
       cursorBlinking: "solid",
     });
+    this.wrapped=Boolean(preview.wrap);
+    this.wrapListener=this.editor.onDidChangeConfiguration(event=>{
+      if(event.hasChanged(monaco.editor.EditorOption.wordWrap)){this.wrapped=this.editor.getOption(monaco.editor.EditorOption.wordWrap)!=='off';if(!this.settingWrap)this.onWrap?.(this.wrapped);}
+    });
 
     const focusStart = clampLine(preview.focusLine - preview.startLine + 1, this.model);
     const focusEnd = clampLine(preview.focusEndLine - preview.startLine + 1, this.model);
+    this.editor.setPosition({lineNumber:focusStart,column:1});
     this.decorations = this.editor.createDecorationsCollection(preview.selectable ? [] : [
       {
         range: new monaco.Range(focusStart, 1, focusEnd, this.model.getLineMaxColumn(focusEnd)),
@@ -106,6 +115,26 @@ export class MonacoEditorRuntime {
       new monaco.Range(focusStart, 1, focusEnd, this.model.getLineMaxColumn(focusEnd)),
       monaco.editor.ScrollType.Immediate,
     );
+  }
+
+  setWrap(active){this.wrapped=Boolean(active);this.settingWrap=true;try{this.editor?.updateOptions({wordWrap:this.wrapped?'on':'off'});}finally{this.settingWrap=false;}}
+  async extend(preview){
+    if(!this.editor||!this.model)return;
+    const {monaco}=await loadMonaco();
+    const previous=this.preview, added=previous.startLine-preview.startLine;
+    const top=this.editor.getVisibleRanges()[0]?.startLineNumber||1;
+    const offset=this.editor.getScrollTop()-this.editor.getTopForLineNumber(top);
+    const selection=this.editor.getSelection();
+    const edits=[];
+    if(added>0)edits.push({range:new monaco.Range(1,1,1,1),text:preview.lines.slice(0,added).map(l=>l.text).join('\n')+'\n'});
+    if(preview.endLine>previous.endLine){const last=this.model.getLineCount(),col=this.model.getLineMaxColumn(last);edits.push({range:new monaco.Range(last,col,last,col),text:'\n'+preview.lines.slice(previous.endLine-preview.startLine+1).map(l=>l.text).join('\n')});}
+    this.model.applyEdits(edits);
+    this.editor.updateOptions({lineNumbers:line=>String(preview.startLine+line-1)});
+    const start=clampLine(preview.focusLine-preview.startLine+1,this.model),end=clampLine(preview.focusEndLine-preview.startLine+1,this.model);
+    this.decorations.set([{range:new monaco.Range(start,1,end,this.model.getLineMaxColumn(end)),options:{isWholeLine:true,className:'monaco-source-focus',linesDecorationsClassName:'monaco-source-focus-gutter'}}]);
+    if(selection)this.editor.setSelection(new monaco.Selection(selection.selectionStartLineNumber+added,selection.selectionStartColumn,selection.positionLineNumber+added,selection.positionColumn));
+    this.editor.setScrollTop(this.editor.getTopForLineNumber(top+added)+offset);
+    this.container.dataset.startLine=String(preview.startLine);this.container.dataset.endLine=String(preview.endLine);this.preview=preview;
   }
 
   search(query, direction = 0) {
@@ -165,7 +194,10 @@ export class MonacoEditorRuntime {
     return {};
   }
 
+  async applyTheme() { const {monaco}=await loadMonaco();monaco.editor.setTheme(themeName()); }
+
   dispose() {
+    this.wrapListener?.dispose();
     this.decorations?.clear();
     this.editor?.dispose();
     this.model?.dispose();
@@ -225,16 +257,17 @@ function registerThemes(monaco) {
     base: "vs",
     inherit: true,
     rules: [
-      { token: "comment", foreground: "74859A", fontStyle: "italic" },
+      { token: "comment", foreground: "64748B", fontStyle: "italic" },
       { token: "keyword", foreground: "2563D9", fontStyle: "bold" },
       { token: "string", foreground: "087F8F" },
       { token: "number", foreground: "BB6F0D" },
       { token: "type", foreground: "087F8F" },
     ],
     colors: {
-      "editor.background": "#F4F7FB",
-      "editor.foreground": "#465B74",
-      "editorLineNumber.foreground": "#8A9AAD",
+      "editor.background": "#FFFFFF",
+      "editor.foreground": "#334155",
+      "editorGutter.background": "#F8FAFC",
+      "editorLineNumber.foreground": "#64748B",
       "editorLineNumber.activeForeground": "#2563D9",
       "editor.lineHighlightBackground": "#EAF2FF",
       "editor.selectionBackground": "#BFD6FF",
@@ -243,14 +276,14 @@ function registerThemes(monaco) {
     },
   });
   for (const [name, accent, background, foreground] of [
-    ["aether", "74A9FF", "08121F", "B0BDD0"],
+    ["aether", "74A9FF", "111923", "D0DBE8"],
     ["signal", "C8F04A", "121611", "B0B5A8"],
   ]) {
     monaco.editor.defineTheme(`callgraph-${name}`, {
       base: "vs-dark",
       inherit: true,
       rules: [
-        { token: "comment", foreground: "71839D", fontStyle: "italic" },
+        { token: "comment", foreground: "8B9BB0", fontStyle: "italic" },
         { token: "keyword", foreground: accent, fontStyle: "bold" },
         { token: "string", foreground: "43D7C5" },
         { token: "number", foreground: "F2B65C" },

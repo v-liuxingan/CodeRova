@@ -286,7 +286,7 @@ impl JavaSymbols {
                 )
                 .await;
             let items: Vec<CallHierarchyItem> = match value.and_then(|value| {
-                serde_json::from_value::<Vec<CallHierarchyItem>>(value)
+                super::decode_hierarchy::<Vec<CallHierarchyItem>>(value)
                     .map_err(|e| format!("实现方法无法定位：{e}"))
             }) {
                 Ok(items) if !items.is_empty() => items,

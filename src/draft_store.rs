@@ -33,10 +33,14 @@ impl DraftStore {
         })
     }
     pub fn expired_clean(&self, idle: Duration) -> bool {
+        self.expired_at(idle, Instant::now())
+    }
+    fn expired_at(&self, idle: Duration, now: Instant) -> bool {
         self.graphs.lock().is_ok_and(|state| {
-            (!state.dirty && state.last_access.elapsed() >= idle)
+            (!state.dirty && now.saturating_duration_since(state.last_access) >= idle)
                 || (self.collection.load(std::sync::atomic::Ordering::Relaxed)
-                    && state.last_access.elapsed() >= Duration::from_secs(30 * 60))
+                    && now.saturating_duration_since(state.last_access)
+                        >= Duration::from_secs(30 * 60))
         })
     }
     pub fn snapshot(&self) -> Result<(CallGraph, bool), String> {
@@ -216,12 +220,12 @@ mod tests {
         assert_eq!(second.load("graph").unwrap().title, "second");
         assert_eq!(store.load("graph").unwrap().title, "first");
         assert!(first.checkpoint("other", &original, &edited).is_err());
-        second.graphs.lock().unwrap().last_access = Instant::now() - Duration::from_secs(31 * 60);
-        assert!(!second.expired_clean(Duration::from_secs(15 * 60)));
+        let future = Instant::now() + Duration::from_secs(31 * 60);
+        assert!(!second.expired_at(Duration::from_secs(15 * 60), future));
         second
             .collection
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        assert!(second.expired_clean(Duration::from_secs(15 * 60)));
+        assert!(second.expired_at(Duration::from_secs(15 * 60), future));
     }
 }
 

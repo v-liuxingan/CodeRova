@@ -81,6 +81,42 @@ pub struct Candidate {
     pub node: GraphNode,
     pub text: String,
 }
+/// A source anchor, not a claim that LSP has identified a callable symbol.
+pub fn position(file: &str, text: &str, line: u32) -> Result<GraphNode, String> {
+    Language::for_file(file)?;
+    let selected = line
+        .checked_sub(1)
+        .and_then(|n| text.lines().nth(n as usize))
+        .ok_or("所选行超出文件范围")?;
+    if selected.trim().is_empty() {
+        return Err("请选择有代码的一行".into());
+    }
+    Ok(GraphNode {
+        id: format!(
+            "entry-position-{}",
+            stable_id(&format!("{file}:{line}:{text}"))
+        ),
+        symbol: None,
+        phase_id: String::new(),
+        kind: "function".into(),
+        label: format!(
+            "{} · 第 {line} 行",
+            Path::new(file)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ),
+        crate_name: String::new(),
+        module: String::new(),
+        file: file.into(),
+        line,
+        end_line: None,
+        role: "用户选择的源码位置，尚未确认函数身份".into(),
+        description: "开始采集时由语言服务器确认所属函数；当前不是已验证的调用符号。".into(),
+        state: "expanded".into(),
+    })
+}
+
 fn enclosing(symbols: &[Value], line: u32, out: &mut Vec<Value>) {
     for symbol in symbols {
         if symbol["range"]["start"]["line"]
@@ -111,7 +147,7 @@ pub(crate) async fn check(
     }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let path = resolve_source_path(&root, &file)?;
-    let uri = Url::from_file_path(path)
+    let uri = Url::from_file_path(crate::project_catalog::tool_path(&path))
         .map_err(|_| "文件 URI 无效")?
         .to_string();
     let language = Language::for_file(&file)?;
@@ -147,8 +183,8 @@ pub(crate) async fn check(
                 30,
             )
             .await?;
-        let items: Vec<lsp_types::CallHierarchyItem> =
-            serde_json::from_value(items).map_err(|_| "LSP 无法为该位置准备调用层级")?;
+        let items: Vec<lsp_types::CallHierarchyItem> = super::decode_hierarchy(items)
+            .map_err(|e| format!("无法读取语言服务器的入口信息：{e}"))?;
         if items.len() != 1 {
             return Err("该行未匹配唯一可采集符号，请选择更明确的位置".into());
         }
@@ -171,6 +207,21 @@ pub(crate) async fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn source_position_is_bounded_and_content_bound_without_lsp() {
+        let text = "// 注释\nfn main() {}\n\n";
+        assert!(position("src/main.rs", text, 0).is_err());
+        assert!(position("src/main.rs", text, 4).is_err());
+        assert!(position("src/main.rs", text, 3).is_err());
+        assert!(position("README.md", text, 2).is_err());
+        let anchor = position("src/main.rs", text, 2).unwrap();
+        assert!(anchor.id.starts_with("entry-position-"));
+        assert!(anchor.symbol.is_none());
+        assert_ne!(
+            anchor.id,
+            position("src/main.rs", "fn main() {}", 1).unwrap().id
+        );
+    }
     #[test]
     fn file_catalog_excludes_build_and_dependency_folders() {
         let root = tempfile::tempdir().unwrap();

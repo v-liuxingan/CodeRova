@@ -4,6 +4,23 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// Windows device prefixes are useful for filesystem checks, not external tools or UI.
+pub(crate) fn tool_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(value) = path.to_str() {
+        if let Some(tail) = value.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{tail}"));
+        }
+        if let Some(tail) = value.strip_prefix(r"\\?\") {
+            return PathBuf::from(tail);
+        }
+    }
+    path.to_path_buf()
+}
+fn serialize_root<S: serde::Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
+    tool_path(path).serialize(serializer)
+}
+
 /// Resolves a stable project id to the local checkout root for this machine.
 pub trait ProjectCatalog: Send + Sync {
     fn register(&self, _name: &str, _root: &Path) -> Result<ResolvedProject, String> {
@@ -19,6 +36,7 @@ pub trait ProjectCatalog: Send + Sync {
 pub struct ResolvedProject {
     pub id: String,
     pub name: String,
+    #[serde(serialize_with = "serialize_root")]
     pub root: PathBuf,
     pub root_exists: bool,
 }
@@ -119,7 +137,7 @@ impl ProjectCatalog for FileProjectCatalog {
         if entries.iter().any(|p| p["id"] == id) {
             return Err("项目配置已变化，请重启后重试".into());
         }
-        entries.push(serde_json::json!({"id":id,"name":name,"root":root}));
+        entries.push(serde_json::json!({"id":id,"name":name,"root":tool_path(&root)}));
         let content = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
         crate::graph_store::write_atomic(&self.config_path, &content)?;
         let project = ResolvedProject {

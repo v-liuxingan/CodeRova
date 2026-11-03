@@ -6,10 +6,6 @@ export function resumePanel(api, reload) {
   // Remove the obsolete notification receipt; no result is accepted by local preference.
   try { for(const key of Object.keys(localStorage))if(key.startsWith('callgraph:loaded-result:'))localStorage.removeItem(key); } catch {}
   const finished = task => ['finished','stopped','failed'].includes(task.status);
-  function highlight() {
-    const bar=$('active-collection');
-    bar.classList.remove('collection-started');void bar.offsetWidth;bar.classList.add('collection-started');
-  }
   function show(task) {
     const previous=latestTask.status, running=task.status==='running', done=finished(task);
     latestTask=task;
@@ -17,15 +13,16 @@ export function resumePanel(api, reload) {
     if(running && previous!=='running')previewed=false;
     $('active-collection').hidden=!running&&!done;
     $('active-collection').dataset.state=task.status;
-    const counts=Number.isInteger(task.addedNodes)?`新增 ${task.addedNodes} 个节点`:'节点统计暂不可用';
+    const counts=Number.isInteger(task.addedNodes)?`本轮新增 ${task.addedNodes} 个节点`:'节点统计暂不可用';
     $('active-collection').setAttribute('aria-busy',String(running));
     const label={finished:'采集完成',stopped:'采集已停止',failed:'采集失败'}[task.status];
     $('active-collection-status').textContent=running
-      ? stopRequested?'正在停止…':Number.isInteger(task.addedNodes)?`正在采集 · 新增 ${task.addedNodes} 个节点`:'正在采集…'
+      ? stopRequested?'正在停止…':Number.isInteger(task.addedNodes)?`${task.message || '正在采集'}${task.message?.includes('新增')?'':` · 新增 ${task.addedNodes} 个节点`}`:'正在采集…'
       : `${label} · ${counts} · ${previewed?'预览中，尚未保存':'结果待采纳'}`;
-    if(done && previous==='running') { highlight();$('status').textContent=`${label}：${counts}。结果待采纳。`; }
-    if(task.status==='failed')$('analysis-brief').textContent='采集失败 · 查看详情';
-    $('resume-summary').textContent=running?'采集任务 · 运行中':done?'采集任务 · 待采纳':'采集任务';
+    $('collection-indicator').textContent=running?'运行中':done?(task.status==='failed'?'失败':'待采纳'):'';
+    $('collection-indicator').dataset.state=task.status;
+
+    $('resume-summary').textContent='采集任务';
     if(task.status!==previous && (running||done))$('resume-panel').open=true;
     if(Number.isInteger(task.pending)&&task.status!=='idle')pending=task.pending;
     $('resume-stop').hidden=!running;
@@ -34,7 +31,8 @@ export function resumePanel(api, reload) {
     $('collection-result-actions').hidden=!done;
     $('resume-refresh').textContent=previewed?'重新预览':'预览';
     for(const id of ['resume-refresh','resume-accept','resume-discard'])$(id).disabled=working;
-    $('resume-status').textContent=task.status==='idle'?`${pending} 个待采符号。`: task.status==='failed'?`${task.message}。结果尚未写入图文件。`:`${counts}。结果尚未写入图文件。`;
+    const detail=Number.isInteger(task.totalNodes)?`新增 ${task.addedEdges} 条关系 · 当前图 ${task.totalNodes} 个符号、${task.totalEdges} 条关系。`:'';
+    $('resume-status').textContent=task.status==='idle'?`${pending} 个待采符号。`: task.status==='failed'?`${task.message}。结果尚未写入图文件。`:detail;
   }
   async function poll(version) {
     try {
@@ -62,7 +60,8 @@ export function resumePanel(api, reload) {
       if(slug!==target)return;
       previewed=action==='preview';
       await poll(generation);
-      $('status').textContent=action==='preview'?'预览中，尚未保存':action==='accept'?'已采纳并保存':'已放弃草稿';
+      $('status').textContent=action==='preview'?'':action==='accept'?'已采纳并保存':'已放弃草稿';
+      if(action==='preview')$('graph-details').open=true;
       $('canvas').focus({preventScroll:true});
     }catch(error){if(slug===target)$('status').textContent=`操作失败：${error.message}`;}
     finally{working=false;show(latestTask);}
@@ -71,7 +70,7 @@ export function resumePanel(api, reload) {
   $('resume-accept').onclick=()=>void resultAction('accept');
   $('resume-discard').onclick=()=>void resultAction('discard');
   return {
-    started(task){show(task);clearTimeout(timer);void poll(generation);$('status').textContent='采集已开始，结果将暂存。';const bar=$('active-collection');bar.scrollIntoView({block:'nearest'});bar.focus({preventScroll:true});highlight();},
+    started(task){++generation;previewed=false;show(task);clearTimeout(timer);void poll(generation);$('status').textContent='';$('graph-details').open=false;$('graph-details').querySelector('summary').focus({preventScroll:true});},
     isRunning(){return latestTask.status==='running';},
     watch(){clearTimeout(timer);void poll(generation);},
     setGraph(next,graph){clearTimeout(timer);const version=++generation;if(slug!==next){stopRequested=false;previewed=false;}slug=next;$('resume-panel').open=false;pending=graph.analysis?.pendingNodes?.length||0;

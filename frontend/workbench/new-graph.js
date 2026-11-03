@@ -12,6 +12,26 @@ function dialogHeader(dialog, heading) {
   close.append(icon('M6 6l12 12M18 6 6 18')); close.onclick = () => dialog.close();
   header.append(heading, close); return {header, close};
 }
+export async function connectProject(api, parent = document.body, isCurrent = () => true) {
+  const selected = await api.selectProjectDirectory();
+  if (selected.cancelled || !isCurrent()) return null;
+  return new Promise(resolve => {
+    let result = null;
+      const confirm=el('dialog');confirm.className='new-graph-dialog';confirm.setAttribute('aria-label','接入项目');
+      const h=el('h2','接入项目'),nameLabel=el('label','项目名称'),name=el('input'),root=el('p',selected.root),feedback=el('p'),buttons=el('div');
+      const confirmationHeader=dialogHeader(confirm,h);
+      const sourceLabel=el('p','源文件夹'),source=el('div');sourceLabel.className='project-source-label';source.className='project-source';
+      source.append(icon('M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 3h18'),root);
+      nameLabel.htmlFor='connect-project-name';name.id=nameLabel.htmlFor;name.value=selected.name;name.maxLength=120;root.className='project-root';feedback.setAttribute('role','alert');
+      const back=el('button','取消'),apply=el('button','接入项目');apply.className='primary';buttons.className='new-graph-actions';buttons.append(back,apply);
+      back.onclick=()=>confirm.close();confirm.addEventListener('close',()=>{confirm.remove();resolve(result);},{once:true});
+      let registering=false;confirm.addEventListener('cancel',event=>{if(registering)event.preventDefault();});
+      apply.onclick=async()=>{registering=true;apply.disabled=true;back.disabled=true;confirmationHeader.close.disabled=true;try{const item=await api.registerProject(selected.selectionId,name.value);
+        result=item;window.dispatchEvent(new CustomEvent('projects-changed'));confirm.close();
+      }catch(e){feedback.textContent=e.message;}finally{registering=false;apply.disabled=false;back.disabled=false;confirmationHeader.close.disabled=false;}};
+      confirm.append(confirmationHeader.header,nameLabel,name,sourceLabel,source,feedback,buttons);parent.append(confirm);confirm.showModal();name.focus();
+  });
+}
 export function newGraph(api, onCreated) {
   const dialog = el('dialog'); dialog.className = 'new-graph-dialog'; dialog.setAttribute('aria-label', '新建图');
   const heading = el('h2', '新建图');
@@ -33,47 +53,22 @@ export function newGraph(api, onCreated) {
     const openedRevision=revision;
     connect.disabled=true;status.textContent='请选择本地源码目录…';
     try {
-      const selected=await api.selectProjectDirectory();if(!dialog.open || openedRevision!==revision)return;if(selected.cancelled){status.textContent='';return;}
-      const confirm=el('dialog');confirm.className='new-graph-dialog';confirm.setAttribute('aria-label','接入项目');
-      const h=el('h2','接入项目'),nameLabel=el('label','项目名称'),name=el('input'),root=el('p',selected.root),feedback=el('p'),buttons=el('div');
-      const confirmationHeader=dialogHeader(confirm,h);
-      const sourceLabel=el('p','源文件夹'),source=el('div');sourceLabel.className='project-source-label';source.className='project-source';
-      source.append(icon('M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 3h18'),root);
-      nameLabel.htmlFor='connect-project-name';name.id=nameLabel.htmlFor;name.value=selected.name;name.maxLength=120;root.className='project-root';feedback.setAttribute('role','alert');
-      const back=el('button','取消'),apply=el('button','接入项目');apply.className='primary';buttons.className='new-graph-actions';buttons.append(back,apply);
-      back.onclick=()=>confirm.close();confirm.addEventListener('close',()=>confirm.remove(),{once:true});
-      let registering=false;confirm.addEventListener('cancel',event=>{if(registering)event.preventDefault();});
-      apply.onclick=async()=>{registering=true;apply.disabled=true;back.disabled=true;confirmationHeader.close.disabled=true;try{const item=await api.registerProject(selected.selectionId,name.value);
-        let option=[...project.options].find(o=>o.value===item.id);if(!option){option=el('option',item.name);option.value=item.id;option.dataset.root=item.root;project.append(option);}
-        project.value=item.id;window.dispatchEvent(new CustomEvent('projects-changed'));next.disabled=false;status.textContent='';confirm.close();void lsp.setProject(item.id);
-      }catch(e){feedback.textContent=e.message;}finally{registering=false;apply.disabled=false;back.disabled=false;confirmationHeader.close.disabled=false;}};
-      confirm.append(confirmationHeader.header,nameLabel,name,sourceLabel,source,feedback,buttons);dialog.append(confirm);confirm.showModal();name.focus();
+      const item=await connectProject(api,dialog,()=>dialog.open && openedRevision===revision);
+      if(!item || !dialog.open || openedRevision!==revision){status.textContent='';return;}
+      let option=[...project.options].find(o=>o.value===item.id);if(!option){option=el('option',item.name);option.value=item.id;option.dataset.root=item.root;project.append(option);}
+      project.value=item.id;next.disabled=false;status.textContent='';void lsp.setProject(item.id);
     }catch(e){status.textContent=e.message;}finally{connect.disabled=false;}
   };
-  const selectedFiles=new Map();
   const picker = entryPicker({
-    entryFiles: async id => {const files=await api.projectFiles(id);selectedFiles.clear();for(const file of files)selectedFiles.set(file.id,file.name);return files;},
+    entryFiles: id => api.projectFiles(id),
     entrySource: (id, file) => api.projectSource(id, file),
-    checkEntry: async (id, file, line, signal) => {
-      const language=selectedFiles.get(file)?.endsWith('.java')?'java':'rust';
-      let waiting=false;
-      for(let attempt=0;attempt<1200;attempt++) {
-        if(signal?.aborted)throw new DOMException("已取消", "AbortError");
-        const state=await api.lspStatus(id,language,signal);
-        if(state.state==='failed')throw new Error(state.message || '语言服务器启动失败，请到项目设置重试。');
-        if(state.state!=='starting') {
-          if(waiting && state.state==='stopped')throw new Error('语言服务器已停止，请重新启动后校验。');
-          return api.checkProjectEntry(id,file,line,signal);
-        }
-        waiting=true;await new Promise(resolve=>setTimeout(resolve,500));
-      }
-      throw new Error('语言服务器准备超时，请到项目设置查看状态。');
-    },
+    selectEntryFile: id => api.selectProjectFile(id),
+    checkEntry: (id, file, line, signal) => api.checkProjectEntry(id, file, line, signal),
     createEntry: (id, data) => api.createGraph({projectId:id, title:chosenTitle, candidateId:data.candidateId}),
   }, (_project, _node, result) => onCreated(result), {
     context:()=>`项目：${project.selectedOptions[0]?.textContent||chosenProject} · ${project.selectedOptions[0]?.dataset.root||''}`,
     title:'选择根节点', action:'创建图', listId:'new-graph-files', hideNote:true,
-    intro:'打开文件，选择入口函数所在行。创建后配置采集；采集结果需另行采纳保存。',
+    intro:'选一个源文件，从你想了解的函数开始。',
   });
   cancel.onclick = () => dialog.close();
   next.onclick = () => {

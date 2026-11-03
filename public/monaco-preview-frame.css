@@ -3,7 +3,7 @@
   --preview-accent: #2563d9;
 }
 
-:root[data-theme="aether"] {
+:root[data-theme="aether"],:root[data-theme="dark"] {
   color-scheme: dark;
   --preview-accent: #74a9ff;
 }
@@ -29,11 +29,10 @@ body,
 }
 
 .monaco-source-focus {
-  background: color-mix(in srgb, var(--preview-accent) 12%, transparent);
-  box-shadow: inset 3px 0 var(--preview-accent);
+  background: color-mix(in srgb, var(--preview-accent) 9%, transparent);
 }
 
 .monaco-source-focus-gutter {
-  border-left: 3px solid var(--preview-accent);
-  margin-left: 3px;
+  border-left: 2px solid var(--preview-accent);
+  margin-left: 5px;
 }

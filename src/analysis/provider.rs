@@ -36,7 +36,7 @@ impl Language {
                 )
                 .await?;
             let prepared: Vec<lsp_types::CallHierarchyItem> =
-                serde_json::from_value(response).map_err(|_| "无法重新确认 Java 方法")?;
+                super::decode_hierarchy(response).map_err(|_| "无法重新确认 Java 方法")?;
             if prepared.len() != 1
                 || prepared[0].uri != item.uri
                 || prepared[0].name != item.name
@@ -74,6 +74,12 @@ impl Language {
             Some("rs") => Ok(Self::Rust),
             Some("java") => Ok(Self::Java),
             _ => Err("仅支持 Rust 或 Java 源文件".into()),
+        }
+    }
+    pub fn server_type(self) -> &'static str {
+        match self {
+            Self::Rust => "rust-analyzer",
+            Self::Java => "Eclipse JDT LS",
         }
     }
     pub fn id(self) -> &'static str {
@@ -123,6 +129,7 @@ impl Language {
     ) -> Result<lsp::Session, String> {
         let config = super::config::Local::load()?;
         let policy = config.collection;
+        let external_root = crate::project_catalog::tool_path(root);
         let (command, args, settings) = match self {
             Self::Rust => {
                 let (s, a) = server.unwrap_or((Path::new("rust-analyzer"), &[]));
@@ -141,7 +148,7 @@ impl Language {
                     .iter()
                     .map(|a| {
                         a.replace("{workspace}", &workspace.to_string_lossy())
-                            .replace("{root}", &root.to_string_lossy())
+                            .replace("{root}", &external_root.to_string_lossy())
                     })
                     .collect();
                 (java.command, args, java.settings)
@@ -156,7 +163,7 @@ impl Language {
         root: &Path,
         name: &str,
     ) -> Result<(), String> {
-        let uri = Url::from_directory_path(root)
+        let uri = Url::from_directory_path(crate::project_catalog::tool_path(root))
             .map_err(|_| "项目 URI 无效")?
             .to_string();
         let options = match self {

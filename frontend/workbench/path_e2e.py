@@ -17,11 +17,11 @@ with tempfile.TemporaryDirectory(prefix='path-view-test-') as d:
   valid=page.evaluate('''() => {const g=window.__testGraph; return g.getNodeData().every(n=>new Set(g.getEdgeData().filter(e=>e.target===n.id).map(e=>e.source)).size<=1)}''');assert valid
   page.evaluate('(id)=>window.__testGraph.focusElement(id,false)',ref['id'])
   point=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',ref['id']);box=page.locator('#canvas').bounding_box()
-  page.mouse.click(box['x']+point[0],box['y']+point[1]);expect(page.locator('#source .focus').first).to_be_visible()
+  page.mouse.click(box['x']+point[0],box['y']+point[1]);expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   assert requests[-1]['id']==ref['data']['sourceId'],requests[-1]
   expect(page.locator('#selection-description')).to_contain_text('共享方法')
   click_branch(page,ref['id'],'expand');expect(page.locator('#apply-window')).to_be_enabled()
-  page.locator('#relations > button').filter(has_text=re.compile(r'调用点 [0-9]+')).first.click();expect(page.locator('#source .focus').first).to_be_visible()
+  page.locator('#relations > button').filter(has_text=re.compile(r'调用点 [0-9]+')).first.click();expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   expect(page.locator('#selection-title')).to_contain_text('→')
   expect(page.locator('#relations')).to_contain_text('顺序')
   assert requests[-1]['targetType']=='edge' and not requests[-1]['id'].startswith('["view-edge"'),requests[-1]

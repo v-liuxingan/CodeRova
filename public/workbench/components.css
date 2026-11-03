@@ -1,0 +1,124 @@
+/* Shared field and overlay tokens; all third-party controls inherit app themes. */
+:root { --field-radius:9px; --field-height:38px; --field-focus:color-mix(in srgb,var(--accent-text) 18%,transparent); }
+:where(input:not([type=radio]):not([type=checkbox]), textarea) {
+  box-sizing:border-box; border:1px solid var(--line); border-radius:var(--field-radius);
+  background:var(--input); color:var(--text); font:inherit; font-size:13px;
+  padding:10px 12px; caret-color:var(--accent-text);
+  transition:border-color 120ms,box-shadow 120ms;
+}
+input:not([type=radio]):not([type=checkbox]):hover:not(:disabled),textarea:hover:not(:disabled) { border-color:var(--muted); }
+input:not([type=radio]):not([type=checkbox]):focus,textarea:focus {
+  outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--field-focus);
+}
+input:disabled,textarea:disabled { cursor:not-allowed; opacity:.55; }
+input:user-invalid,textarea:user-invalid { border-color:var(--error); }
+input::placeholder,textarea::placeholder { color:var(--muted); opacity:1; }
+.home-composer > input,.home-composer > input:focus { border:0; box-shadow:none; background:transparent; }
+.home-composer:focus-within { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--field-focus); }
+button:focus-visible,summary:focus-visible,a:focus-visible { outline:2px solid var(--accent-text); outline-offset:3px; }
+dialog { color:var(--text); }
+.tree-dialog,.unsaved-dialog { border-radius:18px; border-color:var(--line); padding:24px; box-shadow:var(--overlay-shadow); }
+.tree-dialog h2,.unsaved-dialog h2 { margin:0 0 20px; font-size:22px; color:var(--strong); }
+dialog::backdrop { background:rgb(15 23 42 / 30%); }
+.tree-dialog .dialog-actions,.unsaved-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:24px; }
+.tree-dialog label { display:block; margin:16px 0 6px; font-size:13px; }
+
+/* Tom Select replaces the native popup, including search and keyboard navigation. */
+.ts-wrapper { min-width:0; width:100%; font-size:13px; color:var(--text); margin:0; }
+.ts-wrapper .ts-control { display:flex; align-items:center; min-height:var(--field-height); padding:8px 32px 8px 12px !important;
+  border:1px solid var(--line); border-radius:var(--field-radius); box-shadow:none;
+  background:var(--input) !important; color:var(--text); font:inherit; cursor:pointer; }
+.ts-wrapper.single .ts-control::after { content:''; position:absolute; right:13px; top:calc(50% - 4px); width:6px; height:6px; border:solid var(--muted); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
+.ts-wrapper.dropdown-active .ts-control::after { transform:rotate(225deg); top:calc(50% - 1px); }
+.ts-wrapper.single .ts-control::after,.ts-wrapper.single.dropdown-active .ts-control::after { border-width:0 1.5px 1.5px 0; border-color:var(--muted); margin:0; }
+.ts-wrapper:not(.disabled) .ts-control:hover { border-color:var(--muted); }
+.ts-wrapper.single .ts-control { border-color:var(--line); box-shadow:none; }
+.ts-wrapper.single.focus .ts-control { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--field-focus); }
+.ts-wrapper.invalid .ts-control { border-color:var(--error); }
+.ts-wrapper.disabled { opacity:.55; cursor:not-allowed; }
+.ts-control > .item { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+.ts-wrapper .ts-control > input,.ts-wrapper .ts-control > input:focus { height:auto; min-height:0; min-width:0; width:auto; padding:0 !important; margin:0 !important; border:0 !important; border-radius:0; box-shadow:none !important; outline:none; color:var(--text); background:transparent; font:inherit; }
+.ts-wrapper .ts-dropdown { z-index:110; margin:6px 0 0; padding:5px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); box-shadow:var(--overlay-shadow); font:inherit; }
+.ts-dropdown .ts-dropdown-content { max-height:min(280px,40dvh); scrollbar-width:thin; overscroll-behavior:contain; }
+.ts-dropdown .option,.ts-dropdown .no-results { padding:9px 10px; line-height:1.5; border-radius:6px; overflow-wrap:anywhere; }
+.ts-dropdown .active { background:var(--hover); color:var(--strong); }
+.ts-dropdown .selected { background:var(--active); color:var(--accent-text); }
+.ts-dropdown .highlight { background:var(--active-line); border-radius:2px; }
+.ts-dropdown [data-disabled] { opacity:.5; }
+.ts-wrapper[hidden] { display:none; }
+.ts-hidden-accessible { width:1px !important; height:1px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; }
+.header-actions .ts-wrapper { width:92px; }
+.node-search .ts-wrapper { flex:2 1 150px; }
+.graph-controls .ts-wrapper { width:auto; min-width:90px; }
+.editor-settings-body .ts-wrapper { flex:1; }
+.settings-value .ts-wrapper { width:110px; }
+.project-lsp .ts-wrapper { width:120px; }
+.project-select-row .ts-wrapper { width:100%; }
+.project-select-row .ts-control { min-height:52px; border-radius:12px; }
+.manual-link .ts-wrapper { margin:10px 0; }
+dialog .ts-wrapper { text-align:left; }
+
+/* CodeMirror: a bounded editing surface instead of a browser textarea. */
+.description-dialog { width:min(680px,calc(100vw - 32px)); max-height:calc(100dvh - 40px); box-sizing:border-box; overflow:auto; }
+.editor-label { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:10px; font-size:13px; font-weight:600; }
+.editor-label > span { color:var(--muted); font-size:12px; font-weight:400; font-variant-numeric:tabular-nums; }
+.description-editor { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--input); }
+.description-editor:focus-within { border-color:var(--accent-text); box-shadow:0 0 0 3px var(--field-focus); }
+.description-editor .cm-editor { background:transparent; color:var(--text); font-size:14px; }
+.description-editor .cm-focused { outline:none; }
+.description-editor .cm-scroller { min-height:180px; max-height:32dvh; overflow:auto; font-family:inherit; line-height:1.7; scrollbar-width:thin; }
+.description-editor .cm-content { padding:14px 0; caret-color:var(--accent-text); }
+.description-editor .cm-content:focus { outline:none; }
+.description-editor .cm-line { padding-inline:16px; }
+.description-editor .cm-cursor { border-left-color:var(--accent-text); }
+.description-editor .cm-selectionBackground,.description-editor .cm-focused .cm-selectionBackground { background:var(--active-line) !important; }
+.description-editor .cm-placeholder { color:var(--muted); }
+.description-editor .cm-gutters { background:var(--panel); color:var(--muted); border-right:1px solid var(--line); }
+.description-dialog > details { margin-top:20px; font-size:12px; }
+.description-dialog > details > summary { color:var(--muted); cursor:pointer; padding:6px 0; }
+.description-dialog .json-editor { margin-top:10px; }
+.json-editor .cm-scroller { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+.description-dialog .unsaved-actions { align-items:center; }
+.description-dialog .unsaved-actions small { margin-right:auto; color:var(--muted); font-size:11px; }
+.description-dialog [role=alert]:empty { display:none; }
+@media(max-width:600px) {
+  .description-dialog { padding:20px; }
+  .description-dialog .unsaved-actions { flex-wrap:wrap; }
+  .description-dialog .unsaved-actions small { flex-basis:100%; }
+  .description-editor .cm-scroller { min-height:140px; }
+}
+@media(prefers-reduced-motion:reduce) { input,textarea { transition:none; } }
+/* Both source surfaces share the same read-only Monaco frame and compact chrome. */
+#source,.entry-picker-editor { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:12px; background:var(--input); overflow:hidden; padding:0; }
+/* The inspector owns available height; code length must not shrink the viewport. */
+.inspector { display:flex; flex-direction:column; min-height:0; }
+.inspector > :not(#source) { flex-shrink:0; }
+.inspector > #open-source { align-self:flex-start; }
+#source { flex:1 0 280px; height:auto; min-height:280px; margin-top:8px; }
+@media(max-width:1100px) { .inspector { min-height:calc(100dvh - 62px); } #source { flex-basis:55dvh; } }
+#source:not(:has(iframe)) { padding:18px; font-size:12px; color:var(--muted); line-height:1.7; }
+.code-preview-bar { display:flex; align-items:center; gap:10px; min-height:44px; flex:0 0 auto; padding:6px 10px 6px 14px; border-bottom:1px solid var(--line); background:var(--panel); }
+.code-preview-bar strong { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; color:var(--strong); }
+.code-preview-meta { color:var(--muted); font-size:10px; white-space:nowrap; }
+.code-preview-actions { display:flex; gap:2px; flex-shrink:0; }
+.code-preview-actions button { display:grid; place-items:center; width:30px; height:30px; min-height:0; padding:6px; border:0; border-radius:6px; background:transparent; color:var(--muted); }
+.code-preview-actions svg { width:17px; height:17px; }
+.code-preview-actions button:hover { background:var(--hover); color:var(--strong); }
+.code-preview-actions button[aria-pressed=true] { background:var(--active); color:var(--accent-text); }
+#source .code-preview-meta { display:none; }
+#source .entry-editor-frame,.entry-picker-editor .entry-editor-frame { flex:1; min-height:0; width:100%; height:0; background:var(--input); }
+.entry-picker-editor:focus-within,#source:focus-within { border-color:var(--accent-text); box-shadow:0 0 0 3px var(--field-focus); }
+@media(max-width:600px) { .code-preview-meta { display:none; } }
+
+.source-load-more { flex-shrink:0; min-height:28px; padding:4px 12px; border:0; border-radius:0; background:var(--panel); color:var(--accent-text); font-size:11px; }
+.source-load-more:hover:not(:disabled) { background:var(--hover); }
+.source-load-more[hidden] { display:none; }
+.source-load-error { margin:0; padding:6px 12px; color:var(--error); font-size:12px; }
+.source-load-error:empty { display:none; }
+
+/* Search belongs to the popup; opening a select must not resize its row. */
+.ts-wrapper .ts-control { flex-wrap: nowrap; }
+.ts-wrapper .ts-control > .item { min-width: 0; flex: 1; }
+.ts-wrapper.has-items .ts-control > .items-placeholder { display: none !important; }
+.ts-wrapper .dropdown-input-wrap { padding: 4px; }
+.ts-wrapper .dropdown-input { width: 100%; margin: 0; padding: 8px 10px; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; }

@@ -1,5 +1,6 @@
+import {compile} from 'sass';
 import { build } from "esbuild";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildScenes } from "./build_scenes.mjs";
 
@@ -7,7 +8,15 @@ await buildScenes();
 
 const root = resolve(import.meta.dirname, "..");
 const output = resolve(root, "public", "vendor", "monaco");
+await build({entryPoints:[resolve(root,'frontend/components/controls.js')],outfile:resolve(root,'public/vendor/components/controls.js'),bundle:true,format:'esm',minify:true,target:'es2022',legalComments:'linked'});
+for (const [name, file] of [['@floating-ui/dom','LICENSE'],['@floating-ui/core','LICENSE'],['@floating-ui/utils','LICENSE'],['tom-select','LICENSE'],['@codemirror/view','LICENSE'],['@codemirror/state','LICENSE'],['@codemirror/commands','LICENSE'],['@codemirror/language','LICENSE'],['@codemirror/lang-markdown','LICENSE'],['@codemirror/lang-json','LICENSE'],['@lezer/highlight','LICENSE']]) {
+  await copyFile(resolve(root,'node_modules',name,file),resolve(root,'public/vendor/components',name.replaceAll('/','-').replace('@','')+'-LICENSE.txt'));
+}
 await mkdir(output, { recursive: true });
+const statusCss=compile(resolve(root,'frontend/components/status.scss'),{loadPaths:[resolve(root,'node_modules')],style:'compressed',silenceDeprecations:['import','global-builtin','color-functions','if-function']});
+await writeFile(resolve(root,'public/vendor/components/status.css'),statusCss.css);
+await copyFile(resolve(root,'node_modules/bootstrap/LICENSE'),resolve(root,'public/vendor/components/bootstrap-LICENSE.txt'));
+
 
 await Promise.all([
   build({

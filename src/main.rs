@@ -54,8 +54,8 @@ enum Commands {
         host: IpAddr,
         #[arg(long, default_value = "callgraph.projects.json")]
         config: PathBuf,
-        #[arg(long, default_value = "graphs")]
-        graphs: PathBuf,
+        #[arg(long)]
+        graphs: Option<PathBuf>,
         #[arg(long, default_value = "scenarios")]
         scenarios: PathBuf,
         #[arg(long, default_value = "public")]
@@ -98,7 +98,7 @@ async fn main() -> ExitCode {
         port: 4317,
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
         config: PathBuf::from("callgraph.projects.json"),
-        graphs: PathBuf::from("graphs"),
+        graphs: None,
         scenarios: PathBuf::from("scenarios"),
         public: PathBuf::from("public"),
         layouts: PathBuf::from("layouts"),
@@ -141,7 +141,16 @@ async fn main() -> ExitCode {
             layouts,
         } => {
             let address = SocketAddr::new(host, port);
-            serve(address, public, graphs, scenarios, layouts, config).await
+            let graphs = match graphs {
+                Some(path) => std::env::current_dir()
+                    .map_err(|e| e.to_string())
+                    .map(|base| base.join(path)),
+                None => Ok(PathBuf::from("graphs")),
+            };
+            match graphs {
+                Ok(graphs) => serve(address, public, graphs, scenarios, layouts, config).await,
+                Err(error) => Err(error),
+            }
         }
         Commands::Validate {
             graph,

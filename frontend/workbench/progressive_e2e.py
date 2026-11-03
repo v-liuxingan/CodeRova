@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 from branch_controls import click_branch
 import subprocess,tempfile,pathlib,os
 BASE=os.environ.get("CALLGRAPH_TEST_URL","http://127.0.0.1:4322")
@@ -16,10 +20,10 @@ with tempfile.TemporaryDirectory(prefix='window-test-') as d:
   page.route('**/?*',relation_page)
   page.goto(BASE+'/?graph=codex-interactive-startup-lsp');expect(page.locator('#fit')).to_be_enabled(timeout=120000)
   expect(page.locator('#window-unit')).to_have_value('layers')
-  page.locator('#display-settings > summary').click();page.select_option('#window-unit','nodes');page.click('#apply-window');expect(page.locator('#stats')).to_contain_text('50 / 4144')
+  page.locator('#display-settings > summary').click();select_option(page,'#window-unit','nodes');page.click('#apply-window');expect(page.locator('#stats')).to_contain_text('50 / 4144')
   assert page.evaluate('window.__testGraph.getNodeData().length')==50
   assert page.locator('#coverage-issues li').count()==0
-  rootid=page.evaluate('window.__testGraph.getNodeData().find(n=>n.data.more).id');page.select_option('#symbols',rootid)
+  rootid=page.evaluate('window.__testGraph.getNodeData().find(n=>n.data.more).id');select_option(page,'#symbols',rootid)
   before=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',rootid)
   click_branch(page,rootid,'expand');expect(page.locator('#apply-window')).to_be_enabled()
   assert 50 < page.evaluate('window.__testGraph.getNodeData().length') <= 100
@@ -29,10 +33,10 @@ with tempfile.TemporaryDirectory(prefix='window-test-') as d:
   rootid=page.evaluate('window.__testGraph.getNodeData()[0].id')
   xs=page.evaluate('(id)=>{const g=window.__testGraph;return g.getEdgeData().filter(e=>e.source===id&&e.target!==id).map(e=>g.getElementPosition(e.target)[0])}',rootid)
   assert len(set(xs))==1,xs
-  last=page.locator('#symbols option').last.get_attribute('value');page.select_option('#symbols',last);expect(page.locator('#canvas')).to_have_attribute('data-selection',last)
+  last=page.locator('#symbols option').last.get_attribute('value');select_option(page,'#symbols',last);expect(page.locator('#canvas')).to_have_attribute('data-selection',last)
   assert page.evaluate('(id)=>window.__testGraph.getNodeData().some(n=>n.id===id)',last)
   page.fill('#window-size','1');page.click('#apply-window');expect(page.locator('#stats')).to_contain_text('1 / 4144');expect(page.locator('#canvas')).to_have_attribute('data-selection','')
-  page.select_option('#window-unit','layers');page.fill('#window-size','1');page.click('#apply-window');expect(page.locator('#apply-window')).to_be_enabled()
+  select_option(page,'#window-unit','layers');page.fill('#window-size','1');page.click('#apply-window');expect(page.locator('#apply-window')).to_be_enabled()
   assert page.evaluate('window.__testGraph.getNodeData().length')>1
   page.locator('#coverage-title').click();expect(page.locator('#coverage-issues li')).to_have_count(100)
   template=page.request.get(BASE+'/api/graphs/callgraph-v2-validation').json()
@@ -42,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='window-test-') as d:
   page.goto(BASE+'/?graph=callgraph-v2-validation');expect(page.locator('#fit')).to_be_enabled()
   expect(page.locator('#window-unit')).to_have_value('layers');expect(page.locator('#window-size')).to_have_value('50')
   assert page.evaluate('window.__testGraph.getNodeData().length')==51
-  page.select_option('#symbols','chain-50');click_branch(page,'chain-50','expand')
+  select_option(page,'#symbols','chain-50');click_branch(page,'chain-50','expand')
   expect(page.locator('#stats')).to_contain_text('101 / 125')
   assert not errors,errors
   print('Progressive browser: 50-node initial, +50, viewport anchor, sibling columns, hidden search, reset, depth mode, lazy issues PASS')

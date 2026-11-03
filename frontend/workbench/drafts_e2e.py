@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 """Draft isolation, save conflicts and browser leave/hide semantics on an isolated server."""
 import json,pathlib,socket,subprocess,tempfile,time,os
 from playwright.sync_api import sync_playwright,expect
@@ -55,21 +59,23 @@ with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
     opened.append(route.request.post_data_json)
     route.fulfill(status=200,content_type='application/json',body=json.dumps({'uri':'#source-test','path':'main.rs','line':1,'column':1}))
    page.route('**/api/open',source_link)
-   page.select_option('#symbols','root')
+   select_option(page,'#symbols','root')
    expect(page.locator('#open-source')).to_be_visible()
    assert not opened
    page.locator('#open-source').click()
    expect(page.locator('#status')).to_contain_text('已请求')
    assert opened[-1]=={'graph':'fixture','targetType':'node','id':'root'}
+   if not page.locator('.editor-settings').evaluate('(el)=>el.open'):page.locator('.editor-settings > summary').click()
    page.locator('#click-source').click()
    page.evaluate("window.__testGraph.emit('node:click',{target:{id:window.__testGraph.getNodeData().find(n=>(n.data.sourceId||n.id)==='a').id}})")
    expect(page.locator('#selection-title')).to_have_text('a')
    page.wait_for_function("location.hash==='#source-test'")
    expect(page.locator('#open-source')).to_be_enabled()
    assert opened[-1]['id']=='a'
+   if not page.locator('.editor-settings').evaluate('(el)=>el.open'):page.locator('.editor-settings > summary').click()
    page.locator('#click-source').click()
    def choose():
-    page.select_option('#symbols','a');page.locator('.node-edit-tools > summary').click()
+    select_option(page,'#symbols','a');page.locator('.node-edit-tools > summary').click()
    def edge_menu():
     edge=page.evaluate("()=>{const g=window.__testGraph,n=g.getNodeData().find(n=>(n.data.sourceId||n.id)==='a');return g.getEdgeData().find(e=>e.target===n.id).id}")
     page.evaluate('(id)=>window.__testGraph.focusElement(id,false)',edge)
@@ -82,6 +88,25 @@ with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
     edge_menu()
     with page.expect_event('dialog') as dialog:page.get_by_role('menuitem',name='删除',exact=True).click()
     dialog.value.accept();expect(page.locator('#save-edits')).to_be_enabled()
+   # Context-menu descriptions edit the clicked node or edge, never the edge target by mistake.
+   for kind in ['node','edge']:
+    page.evaluate("kind=>{const g=window.__testGraph;const id=kind==='node'?g.getNodeData().find(n=>(n.data.sourceId||n.id)==='a').id:g.getEdgeData()[0].id;g.emit(kind+':contextmenu',{target:{id},targetType:kind,preventDefault(){},client:{x:450,y:300}})}",kind)
+    page.get_by_role('menuitem',name='编辑说明',exact=True).click()
+    editor=page.get_by_role('dialog',name='编辑说明',exact=True)
+    text=('说明 '+kind+'\n')*80
+    editor.get_by_label('说明',exact=True).fill(text)
+    editor.get_by_role('button',name='应用到草稿',exact=True).click()
+    expect(editor).not_to_be_visible()
+    expect(page.locator('#selection-description')).to_contain_text('说明 '+kind)
+    assert page.locator('#selection-notes').evaluate('(el)=>el.open')
+    assert page.locator('#selection-description').evaluate('(el)=>el.clientHeight<=220 && el.scrollHeight>el.clientHeight')
+    page.screenshot(path=str(ROOT/'target'/('description-'+kind+'.png')))
+    assert output.read_bytes()==original
+   page.evaluate('window.beforeDiscardGraph=window.__testGraph')
+   page.once('dialog',lambda dialog:dialog.accept())
+   page.locator('#discard-edits').click()
+   page.wait_for_function('() => window.__testGraph !== window.beforeDiscardGraph && !document.querySelector("#fit").disabled')
+   expect(page.locator('#save-edits')).to_be_disabled()
    choose()
    page.screenshot(path=str(ROOT/'target/inspector-selected.png'))
    page.evaluate("async()=>{await window.__testGraph.zoomTo(1.2,false);await window.__testGraph.translateBy([37,29],false)}")
@@ -111,7 +136,7 @@ with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
    prune();page.locator('.tree-open[data-slug="other"]').click();page.get_by_role('button',name='保存并离开',exact=True).click()
    expect(page.locator('#title')).to_have_text('other graph');assert len(json.loads(output.read_text(encoding='utf-8'))['nodes'])==1
    page.locator('.tree-open[data-slug="fixture"]').click();expect(page.locator('#title')).to_have_text('draft test')
-   expect(page.locator('#save-edits')).to_be_disabled();page.select_option('#appearance','dark')
+   expect(page.locator('#save-edits')).to_be_disabled();select_option(page,'#appearance','dark')
    page.screenshot(path=str(ROOT/'target/draft-saved-dark.png'))
    # Removing a wide branch must reclaim its space, not just hide its shapes.
    ids=['root','a','b']+[f'{parent}{i}' for parent in ['a','b'] for i in range(4)]

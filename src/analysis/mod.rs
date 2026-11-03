@@ -16,7 +16,7 @@ use crate::{
 };
 use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCall};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     fs,
@@ -97,6 +97,32 @@ pub(crate) fn stable_id(key: &str) -> String {
         (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
     });
     format!("lsp-{hash:016x}")
+}
+
+// JDT may return IRIs with literal Unicode. lsp_types::Uri requires ASCII URIs.
+// Normalize only protocol URI fields; opaque server data must round-trip unchanged.
+pub(crate) fn decode_hierarchy<T: serde::de::DeserializeOwned>(
+    mut value: Value,
+) -> Result<T, serde_json::Error> {
+    fn uri(item: &mut Value) {
+        if let Some(raw) = item.get("uri").and_then(Value::as_str)
+            && let Ok(parsed) = Url::parse(raw)
+        {
+            item["uri"] = Value::String(parsed.to_string());
+        }
+    }
+    if let Some(items) = value.as_array_mut() {
+        for item in items {
+            uri(item);
+            if let Some(to) = item.get_mut("to") {
+                uri(to);
+            }
+            if let Some(from) = item.get_mut("from") {
+                uri(from);
+            }
+        }
+    }
+    serde_json::from_value(value)
 }
 
 fn relative_file(root: &Path, uri: &str) -> Result<String, String> {
@@ -186,7 +212,7 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
     if options.column as usize > source_line.encode_utf16().count() + 1 {
         return Err("入口列超出 UTF-16 行范围".into());
     }
-    let uri = Url::from_file_path(&file)
+    let uri = Url::from_file_path(crate::project_catalog::tool_path(&file))
         .map_err(|_| "无法生成文件 URI")?
         .to_string();
     let language = provider::Language::for_file(&options.file)?;
@@ -202,7 +228,7 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         )
         .await?;
     session.wait_ready(600).await?;
-    let items: Vec<CallHierarchyItem> = serde_json::from_value(session.request("textDocument/prepareCallHierarchy", json!({"textDocument":{"uri":uri},"position":{"line":options.line-1,"character":options.column-1}}), language.query_timeout()).await?).map_err(|_| "入口未解析到调用符号，请检查函数名所在的行列".to_owned())?;
+    let items: Vec<CallHierarchyItem> = decode_hierarchy(session.request("textDocument/prepareCallHierarchy", json!({"textDocument":{"uri":uri},"position":{"line":options.line-1,"character":options.column-1}}), language.query_timeout()).await?).map_err(|_| "入口未解析到调用符号，请检查函数名所在的行列".to_owned())?;
     if items.len() != 1 {
         return Err(format!(
             "入口匹配 {} 个符号，请选择明确的函数名位置",
@@ -259,6 +285,7 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         collector::Options {
             budget: options.request_budget,
             max_depth: Some(options.max_depth),
+            max_nodes: None,
             exclusions,
         },
         |_, _, _| Ok(()),
@@ -298,6 +325,21 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hierarchy_accepts_unicode_iris_without_rewriting_opaque_data() {
+        let raw = json!({"name":"draw(Long)","kind":6,"uri":"file:///D:/抽奖系统/Activity.java",
+            "range":{"start":{"line":1,"character":0},"end":{"line":3,"character":1}},
+            "selectionRange":{"start":{"line":1,"character":8},"end":{"line":1,"character":12}},
+            "data":{"uri":"server-private:抽奖系统","handle":"unchanged"}});
+        assert!(serde_json::from_value::<CallHierarchyItem>(raw.clone()).is_err());
+        let items: Vec<CallHierarchyItem> = decode_hierarchy(json!([raw.clone()])).unwrap();
+        assert_eq!(items[0].data, Some(raw["data"].clone()));
+        assert!(items[0].uri.as_str().contains("%E6%8A%BD"));
+        let calls: Vec<CallHierarchyOutgoingCall> = decode_hierarchy(json!([{
+            "to":raw,"fromRanges":[{"start":{"line":2,"character":0},"end":{"line":2,"character":4}}]
+        }])).unwrap();
+        assert_eq!(calls[0].to.uri, items[0].uri);
+    }
     #[test]
     fn java_queries_anchor_declarations_and_reject_foreign_call_ranges() {
         let item: CallHierarchyItem = serde_json::from_value(json!({

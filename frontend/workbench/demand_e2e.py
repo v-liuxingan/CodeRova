@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 from branch_controls import click_branch
 import subprocess,tempfile,pathlib,os
 from playwright.sync_api import sync_playwright,expect
@@ -16,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   assert page.locator('#symbols option').count()<=101
   offscreen=next(n for n in reversed(graph['nodes']) if not page.evaluate('(id)=>window.__testGraph.getNodeData().some(n=>n.id===id)',n['id']))
   def choose(id):
-   page.fill('#symbol-filter',id);page.select_option('#symbols',id);expect(page.locator('#canvas')).to_have_attribute('data-selection',id);expect(page.locator('#source .focus').first).to_be_visible()
+   page.fill('#symbol-filter',id);select_option(page,'#symbols',id);expect(page.locator('#canvas')).to_have_attribute('data-selection',id);expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   choose(root)
   point=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',root);box=page.locator('#canvas').bounding_box()
   x,y=box['x']+point[0],box['y']+point[1];page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+100,y+40,steps=10);page.mouse.up()
@@ -42,8 +46,8 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   click_branch(page,root,'expand')
   expect(page.locator('#canvas')).to_have_attribute('data-displayed-nodes',str(logical))
   assert page.evaluate('(id)=>({height:window.__testGraph.getNodeData(id).data.height,zoom:window.__testGraph.getZoom()})',root)==card_size
-  expect(page.locator('#source .focus').first).to_be_visible()
-  page.select_option('#appearance','dark');expect(page.locator('#appearance')).to_be_enabled()
+  expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
+  select_option(page,'#appearance','dark');expect(page.locator('#appearance')).to_be_enabled()
   page.screenshot(path='target/test-artifacts/node-actions-dark.png')
   # Dragging from an action must neither move the card nor invoke the action.
   point=page.evaluate('(id)=>{const g=window.__testGraph,n=g.getNodeData(id),p=g.getElementPosition(id);return g.getViewportByCanvas([p[0],p[1]+n.data.height/2+14]);}',root)

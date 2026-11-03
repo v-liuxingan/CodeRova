@@ -1,5 +1,5 @@
 // A single DOM menu keeps native keyboard interaction out of the canvas shapes.
-export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide) {
+export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescribe) {
   const menu = document.createElement('div');
   menu.id = 'edge-context-menu'; menu.className = 'edge-context-menu';
   menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', '分支操作'); menu.hidden = true;
@@ -18,6 +18,8 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide) {
   add.addEventListener('click',()=>{const id=target;close();if(id)void onAdd(id);});
   const prune=document.createElement('button');prune.setAttribute('role','menuitem');prune.textContent='删除';prune.addEventListener('click',()=>{const id=target;close();if(id)void onPrune(id);});
   const hide=document.createElement('button');hide.setAttribute('role','menuitem');hide.textContent='隐藏';hide.addEventListener('click',()=>{const id=target;close();if(id)void onHide(id);});
+  const describe=document.createElement('button');describe.setAttribute('role','menuitem');describe.textContent='编辑说明';
+  describe.addEventListener('click',()=>{const item=editTarget;close();if(item)onDescribe(item.type,item.id);});
   const divider = () => { const el=document.createElement('div');el.className='edge-menu-divider';el.setAttribute('role','separator');return el; };
   const editingDivider=divider();
   const icon = (control, path) => {
@@ -30,11 +32,12 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide) {
   icon(collect,'M7 4v12l9-6Z');
   icon(add,'M10 4v12M4 10h12');
   icon(hide,'m3 3 14 14M8 4.5c4-1 7 2 9 5.5-.8 1.4-1.7 2.5-2.8 3.3M5.5 5.5C3.7 6.7 2.5 8.2 2 10c2.7 4 6 6 10 4.7');
+  icon(describe,'m4 13-1 4 4-1L17 6l-3-3Z M12 5l3 3');
   icon(prune,'M4 6h12M8 6V3h4v3M6 6l1 11h6l1-11M9 9v5m2-5v5');
   prune.className='edge-menu-danger';
-  menu.append(header, button, collect, add, editingDivider, hide, prune, hint); document.body.append(menu);
-  let target;
-  const close = () => { menu.hidden = true; target = null; };
+  menu.append(header, button, collect, add, editingDivider, describe, hide, prune, hint); document.body.append(menu);
+  let target, editTarget;
+  const close = () => { menu.hidden = true; target = null; editTarget = null; };
   button.addEventListener('click', () => { const id = target; close(); if (id) void onCollapse(id); });
   document.addEventListener('pointerdown', event => { if (!menu.contains(event.target)) close(); }, true);
   document.addEventListener('keydown', event => {
@@ -52,9 +55,10 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide) {
   });
   window.addEventListener('resize', close);
   window.addEventListener('scroll', close, true);
-  return { close, open({ id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y }) {
+  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y }) {
     hide.hidden=false;hide.disabled=!canPrune;prune.hidden=false;prune.disabled=!canPrune;
     collect.hidden=!isNode;add.hidden=!isNode;collect.disabled=!canCollect;add.disabled=!canAdd;
+    editTarget = descriptionTarget; describe.hidden = !editTarget;
     target = id; heading.textContent=isNode?'节点操作':'连线操作';
     title.textContent = label; title.title = label;
     location.textContent=file?`${file.split(/[\\/]/).pop()}${line?`:${line}`:''}`:'';
@@ -65,10 +69,10 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide) {
     prune.title=canPrune?'移除节点及独占下游，保存修改后写入文件':'入口节点不能删除';
     button.disabled = !enabled;
     button.title=enabled?'保留此节点，收起其下游':'没有可独立收起的下游';
-    hint.textContent=isNode?'隐藏仅本次有效；删除需保存后生效。':'操作箭头指向的节点；隐藏临时生效，删除需保存。';
+    hint.textContent=isNode?'隐藏仅本次有效；删除需保存后生效。':'说明针对连线；其他操作针对箭头指向的节点。';
     menu.hidden = false;
     menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
-    [button, collect, add, hide, prune].find(item => !item.hidden && !item.disabled)?.focus({ preventScroll: true });
+    [button, collect, add, describe, hide, prune].find(item => !item.hidden && !item.disabled)?.focus({ preventScroll: true });
   } };
 }

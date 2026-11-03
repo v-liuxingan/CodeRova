@@ -20,8 +20,15 @@ async function request(path, options) {
   return normalizeGraphResponse(body);
 }
 export class CodeRovaApi {
+  library() { return request('/api/library'); }
+  changeLibrary(change) { return request('/api/library',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(change)}); }
+  storage() { return request('/api/storage'); }
+  configureStorage(selectionId) { return request('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selectionId})}); }
+  renameGraph(slug,title) { return request(`/api/graphs/${encodeURIComponent(slug)}/title`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}); }
   describeGraph(slug, edits) { return this.draftOperation(slug, {action:'describe', edits}); }
   selectProjectDirectory() { return request('/api/projects/select-directory', {method:'POST'}); }
+  selectProjectFile(project) { return request(`/api/projects/${encodeURIComponent(project)}/select-file`, {method:'POST'}); }
+  selectEntryFile(slug) { return request(`/api/graphs/${encodeURIComponent(slug)}/select-file`, {method:'POST'}); }
   registerProject(selectionId, name) { return request('/api/projects', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selectionId,name})}); }
   lspStatus(project, language, signal) { return request(`/api/projects/${encodeURIComponent(project)}/lsp/${encodeURIComponent(language)}`, {signal}); }
   controlLsp(project, language, action) { return request(`/api/projects/${encodeURIComponent(project)}/lsp/${encodeURIComponent(language)}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})}); }
@@ -101,14 +108,14 @@ export class CodeRovaApi {
   }
 
   // Status includes addedNodes/addedEdges for this task, updated after each checkpoint.
-  async analysisTask(slug, method = 'GET', requestBudget, nodeId) {
+  async analysisTask(slug, method = 'GET', requestBudget, nodeId, limits = {}) {
     if(this.useDrafts) {
       if(method==='GET'&&!this.drafts.has(slug))return {status:'idle',completed:0,pending:0,message:''};
-      const operation=method==='POST'?{action:'analyze',request:{requestBudget,nodeId}}:{action:method==='DELETE'?'stopAnalysis':'analysisStatus'};
+      const operation=method==='POST'?{action:'analyze',request:{requestBudget,nodeId,...limits}}:{action:method==='DELETE'?'stopAnalysis':'analysisStatus'};
       return this.draftOperation(slug,operation).then(r=>r.result);
     }
     return request(`/api/graphs/${encodeURIComponent(slug)}/analysis`, {
-      method, ...(method === 'POST' ? { headers: {'Content-Type':'application/json'}, body: JSON.stringify({requestBudget, ...(nodeId ? {nodeId} : {})}) } : {}),
+      method, ...(method === 'POST' ? { headers: {'Content-Type':'application/json'}, body: JSON.stringify({requestBudget, ...limits, ...(nodeId ? {nodeId} : {})}) } : {}),
     });
   }
 
@@ -122,7 +129,7 @@ export class CodeRovaApi {
   }
   entryFiles(slug) { return request(`/api/graphs/${encodeURIComponent(slug)}/source-files`); }
   entrySource(slug, id) { return request(`/api/graphs/${encodeURIComponent(slug)}/source-files/${encodeURIComponent(id)}`); }
-  checkEntry(slug, fileId, line) { return request(`/api/graphs/${encodeURIComponent(slug)}/entry-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
+  checkEntry(slug, fileId, line, signal) { return request(`/api/graphs/${encodeURIComponent(slug)}/entry-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
   createEntry(slug, data) { if(this.useDrafts)return this.draftOperation(slug,{action:"entry",request:data}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/entries`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   pruneNode(slug, nodeId, revision) { if(this.useDrafts)return this.draftOperation(slug,{action:"prune",request:{nodeId,apply:Boolean(revision),...(revision?{revision}:{})}}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/prune`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nodeId,apply:Boolean(revision),...(revision?{revision}:{})})}); }
   loadGraph(slug) {

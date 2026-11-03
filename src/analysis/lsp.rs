@@ -93,7 +93,7 @@ impl Session {
     ) -> Result<Self, String> {
         let mut child = Command::new(server)
             .args(args)
-            .current_dir(root)
+            .current_dir(crate::project_catalog::tool_path(root))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

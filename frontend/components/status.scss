@@ -1,0 +1,18 @@
+// Compile only upstream Bootstrap components, scoped to the shared status adapter.
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+@import "bootstrap/scss/variables-dark";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
+$badge-font-size: 11px;
+$badge-font-weight: 600;
+$badge-border-radius: 50rem;
+.ui-status {
+  @each $name, $rgb in $theme-colors-rgb { --bs-#{$name}-rgb: #{$rgb}; }
+  @import "bootstrap/scss/badge";
+  @import "bootstrap/scss/spinners";
+  @import "bootstrap/scss/helpers/color-bg";
+  .badge { display:inline-flex; align-items:center; gap:6px; }
+  .spinner-border-sm { --bs-spinner-width:10px; --bs-spinner-height:10px; --bs-spinner-border-width:1.5px; }
+}
+@media(prefers-reduced-motion:reduce) { .ui-status .spinner-border { animation:none; } }

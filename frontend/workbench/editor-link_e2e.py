@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 """Exercise validated source links without launching external editor processes."""
 import os, pathlib, subprocess, tempfile
 from playwright.sync_api import sync_playwright, expect
@@ -15,17 +19,19 @@ with tempfile.TemporaryDirectory(prefix='editor-links-') as tmp:
         graph = page.request.get(BASE+'/api/graphs/callgraph-v2-validation').json()
         page.goto(BASE+'/?graph=callgraph-v2-validation')
         expect(page.locator('#fit')).to_be_enabled()
-        page.select_option('#source-editor','idea')
+        page.locator('.editor-settings > summary').click()
+        select_option(page,'#source-editor','idea')
         page.reload()
         expect(page.locator('#source-editor')).to_have_value('idea')
         expect(page.locator('#fit')).to_be_enabled()
-        page.select_option('#symbols',graph['root'])
+        select_option(page,'#symbols',graph['root'])
         expect(page.locator('#open-source')).to_be_visible()
         page.locator('#open-source').click()
         page.wait_for_function("() => window.testEditorUri?.startsWith('idea://open?')")
         assert page.evaluate("() => Number(new URL(window.testEditorUri).searchParams.get('line'))") > 0
         assert page.evaluate("() => new URL(window.testEditorUri).searchParams.get('file').includes('/')")
-        page.select_option('#source-editor','vscode')
+        page.locator('.editor-settings > summary').click()
+        select_option(page,'#source-editor','vscode')
         page.locator('#open-source').click()
         page.wait_for_function("() => window.testEditorUri?.startsWith('vscode://file/')")
         assert not errors, errors

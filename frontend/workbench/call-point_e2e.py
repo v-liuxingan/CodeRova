@@ -26,11 +26,11 @@ with tempfile.TemporaryDirectory(prefix='edge-menu-') as d:
   page.locator('#relations > button').filter(has_text='调用点 30').click()
   expect(page.locator('#canvas')).to_have_attribute('data-displayed-nodes','2')
   expect(page.locator('#selection-title')).to_have_text('a → b')
-  expect(page.locator('#source .focus')).to_be_visible()
+  expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   assert requests[-1]['id']=='call2'
   root();page.locator('#relations > button').filter(has_text='调用点 10').click()
   expect(page.locator('#canvas')).to_have_attribute('data-displayed-nodes','3')
-  expect(page.locator('#source .focus')).to_be_visible()
+  expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   assert requests[-1]['id']=='call0'
   assert page.evaluate("window.__testGraph.getNodeData().filter(n=>n.data.sourceId==='b').length")==2
   assert not errors,errors

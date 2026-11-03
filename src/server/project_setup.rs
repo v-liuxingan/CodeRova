@@ -78,23 +78,94 @@ pub(super) async fn select_directory(
     }
     selections.insert(id.clone(), (root.clone(), Instant::now()));
     Ok(Json(
-        serde_json::json!({"selectionId":id,"name":root.file_name().unwrap_or_default().to_string_lossy(),"root":root}),
+        serde_json::json!({"selectionId":id,"name":root.file_name().unwrap_or_default().to_string_lossy(),"root":crate::project_catalog::tool_path(&root)}),
     ))
 }
-#[cfg(windows)]
 async fn choose_directory() -> Result<Option<PathBuf>, String> {
-    let output=tokio::process::Command::new("powershell.exe").args(["-NoProfile","-STA","-Command",
-        "Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); $picker=New-Object System.Windows.Forms.FolderBrowserDialog; $picker.Description='选择源码项目目录'; $picker.ShowNewFolderButton=$false; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; try{$owner.Show();$owner.Activate();if($picker.ShowDialog($owner) -eq 'OK'){[Console]::Write($picker.SelectedPath)}}finally{$picker.Dispose();$owner.Dispose()}"])
-        .creation_flags(0x08000000).kill_on_drop(true).output().await.map_err(|e|e.to_string())?;
-    if !output.status.success() {
-        return Err("无法打开目录选择器，请检查本机 PowerShell".into());
-    }
-    let value = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    Ok((!value.trim().is_empty()).then(|| PathBuf::from(value.trim())))
+    choose_path(None).await
+}
+pub(super) fn take_directory(state: &AppState, id: &str) -> Result<PathBuf, AppError> {
+    state
+        .project_services
+        .directories
+        .lock()
+        .map_err(failure)?
+        .remove(id)
+        .filter(|(_, time)| time.elapsed() < Duration::from_secs(600))
+        .map(|(path, _)| path)
+        .ok_or_else(|| failure("目录选择已失效，请重新选择"))
+}
+#[cfg(windows)]
+async fn choose_path(root: Option<PathBuf>) -> Result<Option<PathBuf>, String> {
+    tokio::task::spawn_blocking(move || {
+        let picker = rfd::FileDialog::new();
+        match root {
+            Some(root) => picker
+                .set_title("选择项目内源文件")
+                .set_directory(crate::project_catalog::tool_path(&root))
+                .add_filter("Rust / Java 源文件", &["rs", "java"])
+                .pick_file(),
+            None => picker.set_title("选择本地文件夹").pick_folder(),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 #[cfg(not(windows))]
-async fn choose_directory() -> Result<Option<PathBuf>, String> {
-    Err("本机目录选择器目前支持Windows；其他系统请通过项目配置接入".into())
+async fn choose_path(_root: Option<PathBuf>) -> Result<Option<PathBuf>, String> {
+    Err("本机选择器目前支持 Windows；请使用项目文件列表或配置文件".into())
+}
+pub(super) async fn select_graph_file(
+    State(state): State<AppState>,
+    AxumPath(slug): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
+    select_file(State(state), AxumPath(graph.project_id), headers).await
+}
+pub(super) async fn select_file(
+    State(state): State<AppState>,
+    AxumPath(project): AxumPath<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    same_origin(&headers)?;
+    let root = state
+        .project_catalog
+        .resolve_root(&project)
+        .map_err(failure)?;
+    if state
+        .project_services
+        .selecting
+        .swap(true, Ordering::Relaxed)
+    {
+        return Err(failure("文件选择器已打开"));
+    }
+    struct Reset(Arc<Services>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            self.0.selecting.store(false, Ordering::Relaxed);
+        }
+    }
+    let _reset = Reset(state.project_services.clone());
+    let Some(selected) = choose_path(Some(root.clone())).await.map_err(failure)? else {
+        return Ok(Json(serde_json::json!({"cancelled":true})));
+    };
+    let file = selected_file(&root, &selected).map_err(failure)?;
+    Ok(Json(serde_json::json!({"id":file.id,"name":file.name})))
+}
+fn selected_file(
+    root: &std::path::Path,
+    selected: &std::path::Path,
+) -> Result<crate::analysis::entry::SourceFile, String> {
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    // Match the selected path against the enumerated catalog before canonicalizing it:
+    // a symlink to an allowed file is not itself an allowed catalog entry.
+    let selected = crate::project_catalog::tool_path(selected);
+    crate::analysis::entry::files(&root)?
+        .into_iter()
+        .find(|file| crate::project_catalog::tool_path(&root.join(&file.name)) == selected)
+        .ok_or_else(|| "请选择当前项目内的 Rust 或 Java 源文件（不含构建目录或符号链接）".into())
 }
 pub(super) async fn register(
     State(state): State<AppState>,
@@ -142,7 +213,9 @@ pub(super) async fn status(
     if let Some((phase, message)) = &recorded
         && phase == "starting"
     {
-        return Ok(Json(serde_json::json!({"state":phase,"message":message})));
+        return Ok(Json(
+            serde_json::json!({"state":phase,"message":message,"serverType":language.server_type()}),
+        ));
     }
     let phase = state
         .analysis_jobs
@@ -155,10 +228,12 @@ pub(super) async fn status(
         && recorded == "failed"
     {
         return Ok(Json(
-            serde_json::json!({"state":"failed","message":message}),
+            serde_json::json!({"state":"failed","message":message,"serverType":language.server_type()}),
         ));
     }
-    Ok(Json(serde_json::json!({"state":phase,"message":""})))
+    Ok(Json(
+        serde_json::json!({"state":phase,"message":"","serverType":language.server_type()}),
+    ))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -215,7 +290,9 @@ pub(super) async fn control(
             .lock()
             .map_err(failure)?
             .remove(&key);
-        return Ok(Json(serde_json::json!({"state":"stopped","message":""})));
+        return Ok(Json(
+            serde_json::json!({"state":"stopped","message":"","serverType":language.server_type()}),
+        ));
     }
     let phase = state
         .analysis_jobs
@@ -239,7 +316,7 @@ pub(super) async fn control(
         let mut workers = state.project_services.workers.lock().map_err(failure)?;
         if workers.get(&key).is_some_and(|w| w.state == "starting") {
             return Ok(Json(
-                serde_json::json!({"state":"starting","message":"正在启动语言服务器…"}),
+                serde_json::json!({"state":"starting","message":"正在启动语言服务器…","serverType":language.server_type()}),
             ));
         }
         workers.retain(|_, w| w.state == "starting");
@@ -273,7 +350,7 @@ pub(super) async fn control(
                 .ok_or("该项目没有对应语言的源文件")?;
             let path = resolve_source_path(&root, &file.name)?;
             let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            let uri = url::Url::from_file_path(path)
+            let uri = url::Url::from_file_path(crate::project_catalog::tool_path(&path))
                 .map_err(|_| "文件URI无效")?
                 .to_string();
             lease.session.open(&uri, language, &text).await?;
@@ -302,7 +379,7 @@ pub(super) async fn control(
         w.task = Some(task);
     }
     Ok(Json(
-        serde_json::json!({"state":"starting","message":"正在启动语言服务器…"}),
+        serde_json::json!({"state":"starting","message":"正在启动语言服务器…","serverType":language.server_type()}),
     ))
 }
 
@@ -325,6 +402,35 @@ impl Services {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn file_selection_is_project_scoped_and_preserves_unicode() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("抽奖系统");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        let file = root.join("src/入口.java");
+        std::fs::write(&file, "class 入口 {}").unwrap();
+        std::fs::write(root.join("target/Generated.java"), "class Generated {}").unwrap();
+        std::fs::write(dir.path().join("Other.java"), "class Other {}").unwrap();
+        assert_eq!(selected_file(&root, &file).unwrap().name, "src/入口.java");
+        assert!(selected_file(&root, &root.join("target/Generated.java")).is_err());
+        assert!(selected_file(&root, &dir.path().join("Other.java")).is_err());
+        let canonical = file.canonicalize().unwrap();
+        assert_eq!(
+            selected_file(&root, &canonical).unwrap().name,
+            "src/入口.java"
+        );
+        let readable = crate::project_catalog::tool_path(&canonical);
+        assert!(readable.to_string_lossy().contains("抽奖系统"));
+        assert!(!readable.to_string_lossy().starts_with(r"\\?\"));
+        assert!(
+            url::Url::from_file_path(&readable)
+                .unwrap()
+                .to_file_path()
+                .unwrap()
+                .is_file()
+        );
+    }
     #[tokio::test]
     async fn registration_requires_live_server_selected_directory() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,3 +1,81 @@
+## 资料库存储、重命名与图视图服务控制（2026-11-03）
+
+本轮是明确的跨边界集成任务。旧存储把说明混在图文件中，空分组仅在浏览器保存。
+新保存格式保持图事实 JSON，使用 `_annotations` 指向同目录 `.annotations-<slug>/`
+中的不可变说明快照；说明、节点职责/阶段/视图状态和边说明独立存储。先完整写说明，
+再原子发布图引用，崩溃不会发布半份图。API 仍返回合成后的原有图结构；旧文件读取兼容，
+只在用户保存时分离，不批量改写历史图。源码位置、符号、调用关系与证据仍属于事实。
+
+资料库默认仍为 `graphs`，空分组及目录显示名持久化到 `.coderova/library.json`，
+不再依赖浏览器。`coderova.storage.json`（项目配置旁）允许设置 root；相对路径相对该配置。
+显式 --graphs 优先。GET /api/storage 返回当前/下次启动位置；POST 只接受服务器原生
+选择器发出的 selectionId，保存配置后下次启动生效，不移动或删除原资料库。
+GET/POST /api/library 读取/修改目录显示名与分组；POST 使用 action 和稳定标识，拒绝未知字段。
+PUT /api/graphs/{slug}/title 修改图标题（非 slug），继续使用 CAS 避免覆盖草稿。
+目录、分组重命名不修改源码目录、ID或链接。页面/配置文件均可维护资料库目录。
+
+图视图复用现有 LSP 状态与启动/停止接口，不改变采集协议。展示设置按触发按钮和视口定位。
+验收覆盖旧格式读取、保存分离、恢复/移动、重命名跨刷新、配置优先级与非法路径拒绝。
+
+本地配置示例（`coderova.storage.json`）：
+
+```json
+{"root": "D:/CodeRovaLibrary"}
+```
+
+目录结构（移动/备份时复制完整资料库，包括隐藏目录）：
+
+```text
+graphs/
+  .coderova/library.json          # 目录别名和分组，包括空分组
+  <categoryId>/
+    <slug>.json                   # 节点、关系、源码证据和说明快照引用
+    .annotations-<slug>/<ref>.json # 描述、职责、阶段、阅读状态
+```
+
+现有根目录中的图仍受支持。重命名修改显示名，稳定 ID、图文件 slug 和链接不变；
+移动分组才改变物理分类目录。`library.json` 的结构为
+`{"directories":{"projectId":"显示名称"},"groups":[{"project":"projectId","id":"groupId","name":"分组名称"}]}`。
+旧说明快照保留，避免并发读取或发布失败时丢失说明；不自动清理历史文件。
+CLI `analyze --output` 是可携带的完整图导出，仍使用合并 JSON；工作台保存时转换为独立说明。
+页面只配置下次启动位置，不搬迁资料；显式 `--graphs` 优先时页面会提示移除参数后再重启。
+
+## 采集边界与顶部导航（2026-11-03）
+
+analysis / draft analyze 请求新增可选 maxDepth（1–100）与 maxNodes（1–10000）。
+深度相对本轮起点，起点为0；maxNodes限制本轮新增唯一节点，不包含已有节点，两者同时生效。
+requestBudget保留作为兼容及服务端查询保护。串行合并保证并发响应不会突破节点上限；
+截断的调用方仍为pending，允许从部分已采集节点续采，未返回关系不伪装为完整。
+顶部整合节点搜索、按搜索列表顺序的前后导航及当前节点居中；右栏移除调用方/被调用方列表。
+
+## 创建流程二次验收（2026-11-03）
+
+首页默认居中的创建入口，项目资料库改为页签（view=projects）；入口校验和创建为同一位置的
+互斥主按钮。待解析根节点只显示短标题和文件/行号，不伪造方法或类型事实。
+
+修复 JDT 返回含中文的 file IRI 无法反序列化为 lsp_types::Uri 的问题：在调用层级解码边界
+将顶层 uri、to.uri、from.uri 转换为标准 URI，绝不改写 opaque data；项目路径校验不变。
+新增 Windows 可执行文件 manifest，启用 Common Controls v6 及 PerMonitorV2 DPI，文件/目录
+继续由同一个系统 Common Item Dialog 提供，不用页面样式假冒系统文件管理器。
+参考：[Microsoft visual styles](https://learn.microsoft.com/windows/win32/controls/cookbook-overview)。
+
+## 创建流程验收修复（2026-11-03）
+
+本轮为用户明确要求的跨边界集成修复。项目级新建入口校验原先启动 LSP 确认函数；现在仅检查
+服务端文件目录中的 fileId、源码行范围和非空内容，返回待确认的源码位置（node.id
+以 entry-position- 开头），响应增加 verification=source-position。不声称已经解析到函数。
+首次采集时才通过 LSP 确认该位置所属函数，并原子替换节点及图内引用；失败保留位置供重试。
+源码变化检查、候选凭据、保存和项目边界不变。已有图添加节点仍执行 LSP 函数校验。采集仍只使用 LSP。
+
+新增 POST /api/projects/{project}/select-file 与 /api/graphs/{slug}/select-file，空请求体，
+服务端从项目目录设置原生选择器初始路径，返回目录中匹配的 {id,name} 或 {cancelled:true}。
+浏览器不传任意路径；项目外文件、符号链接及排除目录仍拒绝。Windows 目录与文件都使用
+同一现代系统选择器。规范化路径保留用于校验，对外显示和传给外部 LSP 时移除设备路径前缀。
+LSP 状态增加 serverType，标明 rust-analyzer 或 Eclipse JDT LS，启动后仍显示。
+
+验收关注首次创建时的无效点击、当前步骤是否可理解及入口确认延迟；完整北极星理解任务
+仍须真人复述执行流程和源码证据，本轮自动化检查不能代替它。
+
 ## CodeRova 工程命名统一（2026-11-02）
 
 Cargo包、crate、源码二进制统一为coderova；Windows源码产物为coderova.exe，
@@ -530,3 +608,17 @@ CR 修订：无 draftId 时只允许 read，失败的编辑不能隐式占用草
 保存成功清除所属任务状态；任务状态新增可选 draftId。直接 analysis API 保留显式持久采集语义供旧 CLI/AI 客户端使用。
 页面不在 localStorage/sessionStorage 保存采集结果或采纳标记；旧 loaded-result 标记删除。
 采集草稿闲置 30 分钟后可回收，普通编辑草稿保留既有规则。离开页面的 discard beacon 是尽力清理，服务重启会清空内存草稿。
+## 任意源码节点续采与去重统计（2026-11-03）
+
+明确的前后端集成修复：同一 LSP 图中的任意现存源码节点均可作为本轮起点，
+不再要求属于 pendingNodes。每轮从起点按深度展开，历史 queriedNodes 不阻止本轮查询；
+本轮 scheduled 集合保证环路、共享下游只查询一次。项目路径、源码身份、减枝与多实现选择边界不变。
+节点按 LSP 稳定符号 ID 合并；边按调用方、目标、调用点行和 UTF-16 列生成的稳定 ID 合并。
+不同调用点的平行边保留；已有说明、职责、阶段、阅读状态和人工关系不覆盖、不删除。
+重新查询失败的节点重新标为待采，保留已有成功事实；本功能为增量合并，不是删除旧关系的源码全量同步。
+
+analysis 状态 addedNodes/addedEdges 改为相对本轮基线的唯一 ID 集合差，入口位置解析不计新增；
+增加 totalNodes/totalEdges 表示已提交检查点中的图总量。completed 仍表示本轮已返回的符号查询数，
+不是新增数。前端分别显示本轮新增与图总量，画布调用实例数不参与该统计；旧轮询响应不能覆盖新任务。
+验收：已查询根与叶均可再采；重复采集新增为零，重叠下游仅一份；平行调用点、人工说明保留。
+理解目标：读者可从当前关注的函数继续探索，不必先理解采集状态；不以重复画出的节点冒充新的源码知识。

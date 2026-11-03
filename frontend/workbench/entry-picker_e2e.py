@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"tests"))
+from browser_controls import select_option
 """Real rust-analyzer + isolated HTTP server + page checkpoint continuation."""
 import json,os,pathlib,socket,subprocess,tempfile,time
 from playwright.sync_api import sync_playwright,expect
@@ -29,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    assert page.request.get(base+'/api/graphs/fixture/source-files/unknown').status==400
    page.route('**/vendor/workbench/workbench.js',lambda r:r.fulfill(path=str(bundle),content_type='application/javascript'))
    page.goto(base+'/?graph=fixture');expect(page.locator('#fit')).to_be_enabled()
-   page.select_option('#symbols',initial['root'])
+   select_option(page,'#symbols',initial['root'])
    expect(page.get_by_role('button',name='继续采集',exact=True)).to_be_disabled()
    point=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',initial['root'])
    box=page.locator('#canvas').bounding_box();page.mouse.click(box['x']+point[0],box['y']+point[1],button='right')
@@ -71,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    expect(page.locator('#active-collection')).to_be_hidden()
    final=json.loads(output.read_text(encoding='utf-8'));assert target in final['analysis']['queriedNodes']
    assert initial['analysis']['pendingNodes'][0] in final['analysis']['pendingNodes']
-   page.select_option('#appearance','dark');page.screenshot(path=str(ROOT/'target/entry-node-dark.png'))
+   select_option(page,'#appearance','dark');page.screenshot(path=str(ROOT/'target/entry-node-dark.png'))
    browser.close()
   print('Leaf policy + node menu + source picker + invalid line + Monaco search + validated manual node + targeted collection + collapsible panels PASS')
  finally:

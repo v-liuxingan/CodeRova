@@ -2,6 +2,7 @@
 import json, os, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.parse import unquote
 from urllib.error import HTTPError
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -26,7 +27,7 @@ def peer(log):
    if Path(log+'.slowinit').exists():time.sleep(30)
    send({'id':rid,'result':{'capabilities':{'callHierarchyProvider':True}}})
   elif method=='initialized':send({'method':'language/status','params':{'type':'Started'}})
-  elif method=='textDocument/didOpen':uri=req['params']['textDocument']['uri']
+  elif method=='textDocument/didOpen':uri=unquote(req['params']['textDocument']['uri'])
   elif method=='textDocument/documentSymbol':send({'id':rid,'result':[{'name':'entry','kind':6,'range':span,'selectionRange':selection}]})
   elif method=='textDocument/prepareCallHierarchy':send({'id':rid,'result':[{'name':'entry','kind':6,'uri':uri,'range':span,'selectionRange':selection,'data':{'session':os.getpid()}}]})
   elif method=='callHierarchy/outgoingCalls':
@@ -41,7 +42,7 @@ def peer(log):
 def run():
  binary=Path(os.environ['CALLGRAPH_TEST_BINARY']).resolve()
  with tempfile.TemporaryDirectory(prefix='lsp-session-',dir=ROOT/'target') as tmp:
-  root=Path(tmp);source=root/'src';source.mkdir();file=source/'Entry.java';file.write_text('void entry() {}\n',encoding='utf-8')
+  root=Path(tmp);source=root/'抽奖系统';source.mkdir();file=source/'Entry.java';file.write_text('void entry() {}\n',encoding='utf-8')
   graphs=root/'graphs';graphs.mkdir();log=root/'peer.jsonl'
   projects=root/'projects.json';projects.write_text(json.dumps({'schemaVersion':'0.1','projects':[{'id':'fixture','name':'Fixture','root':str(source)},{'id':'other','name':'Other','root':str(root/'other')},{'id':'third','name':'Third','root':str(root/'third')}]}),encoding='utf-8')
   (root/'other').mkdir();(root/'other'/'Entry.java').write_text('void entry() {}\n',encoding='utf-8')
@@ -56,12 +57,21 @@ def run():
    with urlopen(req,timeout=15) as response:return json.load(response)
   def records():return [json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
   def starts():return sum('pid' in r for r in records())
-  def check(project='fixture'):
+  def position(project='fixture'):
    fid=api(f'/api/projects/{project}/source-files')[0]['id'];return api(f'/api/projects/{project}/entry-check',{'fileId':fid,'line':1})
+  def check(project='fixture'):
+   # Existing graph entry validation still exercises the shared LSP cache.
+   pending=position(project)
+   graph=api('/api/graphs',{'projectId':project,'candidateId':pending['candidateId'],'title':'cache fixture'})
+   fid=api(f'/api/projects/{project}/source-files')[0]['id']
+   api('/api/graphs/'+graph['slug']+'/entry-check',{'fileId':fid,'line':1})
+   return position(project)
   try:
    for _ in range(100):
     try:api('/api/health');break
     except OSError:time.sleep(.1)
+   cold=position();assert cold['verification']=='source-position' and starts()==0
+   assert api('/api/projects/fixture/lsp/java')['serverType']=='Eclipse JDT LS'
    a=check();b=check();assert starts()==1,records()
    assert sum(r.get('method')=='textDocument/didOpen' for r in records())==1
    graph=api('/api/graphs',{'projectId':'fixture','candidateId':b['candidateId'],'title':'test'})

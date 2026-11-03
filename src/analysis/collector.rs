@@ -24,6 +24,7 @@ use url::Url;
 pub struct Options {
     pub budget: usize,
     pub max_depth: Option<u32>,
+    pub max_nodes: Option<usize>,
     pub exclusions: Vec<String>,
 }
 pub struct Seed {
@@ -110,7 +111,7 @@ async fn query_inner(
         for (column, _) in line.match_indices(name) {
             let value=client.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":{"line":facts.caller.line-1,"character":line[..column].encode_utf16().count()}}),language.query_timeout()).await?;
             let items: Vec<CallHierarchyItem> =
-                serde_json::from_value(value).map_err(|e| format!("无法解析函数身份：{e}"))?;
+                super::decode_hierarchy(value).map_err(|e| format!("无法解析函数身份：{e}"))?;
             for item in items {
                 if node(root, &item, &mut paths)?.id == facts.caller.id {
                     selected = Some(item);
@@ -134,7 +135,7 @@ async fn query_inner(
         return Err("服务器返回 null，不能确认下游".into());
     }
     let calls: Vec<CallHierarchyOutgoingCall> =
-        serde_json::from_value(value).map_err(|e| format!("无效调用层级：{e}"))?;
+        super::decode_hierarchy(value).map_err(|e| format!("无效调用层级：{e}"))?;
     super::validate_call_ranges(&item, &calls)?;
     facts.complete = true;
     // A failed optional implementation query must not erase successful direct calls.
@@ -192,7 +193,7 @@ async fn prepare(
 ) -> Result<Work, String> {
     let file = resolve_source_path(root, &caller.file)?;
     let text = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
-    let uri = Url::from_file_path(file)
+    let uri = Url::from_file_path(crate::project_catalog::tool_path(&file))
         .map_err(|_| "符号 URI 无效")?
         .to_string();
     warm.open(&uri, language, &text).await?;
@@ -213,6 +214,9 @@ pub async fn collect(
     options: Options,
     mut checkpoint: impl FnMut(&CallGraph, &CallGraph, usize) -> Result<(), String>,
 ) -> Result<usize, String> {
+    let node_limit = options
+        .max_nodes
+        .map(|n| graph.nodes.len().saturating_add(n));
     let concurrency = warm.transport.policy().concurrency;
     let semantics = Semantics::new(language);
     let mut workers = vec![semantics; concurrency];
@@ -252,10 +256,6 @@ pub async fn collect(
                 if !scheduled.insert(seed.id.clone()) {
                     continue;
                 }
-                let report = graph.analysis.as_ref().unwrap();
-                if report.queried_nodes.contains(&seed.id) {
-                    continue;
-                }
                 let caller = graph.nodes[*known.get(&seed.id).ok_or("待采符号不存在")?].clone();
                 let reason = if let Some(rule) = options
                     .exclusions
@@ -265,6 +265,8 @@ pub async fn collect(
                     Some(format!("主动排除（路径规则 {rule}）"))
                 } else if options.max_depth.is_some_and(|max| seed.depth >= max) {
                     Some("达到深度边界".into())
+                } else if node_limit.is_some_and(|n| graph.nodes.len() >= n) {
+                    Some("达到本轮新增节点上限".into())
                 } else if attempts >= options.budget {
                     Some("请求预算耗尽".into())
                 } else {
@@ -316,6 +318,23 @@ pub async fn collect(
                 workers.push(semantics);
                 completed += 1;
                 batch += 1;
+                let mut facts = facts;
+                if let Some(limit) = node_limit {
+                    let mut accepted: HashSet<_> = known.keys().cloned().collect();
+                    let mut keep = |id: &String| {
+                        accepted.contains(id)
+                            || (accepted.len() < limit && accepted.insert(id.clone()))
+                    };
+                    let before_count = facts.calls.len() + facts.candidates.len();
+                    facts.calls.retain(|call| keep(&call.node.id));
+                    facts
+                        .candidates
+                        .retain(|candidate| keep(&candidate.node.id));
+                    if before_count != facts.calls.len() + facts.candidates.len() {
+                        facts.complete = false;
+                        facts.issue("达到本轮新增节点上限，仍有下游待采集");
+                    }
+                }
                 merge(graph, facts, &mut known, &mut edges, &pruned, &mut next);
             }
             result_batches += 1;
@@ -364,7 +383,9 @@ fn merge(
     next: &mut BTreeMap<String, Seed>,
 ) {
     let id = &facts.caller.id;
-    if let Some(index) = known.get(id) {
+    if let Some(index) = known.get(id)
+        && facts.caller.symbol.is_some()
+    {
         graph.nodes[*index].symbol = facts.caller.symbol.clone();
     }
     let follow = facts.complete && facts.candidates.len() == 1;
@@ -430,11 +451,22 @@ fn merge(
     report.issues.extend(facts.issues);
     if facts.complete {
         report.pending_nodes.retain(|n| n != id);
-        report.queried_nodes.push(id.clone());
+        if !report.queried_nodes.contains(id) {
+            report.queried_nodes.push(id.clone());
+        }
+    } else {
+        report.queried_nodes.retain(|node| node != id);
+        if !report.pending_nodes.contains(id) {
+            report.pending_nodes.push(id.clone());
+        }
     }
 }
 fn add_node(graph: &mut CallGraph, node: GraphNode, known: &mut HashMap<String, usize>) {
-    if !known.contains_key(&node.id) {
+    if let Some(index) = known.get(&node.id) {
+        if node.symbol.is_some() {
+            graph.nodes[*index].symbol = node.symbol;
+        }
+    } else {
         known.insert(node.id.clone(), graph.nodes.len());
         graph
             .analysis
@@ -461,6 +493,78 @@ fn ready_results<T: 'static>(
 #[cfg(test)]
 mod batching_tests {
     use super::*;
+    #[test]
+    fn overlapping_results_preserve_notes_and_distinct_call_sites() {
+        let mut graph: CallGraph = serde_json::from_value(json!({
+            "schemaVersion":"0.4", "projectId":"fixture", "title":"merge", "root":"caller",
+            "nodes":[
+                {"id":"caller","kind":"function","label":"caller","file":"main.rs","line":1,"role":"entry"},
+                {"id":"target","kind":"function","label":"target","file":"main.rs","line":2,"description":"人工说明","role":"业务职责","state":"collapsed"}
+            ], "edges":[],
+            "analysis":{"provider":"rust-analyzer","scope":"project","maxDepth":3,"requestBudget":100,"issues":[],"queriedNodes":["caller","target"],"pendingNodes":[]}
+        })).unwrap();
+        let mut known = HashMap::from([("caller".into(), 0), ("target".into(), 1)]);
+        let mut edges = HashSet::new();
+        let mut next = BTreeMap::new();
+        let item: CallHierarchyItem =
+            serde_json::from_value(json!({"name":"target","kind":12,"uri":"file:///main.rs",
+                "range":{"start":{"line":1,"character":0},"end":{"line":1,"character":20}},
+                "selectionRange":{"start":{"line":1,"character":3},"end":{"line":1,"character":9}}
+            }))
+            .unwrap();
+        for _ in 0..2 {
+            let mut facts = Facts::new(graph.nodes[0].clone(), 0);
+            facts.complete = true;
+            let mut target = graph.nodes[1].clone();
+            target.description = "自动说明".into();
+            for _ in 0..2 {
+                facts.calls.push(Call {
+                    node: target.clone(),
+                    item: item.clone(),
+                    ranges: vec![
+                        lsp_types::Range::new(
+                            lsp_types::Position::new(0, 4),
+                            lsp_types::Position::new(0, 10),
+                        ),
+                        lsp_types::Range::new(
+                            lsp_types::Position::new(0, 14),
+                            lsp_types::Position::new(0, 20),
+                        ),
+                    ],
+                });
+            }
+            merge(
+                &mut graph,
+                facts,
+                &mut known,
+                &mut edges,
+                &HashSet::new(),
+                &mut next,
+            );
+            assert_eq!(graph.nodes.len(), 2);
+            assert_eq!(graph.edges.len(), 2);
+            assert_eq!(next.len(), 1);
+            assert_eq!(graph.nodes[1].description, "人工说明");
+            assert_eq!(graph.nodes[1].role, "业务职责");
+            assert_eq!(graph.nodes[1].state, "collapsed");
+            graph.edges[0].description = "人工边说明".into();
+        }
+        assert_eq!(graph.edges[0].description, "人工边说明");
+        // An incomplete retry must not leave the caller falsely marked complete.
+        let failed = Facts::new(graph.nodes[0].clone(), 0);
+        merge(
+            &mut graph,
+            failed,
+            &mut known,
+            &mut edges,
+            &HashSet::new(),
+            &mut next,
+        );
+        let report = graph.analysis.unwrap();
+        assert!(report.pending_nodes.contains(&"caller".into()));
+        assert!(!report.queried_nodes.contains(&"caller".into()));
+        assert_eq!(graph.edges.len(), 2);
+    }
     #[tokio::test]
     async fn completed_results_share_a_checkpoint_without_waiting_for_slow_work() {
         let mut active = JoinSet::new();

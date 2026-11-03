@@ -67,17 +67,19 @@ export function executionCards(graph) {
   return graph.nodes.map(n => {
     // Only method-qualified names identify an owner. Module paths of free
     // functions must not be presented as classes.
+    const provisional = (n.sourceId || n.id).startsWith('entry-position-');
+    const filename = n.file?.split(/[\\/]/).pop() || '源码入口';
     const qualified = n.kind === 'method' ? n.label.match(/^(.+)::([^:]+)$/) : null;
     const semantic = symbolPresentation(n);
     const className = semantic.owner || qualified?.[1] || '';
-    const description = graph.analysis ? '' : (n.role || '').trim();
+    const description = provisional ? `第 ${n.line} 行 · 采集时确认函数` : graph.analysis ? '' : (n.role || '').trim();
     return { id: n.id, data: {
-      label: qualified?.[2] || n.label, className, badge: semantic.badge,
+      label: provisional ? filename : qualified?.[2] || n.label, className, badge: semantic.badge,
       sourceId: n.sourceId || n.id, pathReference: Boolean(n.pathReference), pathCycle: Boolean(n.pathCycle),
       height: 82 + (className ? 20 : 0) + (description ? 24 : 0),
       pending: pending.has(n.sourceId || n.id),
       tone: n.role?.startsWith('人工采集入口') ? 'manual' : pending.has(n.sourceId || n.id) ? 'pending' : n.id === graph.root ? 'entry' : n.kind === 'method' ? 'method' : 'function',
-      category: n.role?.startsWith('人工采集入口') ? '人工入口 · 已确认符号' : [semantic.type, semantic.type && ['struct','trait'].includes(n.kind) ? '' : kinds[n.kind] || n.kind || '符号', semantic.detail].filter(Boolean).join(' · '),
+      category: provisional ? '源码入口' : n.role?.startsWith('人工采集入口') ? '人工入口 · 已确认符号' : [semantic.type, semantic.type && ['struct','trait'].includes(n.kind) ? '' : kinds[n.kind] || n.kind || '符号', semantic.detail].filter(Boolean).join(' · '),
       purpose: description,
     } };
   });

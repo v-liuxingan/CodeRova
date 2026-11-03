@@ -1,5 +1,6 @@
 mod drafts;
 mod graph_creation;
+mod library;
 mod project_setup;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -31,6 +32,7 @@ use crate::validation::{resolve_source_path, validate_graph};
 
 #[derive(Clone)]
 pub struct AppState {
+    library: Option<Arc<crate::library_storage::LibraryStorage>>,
     graph_store: Arc<dyn GraphStore>,
     scenario_store: Arc<dyn ScenarioStore>,
     project_catalog: Arc<dyn ProjectCatalog>,
@@ -58,6 +60,7 @@ impl AppState {
         layout_store: Arc<dyn LayoutStore>,
     ) -> Self {
         Self {
+            library: None,
             graph_store,
             scenario_store,
             project_catalog,
@@ -130,6 +133,8 @@ async fn prune_graph(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ResumeRequest {
     request_budget: usize,
+    max_depth: Option<u32>,
+    max_nodes: Option<usize>,
     #[serde(default)]
     node_id: String,
 }
@@ -361,13 +366,14 @@ async fn check_entry(
             "此图不支持 LSP 采集，请从源码新建图".into(),
         ));
     }
-    check_project_entry(&state, slug, &graph.project_id, input).await
+    check_project_entry(&state, slug, &graph.project_id, input, false).await
 }
 async fn check_project_entry(
     state: &AppState,
     slug: String,
     project_id: &str,
     input: EntryCheck,
+    lightweight: bool,
 ) -> Result<Json<serde_json::Value>, AppError> {
     {
         let jobs = state
@@ -392,14 +398,18 @@ async fn check_project_entry(
         .map_err(AppError::BadRequest)?;
     let (file, text) =
         crate::analysis::entry::source(&root, &input.file_id).map_err(AppError::BadRequest)?;
-    let symbol = crate::analysis::entry::check(
-        state.analysis_jobs.sessions.clone(),
-        root,
-        file,
-        text.clone(),
-        input.line,
-    )
-    .await
+    let symbol = if lightweight {
+        crate::analysis::entry::position(&file, &text, input.line)
+    } else {
+        crate::analysis::entry::check(
+            state.analysis_jobs.sessions.clone(),
+            root,
+            file,
+            text.clone(),
+            input.line,
+        )
+        .await
+    }
     .map_err(AppError::BadRequest)?;
     let token = crate::analysis::stable_id(&format!(
         "{slug}:{}:{}",
@@ -420,7 +430,7 @@ async fn check_project_entry(
         },
     );
     Ok(Json(
-        serde_json::json!({"candidateId":token,"node":symbol,"message":"已确认函数，可配置采集。"}),
+        serde_json::json!({"candidateId":token,"node":symbol,"verification":if lightweight {"source-position"} else {"lsp-symbol"},"message":if lightweight {"已确认源码位置；函数身份将在采集时确认。"} else {"已确认函数，可配置采集。"}}),
     ))
 }
 async fn create_entry(
@@ -563,22 +573,23 @@ async fn start_analysis(
     if !(1..=1000).contains(&request.request_budget) {
         return Err(AppError::BadRequest("本轮请求预算须在 1–1000 之间".into()));
     }
+    if request.max_depth.is_some_and(|n| !(1..=100).contains(&n))
+        || request.max_nodes.is_some_and(|n| !(1..=10000).contains(&n))
+    {
+        return Err(AppError::BadRequest(
+            "深度须为 1–100，新增节点上限须为 1–10000".into(),
+        ));
+    }
     let graph = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
     let report = graph
         .analysis
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("此图未配置 LSP 分析".into()))?;
-    if !crate::analysis::provider::Language::supported(&report.provider)
-        || report.pending_nodes.is_empty()
-    {
+    if !crate::analysis::provider::Language::supported(&report.provider) {
         return Err(AppError::BadRequest("没有可继续采集的分析边界".into()));
     }
-    if !report.pending_nodes.contains(&request.node_id)
-        || graph.edges.iter().any(|e| e.from == request.node_id)
-    {
-        return Err(AppError::BadRequest(
-            "只能从尚未采集下游的叶子节点开始；收起节点不等于叶子节点".into(),
-        ));
+    if !graph.nodes.iter().any(|node| node.id == request.node_id) {
+        return Err(AppError::BadRequest("请选择当前图中的源码节点".into()));
     }
     let root = state
         .project_catalog
@@ -590,6 +601,8 @@ async fn start_analysis(
         completed: 0,
         added_nodes: 0,
         added_edges: 0,
+        total_nodes: graph.nodes.len(),
+        total_edges: graph.edges.len(),
         pending: report.pending_nodes.len(),
         message: "正在初始化语言服务器…".into(),
     };
@@ -621,7 +634,11 @@ async fn start_analysis(
             slug,
             root,
             graph,
-            request.request_budget,
+            crate::analysis::resume::Limits {
+                budget: request.request_budget,
+                depth: request.max_depth,
+                nodes: request.max_nodes,
+            },
             Some(request.node_id),
             state.analysis_jobs.clone(),
         )
@@ -701,14 +718,19 @@ pub async fn serve(
         return Err("出于本地源码安全考虑，服务只能监听 loopback 地址".to_owned());
     }
     let project_catalog = FileProjectCatalog::from_file(&projects_config)?;
-    let state = AppState::new(
-        Arc::new(FileGraphStore::new(graphs_dir)),
+    let library = Arc::new(crate::library_storage::LibraryStorage::open(
+        graphs_dir,
+        &projects_config,
+    )?);
+    let mut state = AppState::new(
+        Arc::new(FileGraphStore::new(library.root.clone())),
         Arc::new(FileScenarioStore::new(scenarios_dir)),
         Arc::new(project_catalog),
         Arc::new(VscodeUriLinkBuilder),
         Arc::new(FileSourcePreviewer::default()),
         Arc::new(FileLayoutStore::new(layouts_dir)),
     );
+    state.library = Some(library);
     let draft_sessions = Arc::downgrade(&state.drafts);
     tokio::spawn(async move {
         loop {
@@ -726,6 +748,12 @@ pub async fn serve(
     let index = public_dir.join("index.html");
     let static_files = ServeDir::new(public_dir).not_found_service(ServeFile::new(index));
     let app = Router::new()
+        .route("/api/library", get(library::get).post(library::change))
+        .route("/api/storage", get(library::info).post(library::configure))
+        .route(
+            "/api/graphs/{slug}/title",
+            axum::routing::put(library::rename),
+        )
         .route(
             "/api/projects/{project}/source-files",
             get(graph_creation::files),
@@ -744,6 +772,14 @@ pub async fn serve(
             post(project_setup::select_directory),
         )
         .route("/api/projects", post(project_setup::register))
+        .route(
+            "/api/projects/{project}/select-file",
+            post(project_setup::select_file),
+        )
+        .route(
+            "/api/graphs/{slug}/select-file",
+            post(project_setup::select_graph_file),
+        )
         .route(
             "/api/projects/{project}/lsp/{language}",
             get(project_setup::status).post(project_setup::control),
@@ -870,11 +906,20 @@ struct HealthResponse {
     projects: Vec<ResolvedProject>,
 }
 
-async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    Json(HealthResponse {
+async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, AppError> {
+    let mut projects = state.project_catalog.projects();
+    if let Some(library) = &state.library {
+        let doc = library.read().map_err(AppError::Internal)?;
+        for project in &mut projects {
+            if let Some(name) = doc.directories.get(&project.id) {
+                project.name.clone_from(name);
+            }
+        }
+    }
+    Ok(Json(HealthResponse {
         status: "ok",
-        projects: state.project_catalog.projects(),
-    })
+        projects,
+    }))
 }
 
 async fn list_graphs(State(state): State<AppState>) -> Result<Json<Vec<GraphSummary>>, AppError> {
@@ -883,6 +928,18 @@ async fn list_graphs(State(state): State<AppState>) -> Result<Json<Vec<GraphSumm
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?
         .map_err(AppError::Internal)?;
+    if let Some(library) = &state.library {
+        let doc = library.read().map_err(AppError::Internal)?;
+        for graph in &mut summaries {
+            if let Some(group) = doc
+                .groups
+                .iter()
+                .find(|g| g.project == graph.project_id && g.id == graph.category_id)
+            {
+                graph.category.clone_from(&group.name);
+            }
+        }
+    }
     summaries.sort_by(|left, right| left.title.cmp(&right.title));
     Ok(Json(summaries))
 }

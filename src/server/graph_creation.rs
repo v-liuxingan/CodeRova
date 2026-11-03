@@ -32,7 +32,7 @@ pub(super) async fn check(
     Json(input): Json<EntryCheck>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     same_origin(&headers)?;
-    check_project_entry(&state, format!("project:{project}"), &project, input).await
+    check_project_entry(&state, format!("project:{project}"), &project, input, true).await
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -18,6 +18,7 @@ window.addEventListener("message", async (event) => {
       document.documentElement.dataset.theme = event.data.theme || "halo";
       runtime = new MonacoEditorRuntime();
       await runtime.mount(document.querySelector("#monaco-root"), event.data.preview);
+      runtime.onWrap=active=>reply({type:'wrapChanged',active});
       if(event.data.preview.selectable) {
         let previousLine=1;
         runtime.editor.onDidChangeCursorSelection(({selection})=>{
@@ -25,6 +26,16 @@ window.addEventListener("message", async (event) => {
           previousLine=selection.startLineNumber;reply({type:"selection",line:previousLine});
         });
       }
+    } else if(type === 'measure') {
+      const editor=runtime?.editor,model=runtime?.model;
+      result=editor&&model?{viewport:editor.getLayoutInfo().height,content:editor.getBottomForLineNumber(model.getLineCount())-editor.getTopForLineNumber(1)}:{viewport:0,content:0};
+    } else if(type === 'wrap') {
+      runtime?.setWrap(event.data.active);
+    } else if(type === 'extend') {
+      await runtime?.extend(event.data.preview);
+    } else if (type === "theme") {
+      document.documentElement.dataset.theme=event.data.theme;
+      await runtime?.applyTheme();
     } else if (type === "search") {
       result = runtime?.search(event.data.query, event.data.direction) || {
         current: 0,

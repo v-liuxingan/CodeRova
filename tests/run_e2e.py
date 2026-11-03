@@ -34,6 +34,7 @@ def main():
      with urlopen(env['CALLGRAPH_TEST_URL']+'/api/health',timeout=1):break
     except OSError:time.sleep(.1)
    run(sys.executable,str(ROOT/'tests/e2e_visualizer.py'))
+   run(sys.executable,str(ROOT/'tests/component_controls_e2e.py'))
   finally:
    if os.name=='nt':subprocess.run(['taskkill','/PID',str(server.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    else:server.terminate()

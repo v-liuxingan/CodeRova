@@ -117,8 +117,8 @@ impl GraphStore for FileGraphStore {
             return Err("调用图名称已存在".into());
         }
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
-        let content = serde_json::to_vec_pretty(graph).map_err(|e| e.to_string())?;
         let path = self.root.join(format!("{slug}.json"));
+        let content = crate::graph_annotations::encode(&path, graph)?;
         let seq = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let temporary = self
             .root
@@ -147,10 +147,7 @@ impl GraphStore for FileGraphStore {
         {
             return Err("图已被其他操作修改，已停止续采以避免覆盖".into());
         }
-        write_atomic(
-            &path,
-            &serde_json::to_vec_pretty(after).map_err(|e| e.to_string())?,
-        )
+        write_atomic(&path, &crate::graph_annotations::encode(&path, after)?)
     }
 
     fn delete_archived(&self, slug: &str) -> Result<(), String> {
@@ -267,8 +264,7 @@ impl GraphStore for FileGraphStore {
         if source != target && target.exists() {
             return Err(format!("目标分类中已存在同名调用图：{}", target.display()));
         }
-        let content = serde_json::to_vec_pretty(&graph)
-            .map_err(|error| format!("无法序列化调用图：{error}"))?;
+        let content = crate::graph_annotations::encode(&source, &graph)?;
         if source != target {
             fs::create_dir_all(&target_directory).map_err(|error| {
                 format!(
@@ -280,6 +276,10 @@ impl GraphStore for FileGraphStore {
         write_atomic(&source, &content)?;
 
         if source != target {
+            if let Err(error) = crate::graph_annotations::copy_for_move(&source, &target) {
+                write_atomic(&source, &original)?;
+                return Err(error);
+            }
             if let Err(error) = fs::rename(&source, &target) {
                 let rollback = write_atomic(&source, &original);
                 return Err(match rollback {
@@ -408,7 +408,7 @@ fn collect_files(
                 entry.path().display()
             )
         })?;
-        if file_type.is_dir() {
+        if file_type.is_dir() && !entry.file_name().to_string_lossy().starts_with('.') {
             collect_files(&entry.path(), extension, paths)?;
         } else if file_type.is_file()
             && entry.path().extension().and_then(|value| value.to_str()) == Some(extension)
@@ -457,6 +457,11 @@ pub fn read_graph_file(path: &Path) -> Result<CallGraph, String> {
 }
 
 fn parse_graph(content: &[u8], path: &Path) -> Result<CallGraph, String> {
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(content)
+        && value.get("_annotations").is_some()
+    {
+        return crate::graph_annotations::decode(value, path);
+    }
     let mut deserializer = serde_json::Deserializer::from_slice(content);
     serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
         let field_path = match error.path().to_string().as_str() {
@@ -812,6 +817,58 @@ mod tests {
         assert_eq!(store.load("example").unwrap().description, "checkpoint");
         store.set_archived("example", true).unwrap();
         assert!(store.checkpoint("example", &after, &before).is_err());
+    }
+
+    #[test]
+    fn annotations_are_separate_atomic_and_survive_move_and_trash() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = FileGraphStore::new(directory.path().to_owned());
+        let graph: CallGraph = serde_json::from_value(json!({
+            "schemaVersion":"0.4", "projectId":"codex", "title":"Example", "root":"root",
+            "categoryId":"uncategorized", "category":"未分类", "description":"图说明",
+            "nodes":[{"id":"root","kind":"function","label":"main","file":"main.rs","line":1,"description":"节点说明","role":"入口"}],
+            "edges":[]
+        })).unwrap();
+        store.create("example", &graph).unwrap();
+        let path = directory.path().join("example.json");
+        let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(
+            raw["nodes"][0]["description"]
+                .as_str()
+                .unwrap_or_default()
+                .is_empty()
+        );
+        let reference = raw["_annotations"].as_str().unwrap();
+        let snapshot = directory
+            .path()
+            .join(format!(".annotations-example/{reference}.json"));
+        assert!(fs::read_to_string(snapshot).unwrap().contains("节点说明"));
+        assert!(store.load("example").unwrap().same_content(&graph));
+        // Preparing an unpublished version must leave the published graph intact.
+        let mut unpublished = graph.clone();
+        unpublished.description = "未提交".into();
+        crate::graph_annotations::encode(&path, &unpublished).unwrap();
+        assert_eq!(store.load("example").unwrap().description, "图说明");
+        store.update_category("example", "moved", "移动后").unwrap();
+        assert_eq!(
+            store.load("example").unwrap().nodes[0].description,
+            "节点说明"
+        );
+        store.set_archived("example", true).unwrap();
+        assert_eq!(store.archived().unwrap()[0].1.description, "图说明");
+        store.set_archived("example", false).unwrap();
+        assert_eq!(store.load("example").unwrap().nodes[0].role, "入口");
+        assert_eq!(store.list().unwrap().len(), 1);
+        let path = directory.path().join("moved/example.json");
+        let mut raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        raw["_annotations"] = "../outside".into();
+        fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert!(
+            store
+                .load("example")
+                .unwrap_err()
+                .contains("说明引用不合法")
+        );
     }
 
     fn write_graph(root: &Path, relative: &str, category_id: &str, title: &str) {

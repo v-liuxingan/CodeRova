@@ -172,8 +172,6 @@ nav button[aria-current=true] { background: var(--active); border-color: var(--a
 .tree-project > summary { font-weight: 600; color: var(--strong); }
 .tree-group { margin-inline-start: var(--tree-indent); border-inline-start: 1px solid var(--line); }
 .tree-group > summary { color: var(--muted); }
-#catalog .tree-group-delete { width: auto; flex-shrink: 0; padding: 2px 6px; font-size: 11px; color: var(--muted); }
-#catalog .tree-group-delete:hover { color: var(--strong); background: var(--panel); }
 .tree-file { margin-inline-start: var(--tree-indent); display: flex; flex-wrap: wrap; align-items: center; position: relative; border-radius: 5px; }
 #catalog .tree-open { flex: 1; min-width: 0; width: auto; display: flex; align-items: center; gap: 7px; padding: 8px 6px; text-align: start; }
 .tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -183,11 +181,6 @@ nav button[aria-current=true] { background: var(--active); border-color: var(--a
 .tree-file[draggable=true] { user-select: none; }
 .tree-file.dragging { opacity: .45; }
 #catalog .drop-target { outline: 1px dashed var(--accent); background: var(--active); }
-#catalog .tree-menu > summary { justify-content: center; width: 28px; height: 32px; padding: 5px; }
-#catalog .tree-menu > summary::before { display: none; }
-.tree-menu[open] { flex-basis: 100%; }
-.tree-file:has(.tree-menu[open]) > .tree-open { margin-right: 28px; }
-#catalog .tree-menu[open] > summary { position: absolute; right: 0; top: 2px; background: var(--hover); }
 .tree-menu-actions { margin: 2px 0 6px; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
 #catalog .tree-menu-actions button { padding: 6px 8px; }
 .tree-empty { font-size: 12px; color: var(--muted); padding: 8px; }
@@ -468,11 +461,16 @@ button.primary:disabled {opacity:.45;}
 .project-lsp-heading [role=status] {min-height:0;font-size:12px;color:var(--muted);}
 .new-graph-dialog .project-lsp select {width:auto;min-height:30px;padding:4px 22px 4px 8px;}
 .project-lsp-controls button {font-size:12px;padding:5px 10px;min-height:30px;background:transparent;}
-.project-lsp[data-state=running] [role=status] {color:var(--accent-text);}
 .project-lsp-error {grid-column:1/-1;font-size:12px;line-height:1.6;color:var(--error);overflow-wrap:anywhere;margin:4px 0 0;}
 .project-lsp-error:empty {display:none;}
 .project-root {font-size:12px;color:var(--muted);overflow-wrap:anywhere;}
-.project-lsp[data-state=starting] [role=status]::before {content:'';display:inline-block;width:10px;height:10px;margin-right:6px;border:1.5px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:lsp-spin .8s linear infinite;}
-@keyframes lsp-spin {to {transform:rotate(360deg);}}
 @media(prefers-reduced-motion:reduce){.project-lsp[data-state=starting] [role=status]::before {animation:none;}}
 @media(max-width:480px){.new-graph-dialog{padding:20px;}.project-lsp{column-gap:6px;}.project-lsp-heading{gap:6px;}}
+
+.tree-toolbar { align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+#catalog .tree-menu { flex: 0 0 auto; overflow: visible; margin-left: auto; }
+#catalog .tree-menu > button { width: 28px; height: 28px; padding: 0; text-align: center; font-size: 20px; line-height: 1; }
+#catalog .tree-menu-actions[popover] { position: fixed; inset: auto; margin: 0; width: max-content; min-width: 150px; max-width: calc(100vw - 16px); padding: 5px; color: var(--text); box-shadow: 0 8px 28px #0002; }
+#catalog .tree-menu-actions button { width: 100%; text-align: left; font-size: 12px; }
+.tree-trash-row { flex-wrap: nowrap; align-items: center; }
+.tree-trash-row > span:first-child { flex: 1; min-width: 0; width: auto; }
