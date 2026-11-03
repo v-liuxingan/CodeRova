@@ -159,12 +159,28 @@ fn selected_file(
     selected: &std::path::Path,
 ) -> Result<crate::analysis::entry::SourceFile, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
-    // Match the selected path against the enumerated catalog before canonicalizing it:
-    // a symlink to an allowed file is not itself an allowed catalog entry.
-    let selected = crate::project_catalog::tool_path(selected);
+    // Reject links before resolving Windows short names / path casing. Matching
+    // raw picker strings against canonical catalog paths rejects valid aliases.
+    for ancestor in selected
+        .ancestors()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        if std::fs::symlink_metadata(ancestor)
+            .map_err(|e| e.to_string())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("请选择当前项目内的源文件，不支持符号链接".into());
+        }
+    }
+    let selected = selected.canonicalize().map_err(|e| e.to_string())?;
     crate::analysis::entry::files(&root)?
         .into_iter()
-        .find(|file| crate::project_catalog::tool_path(&root.join(&file.name)) == selected)
+        .find(|file| {
+            root.join(&file.name)
+                .canonicalize()
+                .is_ok_and(|path| path == selected)
+        })
         .ok_or_else(|| "请选择当前项目内的 Rust 或 Java 源文件（不含构建目录或符号链接）".into())
 }
 pub(super) async fn register(
@@ -415,6 +431,16 @@ mod tests {
         assert_eq!(selected_file(&root, &file).unwrap().name, "src/入口.java");
         assert!(selected_file(&root, &root.join("target/Generated.java")).is_err());
         assert!(selected_file(&root, &dir.path().join("Other.java")).is_err());
+        #[cfg(windows)]
+        assert_eq!(
+            selected_file(
+                &root,
+                &PathBuf::from(file.to_string_lossy().to_ascii_lowercase())
+            )
+            .unwrap()
+            .name,
+            "src/入口.java"
+        );
         let canonical = file.canonicalize().unwrap();
         assert_eq!(
             selected_file(&root, &canonical).unwrap().name,
