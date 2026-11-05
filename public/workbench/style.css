@@ -407,6 +407,15 @@ button.primary:disabled {opacity:.45;}
 #node-actions-panel button { font-size:12px; }
 #relations .relation-list { margin:4px 0; }
 #relations:not(:empty) { margin-bottom:14px; }
+.node-reading-actions { display:inline-flex;align-items:center;gap:8px; }
+.node-reading-guide { min-width:0; }
+.node-reading-guide .reading-hint { margin:0 0 8px;line-height:1.6; }
+.reading-origin { display:flex;align-items:center;gap:8px;min-width:0; }
+.reading-origin > span { flex:1;min-width:0;font-size:12px;color:var(--muted);overflow-wrap:anywhere; }
+.reading-origin > button { flex-shrink:0; }
+.reading-records { font-size:12px; }
+.reading-records > div { max-height:120px;overflow:auto;overflow-wrap:anywhere; }
+.reading-records > summary { color:var(--muted);cursor:pointer; }
 #status { min-height:32px;line-height:16px; }
 #symbols-more { font-size:12px;padding:5px 8px;background:transparent; }
 #symbol-load-status { display:block;color:var(--muted);font-size:11px;line-height:1.6;margin-top:6px; }

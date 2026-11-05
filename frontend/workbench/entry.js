@@ -6,11 +6,12 @@ import { newGraph, connectProject } from './new-graph.js';
 import { sidebarWidths } from './sidebar-widths.js';
 import { sourceNavigation } from './source-navigation.js';
 import { relationList } from './relation-list.js';
+import { readingGuide } from './reading-guide.js';
 import { collectionDialog } from './collection-dialog.js';
 import { editSession } from './edit-session.js';
 import { entryPicker } from './entry-picker.js';
 import { resumePanel } from './resume-panel.js';
-import { callReading, callMeaning } from './call-reading.js';
+import { callMeaning } from './call-reading.js';
 import { Graph } from '@antv/g6';
 import './window-minimap.js';
 import './directional-edge.js';
@@ -264,6 +265,7 @@ async function drain() {
       $('fit').disabled = false;
       status('');
       clearSelection();
+      if(!focusAfterLoad)void select('node',data.root);
     }
   } catch (error) {
     status(`画布加载失败：${error.message}`, true);
@@ -448,6 +450,7 @@ function resetInspector() {
   $('selection-notes').open=true;
   $('selection-description').textContent = '';
   $('relations').replaceChildren();
+  $('relations').append(node('p','选择节点看定义，选择连线看调用处。','reading-hint'));
   $('source-location').textContent = '';
   $('source').textContent = '';
 
@@ -530,21 +533,22 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
       const option = node('option', item.label); option.value = sourceId; $('symbols').append(option);
     }
     $('symbols').value = sourceId;
+    const incoming=graphWindow.source.incoming.get(sourceId)||[];
+    const pathEdge=(graphIndex.incoming.get(id)||[])[0];
+    const guide=readingGuide({graph:current,item,outgoing:graphWindow.source.outgoing.get(sourceId)||[],incoming,
+      canCollect:canCollect(id),collect:()=>void collectNode(id),sourceEdge:pathEdge,caller:pathEdge && graphIndex.nodes.get(pathEdge.from),
+      openEvidence:()=>void select('edge',pathEdge.id,false)});
+    $('node-actions-panel').prepend(guide.row);
+    $('relations').append(guide.detail);
     if (current.analysis) {
       const actions=node('div');actions.className='node-actions';
-      const collect=node('button','继续采集');collect.disabled=!canCollect(id);
-      collect.title=collect.disabled?'仅没有已知下游的待采叶子节点可以采集':'从当前节点采集下游';
-      collect.addEventListener('click',()=>void collectNode(id));
       const add=node('button','添加节点');add.addEventListener('click',()=>addEntry(id));
-      actions.append(collect,add);$('node-actions-panel').append(actions);
+      actions.append(add);$('node-actions-panel').append(actions);
     }
     const prune=node('button','删除');prune.disabled=sourceId===current.root;
     prune.addEventListener('click',()=>void pruneNode(id));
     const hide=node('button','隐藏');hide.disabled=sourceId===current.root;hide.addEventListener('click',()=>void hideNode(id));
     const editTools=node('details');editTools.className='node-edit-tools';editTools.append(node('summary','编辑节点'),hide,prune);$('node-actions-panel').append(editTools);
-    const independentCalls = !item.pathCycle;
-    const reading = callReading((independentCalls ? graphWindow.source.outgoing.get(sourceId) : graphIndex.outgoing.get(id)) || []);
-    if(reading.note) { $('selection-description').textContent += ` ${reading.note}`; $('selection-notes').hidden=false; }
   } else {
     $('relations').append(node('p', callMeaning(item)));
     const sourceEdgeId=item.sourceId||id;
@@ -885,6 +889,10 @@ function stepNode(offset) {
 }
 $('node-prev').onclick=()=>stepNode(-1);
 $('node-next').onclick=()=>stepNode(1);
+for(const [id,label] of [['node-prev','上一节点'],['node-next','下一节点']]) {
+  $(id).title=`${label} · 按搜索列表浏览，不表示执行顺序`;
+  $(id).setAttribute('aria-label',`${label}（按搜索列表）`);
+}
 $('node-center').onclick=()=>{if(current&&!loading)void select('node',$('symbols').value||current.root,true);};
 
 // Secondary toolbar panels share one focus-preserving dismissal behavior.
