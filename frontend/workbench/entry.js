@@ -102,7 +102,11 @@ const node = (tag, text, className) => {
 // G6 merges shape attributes on redraw: every non-dim state must restore opacity.
 function graphAppearance() {
   const css = getComputedStyle(document.documentElement);
-  const color = name => css.getPropertyValue(`--${name}`).trim();
+  const palette = new Map();
+  const color = name => {
+    if (!palette.has(name)) palette.set(name, css.getPropertyValue(`--${name}`).trim());
+    return palette.get(name);
+  };
   return {
     node: { type: 'execution-card', style: {
       opacity: 1, ports: d => d.data.ports || [], size: d => [304, d.data.height], radius: 12, label: false,
@@ -470,7 +474,14 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
   }
   const item = (type === 'node' ? graphIndex.nodes : graphIndex.edges).get(id);
   if (!item) return;
-  if (focus && view.getZoom() < .35) await view.zoomTo(.85, false);
+  if (focus && view.getZoom() < .35) {
+    // Mount the destination before magnifying the overview. Otherwise the
+    // camera behavior traverses thousands of shapes that will be evicted next.
+    const destination = paintWindow.nodes.get(type === 'node' ? id : item.from)?.style;
+    if (destination) await refreshViewport(true, [destination.x, destination.y], .85);
+    if (version !== routeVersion || view !== renderer) return;
+    await view.zoomTo(.85, false);
+  }
   const renderId = type === 'edge' ? renderedEdge.get(id) || id : id;
   if (!mountedIds.has(renderId)) {
     const endpoint = type === 'node' ? id : item.from;
@@ -587,11 +598,11 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
 
 
 function virtualized() { return paintWindow?.data.nodes.length > 300; }
-function mountedData(data) {
+function mountedData(data, zoom = renderer?.getZoom() || .85) {
   mountedIds = new Set([...data.nodes, ...data.edges].map(n => n.id));
   $('canvas').dataset.displayedNodes = String(visibleGraph.nodes.length);
   $('canvas').dataset.mountedNodes = String(data.nodes.length);
-  mountedDetail = (renderer?.getZoom() || .85) >= .25;
+  mountedDetail = zoom >= .25;
   return { nodes: data.nodes.map(n => ({ ...n, type: mountedDetail ? 'execution-card' : 'rect', states: elementStates.get(n.id) || [] })),
     // Overview preserves paths and endpoint IDs; unreadable labels/arrows return
     // with the detailed cards when the user zooms back in.
@@ -601,16 +612,16 @@ function scheduleViewport() {
   cancelAnimationFrame(viewportFrame);
   viewportFrame = requestAnimationFrame(() => { void refreshViewport(); });
 }
-async function refreshViewport(force = false, center) {
+async function refreshViewport(force = false, center, targetZoom) {
   if (resizingSidebar && !force) return;
   if (!renderer || !virtualized() || loading || drawing || draggingNode) return;
   if (mountBusy) {
     mountAgain = true;
-    if (force) { const waitingView = renderer; await mountPromise.catch(() => {}); if (waitingView === renderer) return refreshViewport(force, center); }
+    if (force) { const waitingView = renderer; await mountPromise.catch(() => {}); if (waitingView === renderer) return refreshViewport(force, center, targetZoom); }
     return;
   }
   const view = renderer, version = routeVersion;
-  const [width, height] = view.getSize(), zoom = view.getZoom();
+  const [width, height] = view.getSize(), zoom = targetZoom ?? view.getZoom();
   center ||= view.getCanvasByViewport([width / 2, height / 2]);
   const inner = viewportBounds(center, width, height, zoom, 50);
   if (!force && mountedDetail === (zoom >= .25) && containsBounds(paintedBounds, inner)) return;
@@ -621,7 +632,7 @@ async function refreshViewport(force = false, center) {
     const ids = new Set([...slice.nodes, ...slice.edges].map(n => n.id));
     if (mountedDetail !== (zoom >= .25) || ids.size !== mountedIds.size || [...ids].some(id => !mountedIds.has(id))) {
       const levelChanged=mountedDetail !== (zoom >= .25);
-      const next=mountedData(slice);
+      const next=mountedData(slice,zoom);
       if(levelChanged) view.setData(next);
       else {
         const {add,remove}=mountDelta({nodes:view.getNodeData(),edges:view.getEdgeData()},next);

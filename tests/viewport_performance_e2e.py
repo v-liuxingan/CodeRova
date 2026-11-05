@@ -51,7 +51,10 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    artifacts=ROOT/'target/test-artifacts/performance';artifacts.mkdir(parents=True,exist_ok=True)
    page.screenshot(path=str(artifacts/'overview.png'))
    page.evaluate('''()=>{const g=window.__testGraph;window.__stateCounts=[];const set=g.setElementState.bind(g);g.setElementState=(states,...args)=>{window.__stateCounts.push(Object.keys(states).length);return set(states,...args)};}''')
+   page.evaluate('''()=>{const g=window.__testGraph;window.__zoomNodes=[];const zoom=g.zoomTo.bind(g);g.zoomTo=(...args)=>{window.__zoomNodes.push(g.getNodeData().map(n=>n.id));return zoom(...args)};}''')
    page.evaluate('window.__viewport.select("n799")');page.evaluate('window.__viewport.ready()')
+   # Destination membership must be established before magnifying the overview.
+   assert page.evaluate('window.__zoomNodes.length>0 && window.__zoomNodes.every(ids=>ids.includes("n799") && ids.length<100)')
    expect(page.locator('#selection-title')).to_have_text('function799')
    assert page.evaluate('window.__testGraph===window.__original')
    assert page.evaluate('window.__stateCounts.every(n=>n<=window.__testGraph.getNodeData().length+window.__testGraph.getEdgeData().length)')
