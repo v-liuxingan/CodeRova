@@ -1,7 +1,7 @@
 import { supportsCollection } from '../../public/js/api.js';
 export function resumePanel(api, reload) {
   const $ = id => document.getElementById(id);
-  let slug, generation=0, timer, latestTask={status:'idle'}, stopRequested=false;
+  let slug, generation=0, timer, latestTask={status:'idle'}, stopRequested=false, failures=0, requestId=0;
   let pending=0, previewed=false, working=false;
   // Remove the obsolete notification receipt; no result is accepted by local preference.
   try { for(const key of Object.keys(localStorage))if(key.startsWith('callgraph:loaded-result:'))localStorage.removeItem(key); } catch {}
@@ -35,18 +35,28 @@ export function resumePanel(api, reload) {
     $('resume-status').textContent=task.status==='idle'?`${pending} 个待采符号。`: task.status==='failed'?`${task.message}。结果尚未写入图文件。`:detail;
   }
   async function poll(version) {
+    const target=slug, id=++requestId;
+    clearTimeout(timer);
     try {
-      const task=await api.analysisTask(slug);
-      if(version!==generation)return;
+      const task=await api.analysisTask(target);
+      if(version!==generation || id!==requestId)return;
+      failures=0;
       show(task);
       if(task.status==='running')timer=setTimeout(()=>poll(version),1500);
-    } catch(error) {if(version===generation)$('resume-status').textContent=`无法读取任务：${error.message}`;}
+    } catch(error) {
+      if(version!==generation || id!==requestId)return;
+      if(error.status && error.status<500){$('resume-status').textContent=`无法读取任务：${error.message}`;return;}
+      $('resume-status').textContent=`状态暂不可用，正在重试，暂不更改当前草稿。${error.message}`;
+      // Retry only the read. Never replay collection/save after a lost response.
+      timer=setTimeout(()=>poll(version),Math.min(10000,1500 * 2 ** Math.min(failures++,3)));
+    }
   }
   api.onCollectionChange=target=>{if(target===slug){clearTimeout(timer);void poll(generation);}};
   $('resume-stop').onclick=async()=>{
-    const version=generation;stopRequested=true;show(latestTask);
+    const version=++generation;clearTimeout(timer);stopRequested=true;show(latestTask);
     try {const task=await api.analysisTask(slug,'DELETE');if(version===generation)show(task);}
     catch(error){if(version===generation){stopRequested=false;show(latestTask);$('active-collection-status').textContent=`停止失败：${error.message}`;}}
+    finally{if(version===generation)void poll(version);}
   };
   async function resultAction(action) {
     if(working)return;
@@ -63,8 +73,8 @@ export function resumePanel(api, reload) {
       $('status').textContent=action==='preview'?'':action==='accept'?'已采纳并保存':'已放弃草稿';
       if(action==='preview')$('graph-details').open=true;
       $('canvas').focus({preventScroll:true});
-    }catch(error){if(slug===target)$('status').textContent=`操作失败：${error.message}`;}
-    finally{working=false;show(latestTask);}
+    }catch(error){if(slug===target)$('resume-status').textContent=`操作未完成，请重试：${error.message}`;}
+    finally{working=false;for(const id of ['resume-refresh','resume-accept','resume-discard'])$(id).disabled=false;}
   }
   $('resume-refresh').onclick=()=>void resultAction('preview');
   $('resume-accept').onclick=()=>void resultAction('accept');

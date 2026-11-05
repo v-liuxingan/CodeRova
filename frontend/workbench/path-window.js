@@ -10,6 +10,38 @@ export class PathWindow {
     this.source = indexGraph(graph);
     this.reset(0);
   }
+  // Refresh facts without replaying expansion: occurrence IDs and collapsed
+  // branches are reading state. Newly collected calls stay available to expand.
+  update(graph) {
+    const previousRoot = this.graph.root;
+    this.graph = graph;
+    this.source = indexGraph(graph);
+    if (previousRoot !== graph.root) { this.reset(0); return; }
+    const removed = new Set();
+    const incoming = new Map([...this.edges.values()].map(edge => [edge.to, edge]));
+    for (const [id, node] of this.nodes) {
+      const parent = this.parents.get(id);
+      const edge = incoming.get(id);
+      const sourceEdge = edge && this.source.edges.get(edge.sourceId);
+      if (!this.source.nodes.has(node.sourceId) || (parent != null &&
+        (!sourceEdge || sourceEdge.from !== this.nodes.get(parent)?.sourceId || sourceEdge.to !== node.sourceId))) removed.add(id);
+    }
+    const queue = [...removed];
+    for (let i = 0; i < queue.length; i++) for (const child of this.children.get(queue[i])?.values() || []) {
+      if (!removed.has(child)) { removed.add(child); queue.push(child); }
+    }
+    for (const id of removed) { this.nodes.delete(id); this.parents.delete(id); this.children.delete(id); this.visible.delete(id); }
+    for (const children of this.children.values()) for (const [call, id] of children) if (removed.has(id)) children.delete(call);
+    for (const [id, edge] of this.edges) {
+      if (removed.has(edge.from) || removed.has(edge.to)) this.edges.delete(id);
+      else this.edges.set(id, {...this.source.edges.get(edge.sourceId), id, sourceId:edge.sourceId, from:edge.from, to:edge.to});
+    }
+    this.first.clear();
+    for (const [id, node] of this.nodes) {
+      this.nodes.set(id, {...this.source.nodes.get(node.sourceId), id, sourceId:node.sourceId, pathReference:node.pathReference, pathCycle:node.pathCycle});
+      if (!this.first.has(node.sourceId)) this.first.set(node.sourceId, id);
+    }
+  }
   reset(amount = 50, unit = 'layers') {
     this.nodes = new Map(); this.edges = new Map(); this.parents = new Map();
     this.children = new Map(); this.first = new Map(); this.visible = new Set();

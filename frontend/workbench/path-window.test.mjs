@@ -43,3 +43,21 @@ assert.equal(calls.revealCall('b','middle'),null);
 console.log('Call-point reveal: exact occurrence, no sibling expansion, idempotence and caller validation PASS');
 
 assert.deepEqual(calls.snapshot().edges.map(e=>e.sourceId),['first','last']);
+
+// Incremental refresh keeps exact parallel occurrences and collapsed branches.
+const beforeIds = [...calls.nodes.keys()];
+const updated = {...sequential, nodes:[...sequential.nodes.map(n=>({...n,description:'updated'})),{id:'d'}],
+  edges:[...sequential.edges,{id:'new',from:'b',to:'d'}]};
+calls.update(updated);
+assert.deepEqual([...calls.nodes.keys()],beforeIds);
+assert(calls.snapshot().nodes.every(n=>n.description==='updated'));
+assert.equal(calls.hiddenChildren('b'),1);
+assert.equal(calls.hiddenChildren('a'),1); // the collapsed middle call stays hidden
+calls.expand('b',1);assert.equal(calls.snapshot().nodes.filter(n=>n.sourceId==='d').length,1);
+calls.update(sequential); // Discard removes newly previewed facts and their view references.
+assert(!calls.snapshot().nodes.some(n=>n.sourceId==='d'));
+assert.deepEqual([...calls.nodes.keys()],beforeIds);
+assert(calls.snapshot().edges.every(e=>calls.nodes.has(e.from)&&calls.nodes.has(e.to)));
+calls.update({...sequential,root:'c'});
+assert.deepEqual([...calls.nodes.keys()],['c']);
+console.log('Incremental refresh preserves occurrences, collapsed calls and metadata; discard removes obsolete descendants PASS');

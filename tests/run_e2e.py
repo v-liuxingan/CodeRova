@@ -40,7 +40,7 @@ def main():
    else:server.terminate()
    try:server.wait(timeout=10)
    except subprocess.TimeoutExpired:server.kill();server.wait()
- for name in ['drafts_e2e.py','group-delete_e2e.py']:run(sys.executable,str(ROOT/'frontend/workbench'/name))
+ for name in ['drafts_e2e.py','group-delete_e2e.py','collection-draft_e2e.py']:run(sys.executable,str(ROOT/'frontend/workbench'/name))
  print('Current workbench gate PASS')
  return 0
 if __name__=='__main__':raise SystemExit(main())

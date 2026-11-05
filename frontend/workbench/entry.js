@@ -33,13 +33,39 @@ const sourceNavigationController = sourceNavigation({api, toggle:$('click-source
 const graphLsp=projectLsp(api);$('graph-services').append(graphLsp.element);
 const collectionOrigins=new Map();
 const resume = resumePanel(api, async (slug,action) => {
-  activeSlug = undefined;
-  await navigate(slug, false);
+  await refreshCurrentGraph(slug,action!=='discard' ? collectionOrigins.get(slug) : null);
   if (activeSlug !== slug || wantedSlug !== slug || !renderer) throw new Error('结果未加载，请重试。');
   const origin=collectionOrigins.get(slug);
-  if(origin && (action==='accept'||action==='preview')) await select('node',graphIndex.nodes.has(origin.id)?origin.id:origin.sourceId.startsWith('entry-position-')?current.root:origin.sourceId,true);
+  if(origin && !$('canvas').dataset.selection && (action==='accept'||action==='preview')) await select('node',graphIndex.nodes.has(origin.id)?origin.id:origin.sourceId.startsWith('entry-position-')?current.root:origin.sourceId,false);
   if(action==='accept'||action==='discard')collectionOrigins.delete(slug);
 });
+async function refreshCurrentGraph(slug, origin) {
+  const view = renderer, version = routeVersion;
+  const data = await api.loadGraph(slug);
+  if (slug !== activeSlug || version !== routeVersion || view !== renderer) return;
+  const selected = $('canvas').dataset.selection;
+  const oldItem=graphIndex.nodes.get(selected)||graphIndex.edges.get(selected);
+  const nextItem=oldItem && (graphIndex.nodes.has(selected)?data.nodes:data.edges).find(item=>item.id===(oldItem.sourceId||oldItem.id));
+  const keepSource=Boolean(sourceEditor?.frame && nextItem && ['file','line','column','endLine','endColumn','callSiteStatus','callSiteNote'].every(key=>oldItem[key]===nextItem[key]));
+  const anchor = graphIndex.nodes.has(selected) ? selected : current.root;
+  const viewport = visibilityViewport(anchor);
+  const oldRoot = current.root;
+  current = data;
+  graphWindow.update(data);
+  if (origin) {
+    const id=graphWindow.nodes.has(origin.id)?origin.id:origin.sourceId.startsWith('entry-position-')?data.root:graphWindow.first.get(origin.sourceId);
+    if(id)graphWindow.expand(id,batchSize(),$('window-unit').value);
+  }
+  if (oldRoot !== data.root) {
+    // A provisional source position has become a verified symbol.
+    for (const n of paintWindow.data.nodes) if (n.id === oldRoot) n.id = data.root;
+    viewport.anchor = data.root;
+  }
+  await refreshVisibility(viewport,keepSource);
+  if (version !== routeVersion || view !== renderer) return;
+  renderCoverage(api.analysisCoverage(data));
+  edits.update();
+}
 const collection = collectionDialog(task => resume.started(task));
 let catalog = [], names = new Map(), current, renderer, activeSlug, wantedSlug;
 let loading = false, routeVersion = 0, sourceRequest, sourceEditor, graphIndex, graphWindow, visibleGraph;
@@ -251,13 +277,13 @@ function visibilityViewport(anchor = current.root) {
   const rect=$('canvas').getBoundingClientRect(), origin=renderer.getViewportByCanvas([point.x,point.y]);
   return { view:renderer, version:routeVersion, anchor, screen:[origin[0]+rect.left,origin[1]+rect.top] };
 }
-async function refreshVisibility({view,version,screen,anchor}=visibilityViewport()) {
+async function refreshVisibility({view,version,screen,anchor}=visibilityViewport(), keepSource=false) {
   const selected = $('canvas').dataset.selection;
-  await redrawWindow(anchor, true);
+  await redrawWindow(anchor, true, true);
   if(view!==renderer || version!==routeVersion)return;
   renderSymbols();
   if (selected && !graphIndex.nodes.has(selected) && !graphIndex.edges.has(selected)) { clearSelection(); for (const key of elementStates.keys()) if (!graphIndex.nodes.has(key) && !graphIndex.edges.has(key)) elementStates.delete(key); }
-  else if (selected) await select(graphIndex.nodes.has(selected) ? 'node' : 'edge', selected);
+  else if (selected) await select(graphIndex.nodes.has(selected) ? 'node' : 'edge', selected, false, false, keepSource);
   updateHidden();
   // Resize and flush the camera before compensating for the edit bar.
   view.resize();
@@ -334,6 +360,13 @@ async function collectNode(id) {
     if(startingCollection || resume.isRunning())throw new Error('已有采集任务运行，请等待结束或先停止。');
     startingCollection=true;
     try{const task=await api.analysisTask(slug,'POST',1000,sourceId,limits);collectionOrigins.set(slug,{id,sourceId});return task;}
+    catch(error){
+      if((!error.status || error.status>=500) && slug===activeSlug && version===routeVersion){
+        collectionOrigins.set(slug,{id,sourceId});resume.watch();
+        throw new Error('启动响应未确认，正在查询任务状态。可关闭此窗口查看采集面板，请勿重复启动。');
+      }
+      throw error;
+    }
     finally{startingCollection=false;}
   });
 }
@@ -438,7 +471,7 @@ async function openCall(parent, callId) {
   await select('edge', edgeId, true);
 }
 
-async function select(type, id, focus = false, clicked = false) {
+async function select(type, id, focus = false, clicked = false, keepSource = false) {
   const data = current, slug = activeSlug, version = routeVersion, view = renderer;
   if (!data || slug !== wantedSlug || drawing) return;
   if (type === 'node' && !graphWindow.visible.has(id)) {
@@ -465,9 +498,6 @@ async function select(type, id, focus = false, clicked = false) {
     await view.focusElement(renderId, false);
     if (version !== routeVersion || view !== renderer) return;
   }
-  sourceRequest?.abort(); sourceRequest = new AbortController();
-  sourceEditor?.dispose();sourceEditor=null;
-  const request = sourceRequest;
   $('canvas').dataset.selection = id;
   $('inspector-heading').textContent=type==='node'?'节点详情':item.kind==='trait-dispatch'?'多态关系':'调用详情';
   $('source').hidden=false;
@@ -543,6 +573,10 @@ async function select(type, id, focus = false, clicked = false) {
   }
   sourceNavigationController.select(current, slug, type, item.sourceId || id, clicked);
   $('source-location').textContent = item.file ? `${item.file}:${item.line}` : '无精确源码位置';
+  if(keepSource)return;
+  sourceRequest?.abort(); sourceRequest = new AbortController();
+  sourceEditor?.dispose();sourceEditor=null;
+  const request = sourceRequest;
   $('source').textContent = '正在读取源码…';
   if (type === 'edge' && item.callSiteStatus && item.callSiteStatus !== 'exact') { $('source').textContent = item.callSiteNote || '此关系未提供精确调用点。'; return; }
   try {
@@ -713,24 +747,26 @@ function updateWindowStats() {
   const unique = new Set(visibleGraph.nodes.map(n => n.sourceId || n.id)).size;
   $('stats').textContent = `已展示 ${unique} / ${current.nodes.length} 个符号 · ${visibleGraph.nodes.length} 个路径引用 · ${visibleGraph.edges.length} 条调用关系 · ${edgeMembers.size || visibleGraph.edges.length} 条展示连线`;
 }
-async function redrawWindow(anchor, preservePositions = false) {
+async function redrawWindow(anchor, preservePositions = false, propagateError = false) {
   contextMenu.close();
   if (!renderer || loading || drawing) return;
   const view = renderer, version = routeVersion;
   await mountPromise.catch(() => {});
   if (view !== renderer || version !== routeVersion) return;
-  const before = anchor && graphWindow.visible.has(anchor) ? view.getViewportByCanvas(view.getElementPosition(anchor)) : null;
+  const prior = paintWindow?.data.nodes.find(n=>n.id===anchor)?.style;
+  const before = prior ? view.getViewportByCanvas([prior.x,prior.y]) : null;
   drawing = true; setControlsBusy(true);
   try {
     visibleGraph = visibleSnapshot(); graphIndex = indexGraph(visibleGraph);
     view.setData(windowData(anchor, preservePositions)); await view.draw();
     if (version !== routeVersion || view !== renderer) return;
     if (before) {
-      const after = view.getViewportByCanvas(view.getElementPosition(anchor));
+      const point = paintWindow.data.nodes.find(n=>n.id===anchor)?.style;
+      const after = view.getViewportByCanvas(point ? [point.x,point.y] : [0,0]);
       await view.translateBy([before[0] - after[0], before[1] - after[1]], false);
     }
     updateWindowStats();
-  } catch (error) { if (view === renderer) status(error.message, true); }
+  } catch (error) { if (view === renderer) status(error.message, true); if(propagateError)throw error; }
   finally { drawing = false; setControlsBusy(loading); }
 }
 const displaySettings = $('display-settings');
