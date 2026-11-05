@@ -11,6 +11,16 @@ with sync_playwright() as p:
  theme=page.locator('[data-select-id="appearance"] .ts-control')
  expect(theme).to_be_visible();before=theme.bounding_box();theme.click()
  assert before==theme.bounding_box()
+ page.keyboard.press('Escape')
+ # A select has one inset focus border, not a second bright outer halo.
+ for appearance in ['light','dark']:
+  select_option(page,'#appearance',appearance)
+  theme.click();page.wait_for_timeout(150)
+  style=theme.evaluate('(el)=>{const s=getComputedStyle(el);return {shadow:s.boxShadow,outline:s.outlineStyle,width:s.outlineWidth,offset:s.outlineOffset}}')
+  assert style=={'shadow':'none','outline':'solid','width':'2px','offset':'-2px'},style
+  page.screenshot(path=str(Path(__file__).resolve().parents[1]/'target'/f'select-focus-{appearance}.png'))
+  page.keyboard.press('Escape')
+ theme.focus();page.keyboard.press('ArrowDown')
  expect(page.locator('[data-select-id="appearance"] .ts-dropdown input')).to_have_count(0)
  page.keyboard.press('Escape')
  page.evaluate('''() => {
@@ -54,8 +64,28 @@ with sync_playwright() as p:
  expect(page.locator('[data-select-id="fixture-project"]')).to_have_count(0)
  # Sidebar actions use a single trailing menu and preserve folder/row geometry.
  page.set_viewport_size({'width':1440,'height':960})
+ page.route('**/api/graph-trash',lambda r:r.fulfill(json=[{'slug':'recycled-fixture','title':'回收站里用于验证长名称布局的调用图'}]))
  page.goto(BASE+'/?view=workbench&graph=sample')
  expect(page.locator('#fit')).to_be_enabled()
+ for appearance,width in [('light',1440),('dark',390)]:
+  page.set_viewport_size({'width':width,'height':960});select_option(page,'#appearance',appearance)
+  row=page.locator('.tree-trash-row');expect(row).to_be_visible()
+  title=row.locator(':scope > span:first-child');trigger=row.locator('.tree-menu > button')
+  assert title.bounding_box()['width']>100
+  assert title.evaluate('(el)=>getComputedStyle(el).whiteSpace')=='nowrap'
+  assert trigger.bounding_box()['width']==28
+  trigger.click();expect(row.locator('[popover]')).to_be_visible();page.keyboard.press('Escape')
+  page.locator('.editor-settings > summary').click()
+  page.locator('[data-select-id="source-editor"] .ts-control').click()
+  option=page.locator('[data-select-id="source-editor"] .option[data-value="idea"]')
+  expect(option).to_be_visible()
+  assert page.locator('.editor-settings-body').evaluate('(el)=>getComputedStyle(el).overflowY')=='visible'
+  assert option.evaluate('(el)=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}')
+  page.screenshot(path=str(Path(__file__).resolve().parents[1]/'target'/f'source-select-{appearance}-{width}.png'))
+  option.click();expect(page.locator('#source-editor')).to_have_value('idea')
+  page.keyboard.press('Escape')
+ page.set_viewport_size({'width':1440,'height':960})
+ page.wait_for_timeout(250) # Let the responsive sidebar width transition settle.
  project=page.locator('.tree-project[data-folder="alpha"]')
  summary=project.locator(':scope > summary');before=summary.bounding_box()
  project.locator(':scope > summary .tree-menu > button').click()

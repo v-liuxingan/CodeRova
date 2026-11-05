@@ -7,6 +7,7 @@ import { sidebarWidths } from './sidebar-widths.js';
 import { sourceNavigation } from './source-navigation.js';
 import { relationList } from './relation-list.js';
 import { readingGuide } from './reading-guide.js';
+import { nodePicker } from './node-picker.js';
 import { collectionDialog } from './collection-dialog.js';
 import { editSession } from './edit-session.js';
 import { entryPicker } from './entry-picker.js';
@@ -25,7 +26,7 @@ import { layerPositions } from './graph-window.js';
 import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
-import { RenderWindow, viewportBounds, containsBounds } from './render-window.js';
+import { RenderWindow, viewportBounds, containsBounds, mountDelta } from './render-window.js';
 import { CodeRovaApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
 const api = new CodeRovaApi({drafts:true});
@@ -114,7 +115,7 @@ function graphAppearance() {
       cardMore: d => d.data.more || '', cardExpand: d => d.data.canExpand, cardCollapse: d => d.data.canCollapse,
       cardText: color('muted'),
       cardTitleColor: color('strong'), cardAccent: d => color(`card-${d.data.tone}-text`),
-    }, state: { selected: { opacity: 1, fill: color('active'), stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 0.25 } } },
+    }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 0.25 } } },
         edge: { type: d => d.type || 'cubic-vertical', style: { labelFill: color('muted'), labelBackground: true, labelBackgroundFill: color('bg'), labelPadding: [2,4], labelFontSize: 11, opacity: 1, stroke: color('graph-edge'), lineWidth: 1, endArrow: true, radius: 6 }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, dim: { opacity: 0.12 } } },
   };
 }
@@ -149,8 +150,8 @@ const tree = new LibraryTree({
     const next = graphs.find(g => g.projectId === current?.projectId) || graphs[0];
     if (next) return navigate(next.slug);
     wantedSlug = undefined; activeSlug = undefined; routeVersion++;
-    sourceRequest?.abort(); renderer?.destroy(); renderer = null; current = null; symbolSearchGraph = null; symbolSearch = [];
-    resetInspector(); $('symbols').replaceChildren(); $('title').textContent = '选择一个调用图';
+    sourceRequest?.abort(); renderer?.destroy(); renderer = null; current = null;
+    resetInspector(); renderSymbols(); $('title').textContent = '选择一个调用图';
     graphLsp.close();
     $('summary').textContent = '目录为空，可从回收站恢复调用图。'; $('stats').textContent = '—';
     $('coverage').hidden = true; $('fit').disabled = true;
@@ -205,6 +206,9 @@ async function drain() {
       renderSymbols();edits.update();updateHidden();
       renderer = new Graph({
         container: $('canvas'), autoResize: false, animation: false, padding: 35,
+        // G canvas can reuse unchanged display objects for camera-only frames.
+        // Geometry/style changes still execute the normal render hooks.
+        canvas: {disableRenderHooks:true},
         data: windowData(),
         ...graphAppearance(),
         plugins: [{ type: 'window-minimap', key: 'overview', getWindow: () => paintWindow,
@@ -213,7 +217,9 @@ async function drain() {
           containerStyle: { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '8px', margin: '12px' },
           maskStyle: { border: '1px solid var(--accent)', background: 'var(--active-line)', opacity: '0.6', minWidth: '4px', minHeight: '4px', boxSizing: 'border-box' },
         }],
-        behaviors: ['drag-canvas', 'zoom-canvas', { type: 'drag-element', enable: event => !gesture?.branchAction && !branchAction(event) }],
+        behaviors: ['drag-canvas', 'zoom-canvas',
+          {type:'optimize-viewport-transform',enable:()=>virtualized(),debounce:120,shapes:{node:['key'],edge:['key']}},
+          { type: 'drag-element', enable: event => !gesture?.branchAction && !branchAction(event) }],
       });
       const createdView = renderer;
       renderer.on('aftertransform', scheduleViewport);
@@ -402,46 +408,20 @@ function renderCoverage(analysis) {
   $('coverage').open = false;
 }
 
-let symbolMatches = [], symbolOffset = 0;
-let symbolSearchGraph = null, symbolSearch = [];
-function appendSymbols() {
-  const fragment = document.createDocumentFragment();
-  const existing = new Set([...$('symbols').options].map(option => option.value));
-  for (const item of symbolMatches.slice(symbolOffset, symbolOffset + 100)) {
-    if (existing.has(item.id)) continue;
-    existing.add(item.id);
-    const option = node('option', item.label); option.title = `${item.file}:${item.line}`; option.value = item.id; fragment.append(option);
-  }
-  symbolOffset = Math.min(symbolOffset + 100, symbolMatches.length); $('symbols').append(fragment);
-  $('symbols-more').hidden = symbolOffset >= symbolMatches.length;
-  $('symbols-more').textContent = `加载更多选项（${symbolOffset} / ${symbolMatches.length}）`;
-  $('symbols-more').title = '加载到上方节点列表，不改变画布';
-}
+let symbolMatches = [], symbolNodes = new Map();
+const symbolPicker=nodePicker($('symbols'),ids=>{symbolMatches=ids.map(id=>symbolNodes.get(id)).filter(Boolean);});
 function renderSymbols() {
-  const query = $('symbol-filter').value.trim().toLowerCase();
-  if (symbolSearchGraph !== current) {
-    symbolSearchGraph = current;
-    symbolSearch = (current?.nodes || []).map(item => ({item, text:`${item.label} ${item.file} ${item.id}`.toLowerCase()}));
-  }
   const hidden = hiddenNodes.get(wantedSlug);
-  symbolMatches = symbolSearch.filter(({item,text}) => !hidden?.has(item.id) && text.includes(query)).map(({item}) => item);
-  symbolOffset = 0;
-  $('symbol-load-status').textContent = '';
-  const placeholder = node('option', '选择节点…'); placeholder.value = '';
-  $('symbols').replaceChildren(placeholder); appendSymbols();
+  const nodes=(current?.nodes||[]).filter(item=>!hidden?.has(item.id));
+  symbolNodes=new Map(nodes.map(item=>[item.id,item]));symbolPicker.update(nodes);
 }
-$('symbols-more').addEventListener('click', () => {
-  appendSymbols();
-  $('symbol-load-status').textContent = `已加载 ${symbolOffset} / ${symbolMatches.length}，请在上方列表选择`;
-  if ($('symbols-more').hidden) $('symbols').focus();
-});
 
 function resetInspector() {
   sourceEditor?.dispose();sourceEditor=null;
   sourceNavigationController.clear();
   sourceRequest?.abort(); sourceRequest = null;
   $('canvas').dataset.selection = '';
-  $('symbols').value = '';
+  symbolPicker.clear();
   $('inspector-heading').textContent='详情';
   $('selection-title').textContent = '未选择节点';
   $('node-actions-panel').replaceChildren();
@@ -500,6 +480,10 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
   if (focus) {
     await view.focusElement(renderId, false);
     if (version !== routeVersion || view !== renderer) return;
+    // Focus changes the camera before the scheduled viewport pass. Evict the
+    // old overview now, rather than restyling thousands of offscreen elements.
+    await refreshViewport(true);
+    if (version !== routeVersion || view !== renderer) return;
   }
   $('canvas').dataset.selection = id;
   $('inspector-heading').textContent=type==='node'?'节点详情':item.kind==='trait-dispatch'?'多态关系':'调用详情';
@@ -529,10 +513,7 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
   applyStates(view, states);
   if (type === 'node') {
     const sourceId = item.sourceId || id;
-    if (![...$('symbols').options].some(option => option.value === sourceId)) {
-      const option = node('option', item.label); option.value = sourceId; $('symbols').append(option);
-    }
-    $('symbols').value = sourceId;
+    symbolPicker.select(sourceId);
     const incoming=graphWindow.source.incoming.get(sourceId)||[];
     const pathEdge=(graphIndex.incoming.get(id)||[])[0];
     const guide=readingGuide({graph:current,item,outgoing:graphWindow.source.outgoing.get(sourceId)||[],incoming,
@@ -540,15 +521,15 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
       openEvidence:()=>void select('edge',pathEdge.id,false)});
     $('node-actions-panel').prepend(guide.row);
     $('relations').append(guide.detail);
-    if (current.analysis) {
-      const actions=node('div');actions.className='node-actions';
-      const add=node('button','添加节点');add.addEventListener('click',()=>addEntry(id));
-      actions.append(add);$('node-actions-panel').append(actions);
-    }
-    const prune=node('button','删除');prune.disabled=sourceId===current.root;
-    prune.addEventListener('click',()=>void pruneNode(id));
-    const hide=node('button','隐藏');hide.disabled=sourceId===current.root;hide.addEventListener('click',()=>void hideNode(id));
-    const editTools=node('details');editTools.className='node-edit-tools';editTools.append(node('summary','编辑节点'),hide,prune);$('node-actions-panel').append(editTools);
+    // Share the canvas menu instead of maintaining a second editing surface.
+    const more=node('button',undefined,'inspector-more');more.type='button';
+    more.setAttribute('aria-label','更多节点操作');more.title='更多节点操作';
+    more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded','false');more.setAttribute('aria-controls','edge-context-menu');
+    more.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/></svg>';
+    more.onclick=()=>{const rect=more.getBoundingClientRect();contextMenu.open({editTarget:{type:'node',id},id,label:item.label,file:item.file,line:item.line,
+      enabled:graphWindow.collapsible(id),isNode:true,canCollect:canCollect(id),canAdd:Boolean(current.analysis),canPrune:sourceId!==current.root,
+      x:rect.right-280,y:rect.bottom+6,trigger:more});};
+    $('node-actions-panel').append(more);
   } else {
     $('relations').append(node('p', callMeaning(item)));
     const sourceEdgeId=item.sourceId||id;
@@ -612,7 +593,9 @@ function mountedData(data) {
   $('canvas').dataset.mountedNodes = String(data.nodes.length);
   mountedDetail = (renderer?.getZoom() || .85) >= .25;
   return { nodes: data.nodes.map(n => ({ ...n, type: mountedDetail ? 'execution-card' : 'rect', states: elementStates.get(n.id) || [] })),
-    edges: data.edges.map(e => ({ ...e, states: combinedEdgeState(e.id) })) };
+    // Overview preserves paths and endpoint IDs; unreadable labels/arrows return
+    // with the detailed cards when the user zooms back in.
+    edges: data.edges.map(e => ({ ...e, style:{...e.style,label:mountedDetail,endArrow:mountedDetail}, states: combinedEdgeState(e.id) })) };
 }
 function scheduleViewport() {
   cancelAnimationFrame(viewportFrame);
@@ -637,7 +620,14 @@ async function refreshViewport(force = false, center) {
     const slice = paintWindow.slice(paintedBounds);
     const ids = new Set([...slice.nodes, ...slice.edges].map(n => n.id));
     if (mountedDetail !== (zoom >= .25) || ids.size !== mountedIds.size || [...ids].some(id => !mountedIds.has(id))) {
-      view.setData(mountedData(slice)); mountPromise = view.draw(); await mountPromise;
+      const levelChanged=mountedDetail !== (zoom >= .25);
+      const next=mountedData(slice);
+      if(levelChanged) view.setData(next);
+      else {
+        const {add,remove}=mountDelta({nodes:view.getNodeData(),edges:view.getEdgeData()},next);
+        view.removeData(remove);view.addData(add);
+      }
+      mountPromise = view.draw(); await mountPromise;
     }
   } catch (error) { if (version === routeVersion && view === renderer) status(error.message, true); }
   finally { mountBusy = false; if (mountAgain) { mountAgain = false; scheduleViewport(); } }
@@ -834,7 +824,6 @@ $('coverage').addEventListener('toggle', () => {
 });
 
 $('filter').addEventListener('input', () => tree.filter($('filter').value));
-$('symbol-filter').addEventListener('input', renderSymbols);
 $('symbols').addEventListener('change', async () => {
   if (!$('symbols').value) { clearSelection(); return; }
   await select('node', $('symbols').value, true);

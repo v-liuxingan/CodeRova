@@ -179,7 +179,7 @@ export class LibraryTree {
     if (this.query && !matches) this.container.append(el('p', '没有匹配的调用图', 'tree-empty'));
     const trash = this.folder('trash', '回收站', this.trash.length, 'tree-trash');
     for (const graph of this.trash) {
-      const row = el('div', null, 'tree-trash-row'); row.append(el('span', graph.title), this.menu(`回收站操作 ${graph.title}`,[this.action('恢复', `恢复 ${graph.title}`, () => this.mutate(async () => { await this.api.restoreGraph(graph.slug); }, '已恢复调用图')), this.action('删除', `永久删除 ${graph.title}`, () => this.deletePermanently(graph))])); trash.append(row);
+      const row = el('div', null, 'tree-trash-row'); const title=el('span', graph.title);title.title=graph.title;row.append(title, this.menu(`回收站操作 ${graph.title}`,[this.action('恢复', `恢复 ${graph.title}`, () => this.mutate(async () => { await this.api.restoreGraph(graph.slug); }, '已恢复调用图')), this.action('删除', `永久删除 ${graph.title}`, () => this.deletePermanently(graph))])); trash.append(row);
     }
     if (!this.trash.length) trash.append(el('p', '回收站为空', 'tree-empty'));
     this.container.append(trash);

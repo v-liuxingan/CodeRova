@@ -83,14 +83,14 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    plan=page.request.post(prune_url,data={'nodeId':target},headers={'Origin':base}).json()
    assert plan['removedNodeIds']==[target] and not plan['applied']
    assert page.request.post(prune_url,data={'nodeId':target,'apply':True,'revision':'stale'},headers={'Origin':base}).status==400
-   if not page.locator('.node-edit-tools').evaluate('(d)=>d.open'):page.locator('.node-edit-tools > summary').click()
+   page.get_by_role('button',name='更多节点操作',exact=True).click()
    with page.expect_event('dialog') as dialog:
-    page.get_by_role('button',name='删除',exact=True).click()
+    page.get_by_role('menuitem',name='删除',exact=True).click()
    dialog.value.dismiss()
    assert target in [n['id'] for n in json.loads(output.read_text(encoding='utf-8'))['nodes']]
-   if not page.locator('.node-edit-tools').evaluate('(d)=>d.open'):page.locator('.node-edit-tools > summary').click()
+   page.get_by_role('button',name='更多节点操作',exact=True).click()
    with page.expect_event('dialog') as dialog:
-    page.get_by_role('button',name='删除',exact=True).click()
+    page.get_by_role('menuitem',name='删除',exact=True).click()
    dialog.value.accept()
    expect(page.locator('#coverage-title')).to_contain_text('已减枝 1 个符号')
    page.locator('#save-edits').click();expect(page.locator('#edit-state')).to_have_text('已保存');expect(page.locator('#save-edits')).to_be_disabled()

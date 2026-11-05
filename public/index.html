@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN" data-theme="light">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeRova · 源码工作台</title><link rel="icon" type="image/svg+xml" href="/brand/coderova-mark.svg"><script src="/workbench/theme.js"></script><link rel="stylesheet" href="/vendor/components/controls.css"><link rel="stylesheet" href="/workbench/style.css"><link rel="stylesheet" href="/workbench/interaction.css"><link rel="stylesheet" href="/vendor/monaco/monaco-preview.css"><link rel="stylesheet" href="/workbench/components.css"><link rel="stylesheet" href="/vendor/components/status.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeRova · 源码工作台</title><link rel="icon" type="image/svg+xml" href="/brand/coderova-mark.svg"><script src="/workbench/theme.js"></script><link rel="stylesheet" href="/vendor/components/controls.css"><link rel="stylesheet" href="/workbench/style.css"><link rel="stylesheet" href="/workbench/interaction.css"><link rel="stylesheet" href="/vendor/monaco/monaco-preview.css"><link rel="stylesheet" href="/workbench/components.css"><link rel="stylesheet" href="/vendor/components/status.css"><link rel="stylesheet" href="/workbench/surface.css"></head>
 <body>
 <a class="skip-link" href="#reader">跳到调用图</a>
 <header><a class="brand" href="/" aria-label="CodeRova 项目主页"><img src="/brand/coderova-mark.svg" width="30" height="30" alt="" aria-hidden="true"><span>CodeRova</span></a><div class="header-actions"><select data-search="false" id="appearance" aria-label="配色主题"><option value="light">亮色</option><option value="dark">深色</option></select><button id="storage-settings" type="button">存储设置</button><a id="enter-workbench" href="/?view=workbench">进入工作台</a><a href="/">项目主页</a></div></header>
@@ -20,9 +20,8 @@
     <section class="heading"><div><h1 id="title">选择一个调用图</h1></div>    <div id="edit-bar" hidden class="edit-bar" aria-label="图修改"><span id="edit-state" role="status">已保存</span><button id="restore-hidden" hidden>恢复隐藏</button><button id="discard-edits" disabled>放弃修改</button><button id="save-edits" class="primary" disabled>保存</button></div></section>
     <div class="workbench-toolbar">
     <div class="node-toolbar" role="toolbar" aria-label="节点导航">
-      <div class="node-search">    <input id="symbol-filter" type="search" placeholder="搜索节点" aria-label="搜索节点">
-    <select id="symbols" aria-label="选择节点"><option>尚未加载调用图</option></select>
-    <button id="symbols-more" hidden>加载更多选项</button><span id="symbol-load-status" role="status" aria-live="polite"></span>
+      <div class="node-search">
+    <select id="symbols" data-native aria-label="搜索并选择节点"></select>
 </div>
       <div class="node-stepper"><button id="node-prev" title="上一节点" aria-label="上一节点"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 5-5 5 5 5"/></svg></button><button id="node-center" title="居中当前节点">居中当前节点</button><button id="node-next" title="下一节点" aria-label="下一节点"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></button></div>
     </div>

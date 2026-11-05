@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
    if not page.locator('.editor-settings').evaluate('(el)=>el.open'):page.locator('.editor-settings > summary').click()
    page.locator('#click-source').click()
    def choose():
-    select_option(page,'#symbols','a');page.locator('.node-edit-tools > summary').click()
+    select_option(page,'#symbols','a');expect(page.get_by_role('button',name='更多节点操作',exact=True)).to_be_visible()
    def edge_menu():
     edge=page.evaluate("()=>{const g=window.__testGraph,n=g.getNodeData().find(n=>(n.data.sourceId||n.id)==='a');return g.getEdgeData().find(e=>e.target===n.id).id}")
     page.evaluate('(id)=>window.__testGraph.focusElement(id,false)',edge)
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix='drafts-',dir=ROOT/'target') as tmp:
    choose()
    page.screenshot(path=str(ROOT/'target/inspector-selected.png'))
    page.evaluate("async()=>{await window.__testGraph.zoomTo(1.2,false);await window.__testGraph.translateBy([37,29],false)}")
-   edge_menu()
+   page.get_by_role('button',name='更多节点操作',exact=True).click()
    page.evaluate("()=>{const g=window.__testGraph;window.beforeHide={graph:g,zoom:g.getZoom(),screen:g.getViewportByCanvas([0,0]).slice(0,2).map((v,i)=>v+document.querySelector('#canvas').getBoundingClientRect()[i?'top':'left']),root:g.getElementPosition('root'),child:g.getElementPosition('a')};}")
    page.get_by_role('menuitem',name='隐藏',exact=True).click()
    expect(page.locator('#restore-hidden')).to_be_visible();expect(page.locator('#save-edits')).to_be_disabled()

@@ -1,4 +1,5 @@
 import { symbolPresentation } from '../../public/js/api.js';
+import { nodeTone } from './node-tone.js';
 import { ExtensionCategory, Label, Rect, register } from '@antv/g6';
 
 // Canvas shapes share G6's hit testing and drag behavior; no per-node DOM overlays.
@@ -16,7 +17,7 @@ class ExecutionNode extends Rect {
     this.upsert('type-badge', Label, attributes.cardBadge ? {
       x: -126, y: top + 7, text: attributes.cardBadge,
       fontFamily: 'Segoe UI, sans-serif', fontSize: 10, fontWeight: 700,
-      textAlign: 'center', textBaseline: 'middle', fill: attributes.cardText,
+      textAlign: 'center', textBaseline: 'middle', fill: attributes.cardAccent,
       background: true, backgroundWidth: 17, backgroundHeight: 17,
       backgroundRadius: 4, backgroundFill: attributes.cardControlFill,
       backgroundStroke: attributes.stroke, backgroundLineWidth: 1,
@@ -78,7 +79,7 @@ export function executionCards(graph) {
       sourceId: n.sourceId || n.id, pathReference: Boolean(n.pathReference), pathCycle: Boolean(n.pathCycle),
       height: 82 + (className ? 20 : 0) + (description ? 24 : 0),
       pending: pending.has(n.sourceId || n.id),
-      tone: n.role?.startsWith('人工采集入口') ? 'manual' : pending.has(n.sourceId || n.id) ? 'pending' : n.id === graph.root ? 'entry' : n.kind === 'method' ? 'method' : 'function',
+      tone: nodeTone(n, graph.root, pending.has(n.sourceId || n.id)),
       category: provisional ? '源码入口' : n.role?.startsWith('人工采集入口') ? '人工入口 · 已确认符号' : [semantic.type, semantic.type && ['struct','trait'].includes(n.kind) ? '' : kinds[n.kind] || n.kind || '符号', semantic.detail].filter(Boolean).join(' · '),
       purpose: description,
     } };

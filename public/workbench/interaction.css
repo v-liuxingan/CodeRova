@@ -168,7 +168,6 @@ dialog[open]::backdrop { animation: workbench-backdrop-in var(--reveal-time) eas
 
 .node-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 28px 12px; padding:10px; border:1px solid var(--line); border-radius:14px; background:var(--panel); }
 .node-search { display:flex; gap:8px; flex:1; min-width:0; align-items:center; flex-wrap:wrap; }
-.node-search input { width:150px; margin:0; background:var(--bg); }
 .node-search select { flex:1; min-width:120px; max-width:280px; margin:0; }
 .node-stepper { display:flex; gap:4px; border-left:1px solid var(--line); padding-left:12px; }
 .node-stepper button { background:transparent; border:0; min-height:36px; }
@@ -189,7 +188,6 @@ dialog[open]::backdrop { animation: workbench-backdrop-in var(--reveal-time) eas
 .heading .edit-bar button { font-size:12px; padding:7px 10px; }
 .workbench-toolbar { margin:0 28px 12px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
 .workbench-toolbar .node-toolbar { margin:0; padding:10px 12px; border:0; border-radius:0; background:transparent; gap:12px; }
-.workbench-toolbar .node-search input { width:140px; flex:1 1 100px; }
 .workbench-toolbar .node-search select { max-width:none; flex:2 1 150px; }
 .workbench-toolbar .node-stepper { flex-shrink:0; padding-left:8px; }
 .workbench-toolbar .node-stepper button { padding-inline:8px; font-size:12px; }
@@ -215,6 +213,7 @@ dialog[open]::backdrop { animation: workbench-backdrop-in var(--reveal-time) eas
 
 #selection-notes #selection-description { max-height:min(220px,28dvh); overflow-y:auto; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65; scrollbar-width:thin; padding-right:6px; }
 .toolbar-floating { position:fixed !important; right:auto !important; z-index:80 !important; max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); overflow:auto; }
+.editor-settings-body.toolbar-floating { overflow:visible; }
 .lsp-settings > summary { gap:6px; }
 .lsp-settings-body h2 { margin:0 0 8px; font-size:14px; font-weight:650; }
 .lsp-project { margin:0 0 16px; font-size:12px; color:var(--muted); }

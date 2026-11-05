@@ -36,13 +36,13 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
   icon(prune,'M4 6h12M8 6V3h4v3M6 6l1 11h6l1-11M9 9v5m2-5v5');
   prune.className='edge-menu-danger';
   menu.append(header, button, collect, add, editingDivider, describe, hide, prune, hint); document.body.append(menu);
-  let target, editTarget;
-  const close = () => { menu.hidden = true; target = null; editTarget = null; };
+  let target, editTarget, trigger;
+  const close = () => { menu.hidden = true; target = null; editTarget = null;trigger?.setAttribute('aria-expanded','false'); };
   button.addEventListener('click', () => { const id = target; close(); if (id) void onCollapse(id); });
   document.addEventListener('pointerdown', event => { if (!menu.contains(event.target)) close(); }, true);
   document.addEventListener('keydown', event => {
     if (menu.hidden) return;
-    if (event.key === 'Escape') { event.preventDefault(); close(); document.getElementById('canvas').focus(); }
+    if (event.key === 'Escape') { event.preventDefault(); close(); (trigger?.isConnected?trigger:document.getElementById('canvas')).focus({preventScroll:true}); }
     if (event.key === 'Tab') close();
     if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
       event.preventDefault();
@@ -55,7 +55,8 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
   });
   window.addEventListener('resize', close);
   window.addEventListener('scroll', close, true);
-  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y }) {
+  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y, trigger: opener }) {
+    trigger?.setAttribute('aria-expanded','false');trigger=opener;trigger?.setAttribute('aria-expanded','true');
     hide.hidden=false;hide.disabled=!canPrune;prune.hidden=false;prune.disabled=!canPrune;
     collect.hidden=!isNode;add.hidden=!isNode;collect.disabled=!canCollect;add.disabled=!canAdd;
     editTarget = descriptionTarget; describe.hidden = !editTarget;
@@ -63,7 +64,7 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
     title.textContent = label; title.title = label;
     location.textContent=file?`${file.split(/[\\/]/).pop()}${line?`:${line}`:''}`:'';
     location.title=file||'';location.hidden=!file;editingDivider.hidden=false;
-    collect.title=canCollect?'继续采集':'仅待采集且没有已知下游的叶子节点可采集';
+    collect.title=canCollect?'从当前源码节点继续采集':'当前节点没有可用的源码采集入口';
     add.title=canAdd?'选择源码中的函数作为后续节点':'当前图未配置 LSP 分析，暂不支持添加';
     hide.title=canPrune?'刷新后恢复，或使用恢复隐藏':'入口节点不能隐藏';
     prune.title=canPrune?'移除节点及独占下游，保存修改后写入文件':'入口节点不能删除';

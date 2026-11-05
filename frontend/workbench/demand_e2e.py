@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   assert page.locator('#symbols option').count()<=101
   offscreen=next(n for n in reversed(graph['nodes']) if not page.evaluate('(id)=>window.__testGraph.getNodeData().some(n=>n.id===id)',n['id']))
   def choose(id):
-   page.fill('#symbol-filter',id);select_option(page,'#symbols',id);expect(page.locator('#canvas')).to_have_attribute('data-selection',id);expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
+   select_option(page,'#symbols',id);expect(page.locator('#canvas')).to_have_attribute('data-selection',id);expect(page.frame_locator('#source iframe').locator('.monaco-source-focus').first).to_be_visible()
   choose(root)
   point=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',root);box=page.locator('#canvas').bounding_box()
   x,y=box['x']+point[0],box['y']+point[1];page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+100,y+40,steps=10);page.mouse.up()
@@ -32,8 +32,10 @@ with tempfile.TemporaryDirectory(prefix='demand-test-') as d:
   assert page.evaluate('window.__testGraph.getZoom()')<.25
   assert page.evaluate("window.__testGraph.getNodeData().every(n=>n.type==='rect')")
   choose(root);assert page.evaluate('window.__testGraph.getZoom()')>=.35
-  page.fill('#symbol-filter','');expect(page.locator('#symbols option')).to_have_count(101)
-  page.click('#symbols-more');expect(page.locator('#symbols option')).to_have_count(201)
+  page.locator('[data-select-id="symbols"] .ts-control').click()
+  page.locator('[data-select-id="symbols"] .dropdown-input').fill('')
+  expect(page.locator('[data-select-id="symbols"] [data-selectable]')).to_have_count(100)
+  page.keyboard.press('Escape')
   choose(root)
   page.screenshot(path='target/test-artifacts/node-actions-light.png')
   before=page.evaluate('(id)=>window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition(id))',root)

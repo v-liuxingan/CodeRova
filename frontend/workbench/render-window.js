@@ -6,6 +6,17 @@ export function viewportBounds(center, width, height, zoom, padding = 300) {
 export function containsBounds(outer, inner) {
   return outer && inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom;
 }
+// A camera move only changes membership. Retained elements keep their geometry,
+// interaction states and source IDs instead of being updated with fresh copies.
+export function mountDelta(previous, next) {
+  const add={nodes:[],edges:[]}, remove={nodes:[],edges:[]};
+  for(const kind of ['nodes','edges']) {
+    const before=new Set(previous[kind].map(item=>item.id)), after=new Set(next[kind].map(item=>item.id));
+    add[kind]=next[kind].filter(item=>!before.has(item.id));
+    remove[kind]=previous[kind].filter(item=>!after.has(item.id)).map(item=>item.id);
+  }
+  return {add,remove};
+}
 export class RenderWindow {
   constructor(data) { this.setData(data); }
   setData(data) {

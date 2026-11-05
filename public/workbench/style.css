@@ -188,7 +188,7 @@ nav button[aria-current=true] { background: var(--active); border-color: var(--a
 #catalog .tree-empty button { font-size: 12px; padding: 4px 0; }
 .tree-trash { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 10px; }
 .tree-trash-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 7px; border-bottom: 1px solid var(--line); }
-.tree-trash-row > span { width: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.tree-trash-row > span:first-child { font-size: 12px; overflow-wrap: anywhere; }
 #catalog .tree-trash-row button { width: auto; padding: 3px 6px; font-size: 12px; }
 .tree-dialog { width: min(440px, 90vw); border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); padding: 24px; box-shadow: 0 20px 80px #0003; }
 .tree-dialog::backdrop { background: #0f172a66; }
@@ -482,4 +482,4 @@ button.primary:disabled {opacity:.45;}
 #catalog .tree-menu-actions[popover] { position: fixed; inset: auto; margin: 0; width: max-content; min-width: 150px; max-width: calc(100vw - 16px); padding: 5px; color: var(--text); box-shadow: 0 8px 28px #0002; }
 #catalog .tree-menu-actions button { width: 100%; text-align: left; font-size: 12px; }
 .tree-trash-row { flex-wrap: nowrap; align-items: center; }
-.tree-trash-row > span:first-child { flex: 1; min-width: 0; width: auto; }
+.tree-trash-row > span:first-child { flex: 1; min-width: 0; width: auto; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
