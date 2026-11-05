@@ -132,6 +132,7 @@ export class CodeRovaApi {
   checkEntry(slug, fileId, line, signal) { return request(`/api/graphs/${encodeURIComponent(slug)}/entry-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
   createEntry(slug, data) { if(this.useDrafts)return this.draftOperation(slug,{action:"entry",request:data}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/entries`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
   pruneNode(slug, nodeId, revision) { if(this.useDrafts)return this.draftOperation(slug,{action:"prune",request:{nodeId,apply:Boolean(revision),...(revision?{revision}:{})}}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/prune`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nodeId,apply:Boolean(revision),...(revision?{revision}:{})})}); }
+  pruneNodes(slug, nodeIds, revision) { const body={nodeIds:[...new Set(nodeIds)],apply:Boolean(revision),...(revision?{revision}:{})}; if(this.useDrafts)return this.draftOperation(slug,{action:'prune',request:body}).then(r=>r.result); return request(`/api/graphs/${encodeURIComponent(slug)}/prune`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
   loadGraph(slug) {
     if(this.useDrafts && this.drafts.has(slug))return this.draftOperation(slug,{action:"read"}).then(r=>r.graph);
     return request(`/api/graphs/${encodeURIComponent(slug)}`);

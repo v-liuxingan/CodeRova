@@ -27,6 +27,7 @@ import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
 import { RenderWindow, viewportBounds, containsBounds, mountDelta } from './render-window.js';
+import { directionalNeighbor } from './directional-navigation.js';
 import { CodeRovaApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
 const api = new CodeRovaApi({drafts:true});
@@ -83,9 +84,37 @@ let changingVisibility = false;
 const edits=editSession(api,()=>wantedSlug,()=>{const slug=wantedSlug;activeSlug=undefined;navigate(slug,false);});
 $('canvas').tabIndex = 0;
 let gesture = null;
+const batchSelected = new Set();
+const directionControls={ 'node-left':'ArrowLeft','node-up':'ArrowUp','node-down':'ArrowDown','node-right':'ArrowRight' };
+function nodeStates(id) {
+  const states = elementStates.get(id) || [];
+  return batchSelected.has(id) ? [...states.filter(s => s !== 'dim'), 'batch-selected'] : states;
+}
+function batchHint() {
+  updateNavigationButtons();
+  $('batch-selection-info').textContent = batchSelected.size ? `已框选 ${batchSelected.size} 个节点 · 拖动任一选中节点一起移动 · Esc 取消` : 'Shift 拖动框选，拖动选中节点一起移动；Esc 取消框选。';
+}
+function clearBatch() {
+  if (!batchSelected.size) return;
+  const ids = [...batchSelected]; batchSelected.clear(); batchHint();
+  if (renderer) void renderer.setElementState(Object.fromEntries(ids.filter(id=>mountedIds.has(id)).map(id=>[id,nodeStates(id)])),false);
+  scheduleViewport();
+}
+function brushSelection(states) {
+  batchSelected.clear();
+  for (const [id, values] of Object.entries(states)) if (values.includes('batch-selected')) batchSelected.add(id);
+  // G6 owns hit-testing and the brush. Compose its result with reading states.
+  for (const n of renderer.getNodeData()) states[n.id] = nodeStates(n.id);
+  batchHint();
+}
 // Measure total excursion, not just release displacement (a drag may return to its origin).
 $('canvas').addEventListener('pointerdown', event => {
-  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: event.button !== 0 };
+  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, shift: event.shiftKey, moved: event.button !== 0 };
+  if (event.target.tagName === 'CANVAS' && !event.target.closest('.graph-minimap')) {
+    $('canvas').focus({preventScroll:true});
+    // Finish the native brush even when release lands over the minimap or sidebar.
+    if(event.shiftKey && event.button===0) event.target.setPointerCapture(event.pointerId);
+  }
 }, true);
 const trackPointer = event => {
   if (gesture?.id === event.pointerId && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 5) gesture.moved = true;
@@ -109,7 +138,7 @@ function graphAppearance() {
   };
   return {
     node: { type: 'execution-card', style: {
-      opacity: 1, ports: d => d.data.ports || [], size: d => [304, d.data.height], radius: 12, label: false,
+      opacity: 1, lineDash: [], ports: d => d.data.ports || [], size: d => [304, d.data.height], radius: 12, label: false,
       fill: d => color(`card-${d.data.tone}-bg`),
       stroke: d => color(`card-${d.data.tone}-line`), lineWidth: 1,
       shadowColor: color('card-shadow'), shadowBlur: 0, shadowOffsetY: 0,
@@ -119,7 +148,7 @@ function graphAppearance() {
       cardMore: d => d.data.more || '', cardExpand: d => d.data.canExpand, cardCollapse: d => d.data.canCollapse,
       cardText: color('muted'),
       cardTitleColor: color('strong'), cardAccent: d => color(`card-${d.data.tone}-text`),
-    }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 0.25 } } },
+    }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 0.25 }, 'batch-selected': {opacity:1,stroke:color('accent'),lineWidth:3,lineDash:[5,3],halo:false} } },
         edge: { type: d => d.type || 'cubic-vertical', style: { labelFill: color('muted'), labelBackground: true, labelBackgroundFill: color('bg'), labelPadding: [2,4], labelFontSize: 11, opacity: 1, stroke: color('graph-edge'), lineWidth: 1, endArrow: true, radius: 6 }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, dim: { opacity: 0.12 } } },
   };
 }
@@ -198,7 +227,7 @@ async function drain() {
       $('window-unit').value = 'layers';
       graphWindow.reset(batchSize(), $('window-unit').value);
       visibleGraph = visibleSnapshot(); graphIndex = indexGraph(visibleGraph); activeSlug = slug;
-      gesture = null; resetInspector();
+      gesture = null; batchSelected.clear(); batchHint(); resetInspector();
       $('title').textContent = data.title; $('summary').textContent = data.description;
       $('lsp-project-name').textContent = names.get(data.projectId) || data.projectId;
       $('lsp-settings').open = false;
@@ -221,8 +250,10 @@ async function drain() {
           containerStyle: { background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '8px', margin: '12px' },
           maskStyle: { border: '1px solid var(--accent)', background: 'var(--active-line)', opacity: '0.6', minWidth: '4px', minHeight: '4px', boxSizing: 'border-box' },
         }],
-        behaviors: ['drag-canvas', 'zoom-canvas',
-          { type: 'drag-element', enable: event => !gesture?.branchAction && !branchAction(event) }],
+        behaviors: [{type:'drag-canvas',enable:event=>event.targetType==='canvas' && !gesture?.shift}, 'zoom-canvas',
+          {type:'brush-select',trigger:['shift'],enableElements:['node'],state:'batch-selected',mode:'default',onSelect:brushSelection,
+            enable:()=>!loading&&!drawing&&!draggingNode},
+          { type: 'drag-element', state:'batch-selected', enable: event => !gesture?.shift && !gesture?.branchAction && !branchAction(event) }],
       });
       const createdView = renderer;
       renderer.on('aftertransform', scheduleViewport);
@@ -231,6 +262,7 @@ async function drain() {
       renderer.on('node:dragend', () => {
         if (renderer !== createdView) return;
         for (const n of renderer.getNodeData()) paintWindow.move(n.id, renderer.getElementPosition(n.id));
+        updateNavigationButtons();
         draggingNode = false; scheduleViewport();
       });
       renderer.on('node:pointermove', event => {
@@ -240,7 +272,7 @@ async function drain() {
       renderer.on('node:pointerleave', () => { $('canvas').title = ''; });
       renderer.on('node:pointerdown', event => { if (gesture) gesture.branchAction = branchAction(event); });
       renderer.on('node:click', event => {
-        if (gesture?.moved) return;
+        if (gesture?.moved || gesture?.shift) return;
         const action = branchAction(event);
         if (action) void changeBranch(event.target.id, action);
         else void select('node', event.target.id, false, true);
@@ -251,13 +283,20 @@ async function drain() {
         const edge = graphIndex.edges.get(event.target.id);
         const target = event.targetType === 'node' ? graphIndex.nodes.get(event.target.id) : edge && graphIndex.nodes.get(edge.to);
         if (!target) return;
+        if(event.targetType==='node' && batchSelected.has(target.id) && batchSelected.size>1) {
+          const sourceIds=[...new Set([...batchSelected].map(id=>graphIndex.nodes.get(id)?.sourceId||id))];
+          const selection=sourceIds.filter(id=>id!==current.root);
+          contextMenu.open({selection,protectedCount:sourceIds.length-selection.length,label:`已选 ${batchSelected.size} 个调用位置 · 可处理 ${selection.length} 个方法`,isNode:true,canPrune:selection.length>0,
+            x:event.client?.x??event.clientX??0,y:event.client?.y??event.clientY??0});
+          return;
+        }
         contextMenu.open({ editTarget: {type:event.targetType, id:event.target.id}, id: target.id, label: target.label, file:target.file, line:target.line, enabled: graphWindow.collapsible(target.id), isNode:event.targetType==='node',canCollect:canCollect(target.id),canAdd:Boolean(current.analysis),canPrune:(graphIndex.nodes.get(target.id)?.sourceId||target.id)!==current.root,
           x: event.client?.x ?? event.clientX ?? 0, y: event.client?.y ?? event.clientY ?? 0 });
       };
       renderer.on('edge:contextmenu', openBranchMenu);
       renderer.on('node:contextmenu', openBranchMenu);
-      renderer.on('edge:click', event => { if (!gesture?.moved) void select('edge', event.target.id, false, true); });
-      renderer.on('canvas:click', () => { if (!gesture?.moved) clearSelection(); });
+      renderer.on('edge:click', event => { if (!gesture?.moved && !gesture?.shift) void select('edge', event.target.id, false, true); });
+      renderer.on('canvas:click', () => { if (!gesture?.moved) { if(gesture?.shift)clearBatch();else clearSelection(); } });
       await renderer.render();
       updateWindowStats();
       if (version !== routeVersion) continue;
@@ -311,12 +350,13 @@ async function refreshVisibility({view,version,screen,anchor}=visibilityViewport
 async function hideNode(id) {
   if (changingVisibility || drawing || loading) return;
   changingVisibility = true; setControlsBusy(true);
-  const slug=activeSlug, version=routeVersion, sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  const slug=activeSlug, version=routeVersion, ids=Array.isArray(id)?id:[id];
+  const sourceIds=[...new Set(ids.map(id=>graphIndex.nodes.get(id)?.sourceId||id))];
   try {
-    const plan=await api.pruneNode(slug,sourceId);
+    const plan=await api.pruneNodes(slug,sourceIds);
     if(slug!==activeSlug || version!==routeVersion)return;
     const removed = new Set(plan.removedNodeIds);
-    const ancestors = [id], seen = new Set(ancestors);
+    const ancestors = [...ids], seen = new Set(ancestors);
     let anchor = current.root;
     for (let i = 0; i < ancestors.length; i++) {
       const candidate = graphIndex.nodes.get(ancestors[i]);
@@ -326,10 +366,11 @@ async function hideNode(id) {
       }
     }
     const viewport = visibilityViewport(anchor);
+    clearBatch();
     const hidden=hiddenNodes.get(slug)||new Set();
     plan.removedNodeIds.forEach(n=>hidden.add(n));hiddenNodes.set(slug,hidden);
     await refreshVisibility(viewport);
-    status('已临时隐藏，画布位置与展开状态保留。');
+    status(`已临时隐藏 ${plan.removedNodeIds.length} 个方法及对应调用位置，画布位置与展开状态保留。`);
   } catch(error) { status(error.message,true); }
   finally { changingVisibility=false; setControlsBusy(loading || drawing); }
 }
@@ -349,12 +390,13 @@ let pruning = false;
 async function pruneNode(id) {
   if(pruning)return;
   pruning=true;
-  const slug=activeSlug, sourceId=graphIndex.nodes.get(id)?.sourceId||id;
+  const slug=activeSlug, version=routeVersion, ids=Array.isArray(id)?id:[id];
+  const sourceIds=[...new Set(ids.map(id=>graphIndex.nodes.get(id)?.sourceId||id))];
   try {
-    const plan=await api.pruneNode(slug,sourceId);
-    if(slug!==activeSlug)return;
-    if(!window.confirm(`将从图数据中移除该方法的所有调用位置及其独占下游：${plan.removedNodeIds.length} 个节点、${plan.removedEdgeIds.length} 条连线。保留 ${plan.preservedSharedNodeIds.length} 个共享下游节点。不影响源码，点击“保存”后写入图文件。确定删除？`))return;
-    await api.pruneNode(slug,sourceId,plan.revision);
+    const plan=await api.pruneNodes(slug,sourceIds);
+    if(slug!==activeSlug || version!==routeVersion)return;
+    if(!window.confirm(`将从图数据中移除所选 ${sourceIds.length} 个方法的所有调用位置及其独占下游：${plan.removedNodeIds.length} 个节点、${plan.removedEdgeIds.length} 条连线。保留 ${plan.preservedSharedNodeIds.length} 个共享下游节点。不影响源码，点击“保存”后写入图文件。确定删除？`))return;
+    await api.pruneNodes(slug,sourceIds,plan.revision);
     if(slug===activeSlug){activeSlug=undefined;navigate(slug,false);}
   }catch(error){status(error.message,true);}finally{pruning=false;}
 }
@@ -413,12 +455,11 @@ function renderCoverage(analysis) {
   $('coverage').open = false;
 }
 
-let symbolMatches = [], symbolNodes = new Map();
-const symbolPicker=nodePicker($('symbols'),ids=>{symbolMatches=ids.map(id=>symbolNodes.get(id)).filter(Boolean);});
+const symbolPicker=nodePicker($('symbols'),()=>{});
 function renderSymbols() {
   const hidden = hiddenNodes.get(wantedSlug);
   const nodes=(current?.nodes||[]).filter(item=>!hidden?.has(item.id));
-  symbolNodes=new Map(nodes.map(item=>[item.id,item]));symbolPicker.update(nodes);
+  symbolPicker.update(nodes);
 }
 
 function resetInspector() {
@@ -426,6 +467,7 @@ function resetInspector() {
   sourceNavigationController.clear();
   sourceRequest?.abort(); sourceRequest = null;
   $('canvas').dataset.selection = '';
+  updateNavigationButtons();
   symbolPicker.clear();
   $('inspector-heading').textContent='详情';
   $('selection-title').textContent = '未选择节点';
@@ -442,6 +484,7 @@ function resetInspector() {
 }
 
 function clearSelection() {
+  clearBatch();
   resetInspector();
   if (!renderer || !current) return;
   const view = renderer;
@@ -462,6 +505,7 @@ async function openCall(parent, callId) {
 async function select(type, id, focus = false, clicked = false, keepSource = false) {
   const data = current, slug = activeSlug, version = routeVersion, view = renderer;
   if (!data || slug !== wantedSlug || drawing) return;
+  clearBatch();
   if (type === 'node' && !graphWindow.visible.has(id)) {
     id = graphWindow.reveal(id) || id; await redrawWindow();
     if (version !== routeVersion || view !== renderer) return;
@@ -498,6 +542,7 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
     if (version !== routeVersion || view !== renderer) return;
   }
   $('canvas').dataset.selection = id;
+  updateNavigationButtons();
   $('inspector-heading').textContent=type==='node'?'节点详情':item.kind==='trait-dispatch'?'多态关系':'调用详情';
   $('source').hidden=false;
   $('node-actions-panel').replaceChildren();
@@ -604,7 +649,7 @@ function mountedData(data, zoom = renderer?.getZoom() || .85) {
   $('canvas').dataset.displayedNodes = String(visibleGraph.nodes.length);
   $('canvas').dataset.mountedNodes = String(data.nodes.length);
   mountedDetail = zoom >= .25;
-  return { nodes: data.nodes.map(n => ({ ...n, type: mountedDetail ? 'execution-card' : 'rect', states: elementStates.get(n.id) || [] })),
+  return { nodes: data.nodes.map(n => ({ ...n, type: mountedDetail ? 'execution-card' : 'rect', states: nodeStates(n.id) })),
     // Overview preserves paths and endpoint IDs; unreadable labels/arrows return
     // with the detailed cards when the user zooms back in.
     edges: data.edges.map(e => ({ ...e, style:{...e.style,label:mountedDetail,endArrow:mountedDetail}, states: combinedEdgeState(e.id) })) };
@@ -629,7 +674,7 @@ async function refreshViewport(force = false, center, targetZoom) {
   mountBusy = true;
   try {
     paintedBounds = viewportBounds(center, width, height, zoom);
-    const slice = paintWindow.slice(paintedBounds);
+    const slice = paintWindow.slice(paintedBounds, batchSelected);
     const ids = new Set([...slice.nodes, ...slice.edges].map(n => n.id));
     if (mountedDetail !== (zoom >= .25) || ids.size !== mountedIds.size || [...ids].some(id => !mountedIds.has(id))) {
       const levelChanged=mountedDetail !== (zoom >= .25);
@@ -683,7 +728,7 @@ function applyStates(view, states) {
     elementStates.set(id, next);
     const rendered = renderedEdge.get(id);
     if (rendered) touched.add(rendered);
-    else if (mountedIds.has(id)) changes[id] = next;
+    else if (mountedIds.has(id)) changes[id] = nodeStates(id);
   }
   for (const id of touched) if (mountedIds.has(id)) changes[id] = combinedEdgeState(id);
   if (Object.keys(changes).length) void view.setElementState(changes, false).catch(error => {
@@ -750,6 +795,7 @@ function windowData(anchor = current.root, preservePositions = false) {
   return mountedData(virtualized() ? paintWindow.slice(paintedBounds) : data);
 }
 function updateWindowStats() {
+  updateNavigationButtons();
   const unique = new Set(visibleGraph.nodes.map(n => n.sourceId || n.id)).size;
   $('stats').textContent = `已展示 ${unique} / ${current.nodes.length} 个符号 · ${visibleGraph.nodes.length} 个路径引用 · ${visibleGraph.edges.length} 条调用关系 · ${edgeMembers.size || visibleGraph.edges.length} 条展示连线`;
 }
@@ -881,20 +927,67 @@ try {
   } else status('尚无调用图。点击“新建图”选择源码入口。');
 } catch (error) { status(error.message, true); }
 
-function stepNode(offset) {
-  if(!current || loading || !symbolMatches.length)return;
-  const id=$('symbols').value || current.root;
-  const index=symbolMatches.findIndex(n=>n.id===id);
-  const next=symbolMatches[Math.max(0,Math.min(symbolMatches.length-1,index+offset))];
-  if(next)void select('node',next.id,true);
+function navigationPoints(view=renderer) {
+  return (paintWindow?.data.nodes || []).map(n=>{const [x,y]=view.getViewportByCanvas([n.style.x,n.style.y]);return {id:n.id,x,y};});
 }
-$('node-prev').onclick=()=>stepNode(-1);
-$('node-next').onclick=()=>stepNode(1);
-for(const [id,label] of [['node-prev','上一节点'],['node-next','下一节点']]) {
-  $(id).title=`${label} · 按搜索列表浏览，不表示执行顺序`;
-  $(id).setAttribute('aria-label',`${label}（按搜索列表）`);
+function updateNavigationButtons() {
+  const id=$('canvas').dataset.selection;
+  const valid=renderer && graphIndex?.nodes.has(id);
+  const points=valid?navigationPoints():[];
+  for(const [button,key] of Object.entries(directionControls)) $(button).disabled=!valid || batchSelected.size>0 || !directionalNeighbor(points,id,key);
+  $('node-center').disabled=!valid;
 }
-$('node-center').onclick=()=>{if(current&&!loading)void select('node',$('symbols').value||current.root,true);};
+let directionalTask = false, pendingDirection = null;
+function canvasFocused() {
+  const active=document.activeElement;
+  return (active===$('canvas') || (active?.tagName==='CANVAS' && $('canvas').contains(active))) && !active?.closest('.graph-minimap');
+}
+$('canvas').addEventListener('focusout',()=>{pendingDirection=null;});
+async function moveDirection(key, keyboard=false) {
+  pendingDirection={key,keyboard};
+  if(directionalTask)return;
+  directionalTask=true;
+  const version=routeVersion, view=renderer;
+  try {
+    while(pendingDirection) {
+      const {key:direction,keyboard:requiresFocus}=pendingDirection;pendingDirection=null;
+      if((requiresFocus && !canvasFocused()) || version!==routeVersion || view!==renderer || loading || drawing || draggingNode || !$('edge-context-menu').hidden)break;
+      const id=$('canvas').dataset.selection;
+      if(!graphIndex?.nodes.has(id))break;
+      if(direction==='Center') {
+        if(!mountedIds.has(id))await mountAt(id);
+        if(version!==routeVersion || view!==renderer)break;
+        await view.focusElement(id,false);await refreshViewport(true);
+        continue;
+      }
+      if(batchSelected.size)break;
+      const points=navigationPoints(view);
+      const next=directionalNeighbor(points,id,direction);
+      if(!next)continue;
+      await select('node',next,true);
+      if($('canvas').dataset.selection!==next)break;
+    }
+  } finally {pendingDirection=null;directionalTask=false;updateNavigationButtons();}
+}
+$('canvas').addEventListener('keydown', event => {
+  // The context menu owns Escape/arrows even if native right-click kept focus
+  // on the canvas. Closing the menu must not also cancel the batch selection.
+  if (!$('edge-context-menu').hidden) return;
+  if (!canvasFocused()) return;
+  if(event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing)return;
+  if(event.key==='Escape') {clearBatch();return;}
+  if(event.code==='Space' || event.key===' ') {
+    if(!graphIndex?.nodes.has($('canvas').dataset.selection))return;
+    event.preventDefault();event.stopPropagation();
+    if(!event.repeat)void moveDirection('Center',true);
+    return;
+  }
+  if(!['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key) || !graphIndex?.nodes.has($('canvas').dataset.selection))return;
+  event.preventDefault();event.stopPropagation();
+  if(!batchSelected.size && (!event.repeat || !directionalTask))void moveDirection(event.key,true);
+});
+for(const [id,key] of Object.entries(directionControls)) $(id).onclick=()=>void moveDirection(key);
+$('node-center').onclick=()=>void moveDirection('Center');
 
 // Secondary toolbar panels share one focus-preserving dismissal behavior.
 const toolbarPanels = [...document.querySelectorAll('.graph-controls > details')];

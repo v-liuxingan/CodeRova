@@ -22,8 +22,8 @@ export class RenderWindow {
   setData(data) {
     this.data = data; this.nodes = new Map(data.nodes.map(n => [n.id, n]));
   }
-  slice(bounds) {
-    const included = new Set(), edges = [];
+  slice(bounds, retained = []) {
+    const included = new Set(retained), edges = [];
     for (const n of this.data.nodes) {
       const { x, y } = n.style, height = n.data.height / 2;
       if (intersects(bounds, { left: x - 152, right: x + 152, top: y - height, bottom: y + height })) included.add(n.id);

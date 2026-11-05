@@ -58,6 +58,11 @@ Origin，服务继续拒绝未知字段和任意文件路径。退出码：0 成
 | 减枝预览 | POST /prune | `{ "nodeId":"...", "apply":false }` |
 | 提交减枝 | POST /prune | `{ "nodeId":"...", "apply":true, "revision":"预览返回值" }` |
 
+批量减枝兼容相同端点：用 `{"nodeIds":["symbol-a","symbol-b"],"apply":false}` 预览，
+再携带同一集合、`apply:true` 与返回的 revision 应用。`nodeId` 与 `nodeIds` 必须且只能提供一个；
+数组去重，空数组、未知节点、包含根节点或未知请求字段均拒绝整批。
+对集合统一计算独占下游和共享引用，不逐项提交；草稿 prune 使用相同 request，保存前不改磁盘。
+
 减枝返回 removedNodeIds、removedEdgeIds、preservedSharedNodeIds、revision、applied。
 默认先预览，提交缺少版本或图已改变时失败；AI 可依据预览自主提交，不需人操作页面。
 减枝移除该符号的所有调用位置及独占下游，不是某个路径副本的折叠。其他调用方可达的

@@ -55,7 +55,7 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
   });
   window.addEventListener('resize', close);
   window.addEventListener('scroll', close, true);
-  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y, trigger: opener }) {
+  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y, trigger: opener, selection, protectedCount=0 }) {
     trigger?.setAttribute('aria-expanded','false');trigger=opener;trigger?.setAttribute('aria-expanded','true');
     hide.hidden=false;hide.disabled=!canPrune;prune.hidden=false;prune.disabled=!canPrune;
     collect.hidden=!isNode;add.hidden=!isNode;collect.disabled=!canCollect;add.disabled=!canAdd;
@@ -71,6 +71,17 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
     button.disabled = !enabled;
     button.title=enabled?'保留此节点，收起其下游':'没有可独立收起的下游';
     hint.textContent=isNode?'隐藏仅本次有效；删除需保存后生效。':'说明针对连线；其他操作针对箭头指向的节点。';
+    const batch=Array.isArray(selection);
+    button.hidden=batch;
+    hide.querySelector('span').textContent=batch?'隐藏所选':'隐藏';
+    prune.querySelector('span').textContent=batch?'删除所选':'删除';
+    if(batch) {
+      target=[...selection]; editTarget=null;
+      heading.textContent='多选节点';
+      collect.hidden=add.hidden=describe.hidden=editingDivider.hidden=true;
+      location.hidden=true;
+      hint.textContent=`${protectedCount?'入口节点保留。':''}隐藏仅本次有效；删除经确认后进入草稿。`;
+    }
     menu.hidden = false;
     menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;

@@ -15,12 +15,12 @@ pub struct Plan {
 fn reachable<'a>(
     seeds: Vec<&'a str>,
     edges: &HashMap<&str, Vec<&'a str>>,
-    stop: &str,
+    stop: &HashSet<&str>,
 ) -> HashSet<&'a str> {
     let mut queue = seeds;
     let mut seen = HashSet::new();
     while let Some(id) = queue.pop() {
-        if id == stop || !seen.insert(id) {
+        if stop.contains(id) || !seen.insert(id) {
             continue;
         }
         if let Some(next) = edges.get(id) {
@@ -31,26 +31,37 @@ fn reachable<'a>(
 }
 
 pub fn plan(graph: &CallGraph, id: &str) -> Result<Plan, String> {
-    if id == graph.root {
+    plan_many(graph, &[id.to_owned()])
+}
+
+pub fn plan_many(graph: &CallGraph, ids: &[String]) -> Result<Plan, String> {
+    let selected: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    if selected.is_empty() {
+        return Err("请选择至少一个节点".into());
+    }
+    if selected.contains(graph.root.as_str()) {
         return Err("不能减枝图的根节点；整图删除请使用回收站".into());
     }
-    let selected = graph
-        .nodes
-        .iter()
-        .find(|n| n.id == id)
-        .ok_or("节点不存在")?;
+    let known: HashSet<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
+    if !selected.is_subset(&known) {
+        return Err("节点不存在".into());
+    }
     let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
     for edge in &graph.edges {
         edges.entry(&edge.from).or_default().push(&edge.to);
     }
-    let candidates = reachable(vec![&selected.id], &edges, &graph.root);
+    let candidates = reachable(
+        selected.iter().copied().collect(),
+        &edges,
+        &HashSet::from([graph.root.as_str()]),
+    );
     let outside = graph
         .nodes
         .iter()
         .filter(|n| !candidates.contains(n.id.as_str()))
         .map(|n| n.id.as_str())
         .collect();
-    let kept = reachable(outside, &edges, id);
+    let kept = reachable(outside, &edges, &selected);
     let removed: HashSet<_> = candidates.difference(&kept).copied().collect();
     Ok(Plan {
         revision: crate::analysis::stable_id(
@@ -111,6 +122,35 @@ mod tests {
           "nodes":ids.iter().map(|id|serde_json::json!({"id":id,"kind":"function","label":id,"file":"main.rs","line":1,"role":"test"})).collect::<Vec<_>>(),
           "edges":pairs.iter().enumerate().map(|(i,(a,b))|serde_json::json!({"id":i.to_string(),"from":a,"to":b,"kind":"static-call","file":"main.rs","line":1})).collect::<Vec<_>>()
         })).unwrap()
+    }
+    #[test]
+    fn batch_prunes_shared_only_when_no_outside_reference_remains() {
+        let g = graph(&[
+            ("root", "a"),
+            ("root", "b"),
+            ("a", "c"),
+            ("b", "c"),
+            ("c", "d"),
+            ("root", "x"),
+            ("x", "d"),
+        ]);
+        let ids = vec!["a".into(), "b".into(), "a".into()];
+        let p = plan_many(&g, &ids).unwrap();
+        assert_eq!(p.removed_node_ids, vec!["a", "b", "c"]);
+        assert_eq!(p.preserved_shared_node_ids, vec!["d"]);
+        assert!(plan_many(&g, &[]).is_err());
+        assert!(plan_many(&g, &["a".into(), "root".into()]).is_err());
+        assert!(plan_many(&g, &["a".into(), "missing".into()]).is_err());
+        let reversed = plan_many(&g, &["b".into(), "a".into()]).unwrap();
+        assert_eq!(p.removed_node_ids, reversed.removed_node_ids);
+        let mut cyclic = g.clone();
+        cyclic.edges.push(serde_json::from_value(serde_json::json!({"id":"loop","from":"c","to":"root","kind":"static-call","file":"main.rs","line":1})).unwrap());
+        assert!(
+            !plan_many(&cyclic, &ids)
+                .unwrap()
+                .removed_node_ids
+                .contains(&"root".to_owned())
+        );
     }
     #[test]
     fn preserves_shared_descendants_and_unrelated_components() {

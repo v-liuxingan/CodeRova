@@ -90,7 +90,8 @@ pub enum AppError {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PruneRequest {
-    node_id: String,
+    node_id: Option<String>,
+    node_ids: Option<Vec<String>>,
     #[serde(default)]
     apply: bool,
     revision: Option<String>,
@@ -111,7 +112,12 @@ async fn prune_graph(
         return Err(AppError::BadRequest("请先停止采集再减枝".into()));
     }
     let before = state.graph_store.load(&slug).map_err(AppError::NotFound)?;
-    let mut plan = crate::pruning::plan(&before, &input.node_id).map_err(AppError::BadRequest)?;
+    let mut plan = match (&input.node_id, &input.node_ids) {
+        (Some(id), None) => crate::pruning::plan(&before, id),
+        (None, Some(ids)) => crate::pruning::plan_many(&before, ids),
+        _ => Err("请提供 nodeId 或非空 nodeIds，不能同时提供".into()),
+    }
+    .map_err(AppError::BadRequest)?;
     if input.apply {
         if input.revision.as_deref() != Some(&plan.revision) {
             return Err(AppError::BadRequest(

@@ -26,6 +26,19 @@ with sync_playwright() as p:
  assert not edit({'action':'describe','edits':[{'targetType':'node','id':'root','description':'不应应用'},{'targetType':'node','id':'missing','description':'x'}]}).ok
  assert edit({'action':'read'}).json()['graph']==changed
  assert edit({'action':'describe','edits':[{'targetType':'node','id':'root','description':'x','sourceFile':'x'}]}).status==422
+ # Batch prune shares the draft/CAS contract and rejects an entire invalid set.
+ for request in [{'nodeIds':[]},{'nodeIds':['child','missing']},{'nodeIds':['child','root']},{'nodeId':'child','nodeIds':['child']},{}]:
+  assert edit({'action':'prune','request':request}).status==400
+ assert edit({'action':'prune','request':{'nodeIds':['child'],'path':'arbitrary'}}).status==422
+ assert edit({'action':'read'}).json()['graph']==changed
+ preview=edit({'action':'prune','request':{'nodeIds':['child','child']}}).json()['result']
+ legacy=edit({'action':'prune','request':{'nodeId':'child'}}).json()['result']
+ assert preview==legacy and preview['removedNodeIds']==['child']
+ assert edit({'action':'prune','request':{'nodeIds':['child'],'apply':True,'revision':'stale'}}).status==400
+ assert edit({'action':'read'}).json()['graph']==changed
+ assert edit({'action':'prune','request':{'nodeIds':['child'],'apply':True,'revision':preview['revision']}}).ok
+ assert [n['id'] for n in edit({'action':'read'}).json()['graph']['nodes']]==['root']
+ assert page.request.get(BASE+'/api/graphs/sample').json()==wire
  assert edit({'action':'discard'}).ok
  errors=[];requests=[]
  page.on('pageerror',lambda error:errors.append(str(error)))

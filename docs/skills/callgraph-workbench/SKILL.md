@@ -18,7 +18,7 @@ description: 使用 CodeRova 分析本地源码、生成和审阅调用图，操
 
 | 任务 | 参考 |
 | --- | --- |
-| 页面阅读、源码跳转、分支整理、侧栏、目录与回收站 | [页面操作](references/workbench.md) |
+| 页面阅读、四向导航/空格居中、框选与批量整理、源码跳转、目录与回收站 | [页面操作](references/workbench.md) |
 | 项目接入、资料库存储、说明分离、配置优先级、升级备份 | [配置与备份](references/configuration.md) |
 | IDEA 点击无反应、Windows 协议关联配置及验证 | [IDEA 本机配置](references/idea-setup.md) |
 | 初次生成、AI 自动操作、续采、多态/异步入口、保存与验收 | [分析与自动化](references/analysis.md) |

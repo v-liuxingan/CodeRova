@@ -60,6 +60,11 @@ Rust 使用 rust-analyzer；Java 使用 Eclipse JDT LS，配置在服务端 `cal
 read、dirty、changes 用于审阅当前内容与变化。保存前确认任务不再运行，检查变更与任务范围一致。
 save 遇基线冲突应保留草稿并核对磁盘，不强行覆盖。服务重启或过期导致 draftId 失效时，重新读取已保存图，不声称旧草稿仍在。
 
+批量减枝将 request 的 `nodeId` 替换为非空 `nodeIds` 数组，二者互斥。
+使用原始符号 ID，不使用画布路径引用 ID；重复 ID 去重，空集合、未知节点或包含根节点时整批拒绝。
+先对整个集合预览，再携带同一 revision 应用，不能把批量操作拆成逐节点提交。
+集合及其独占下游一起移除，外部仍可达的共享下游保留；应用只改草稿，save 才写磁盘。
+
 旧直接 `/entries`、`/links`、`/prune` 和 `/analysis` 不走这份草稿，可能立即写文件。
 `atlas_agent.py collect` 也使用直接持久化检查点，**不是草稿续采助手**；仅在任务明确允许边采边保存时选用。
 
@@ -132,7 +137,7 @@ AI 可使用项目级 source-files、entry-check 和 POST /api/graphs 接口；�
 
 ### 从页面接入项目与准备 LSP
 
-首页“新建图”→“接入项目”打开Windows本机目录选择器，选择源码目录并确认项目名称。
+首页“新建图”→“接入项目”打开本机目录选择器，选择源码目录并确认项目名称。
 项目写入启动时所用的项目配置文件，重启后仍可选择；不需要手工填写项目ID。
 现有项目在首页“项目设置”、新建图窗口或工作台“语言服务器”工具栏面板中可启动/停止语言服务器；单语言自动识别，
 混合Rust/Java项目可切换语言。新接入项目没有图也会显示在首页。
@@ -147,7 +152,7 @@ Java仍需在本地LSP配置中安装并配置JDT LS/JDK，Rust需要rust-analyz
 
 AI接口：`POST /api/projects/select-directory`返回短期selectionId（本机用户选择目录），
 `POST /api/projects`提交`{"selectionId":"选择凭据","name":"项目名称"}`。
-仅接受选择凭据，不接受浏览器提交的绝对路径。目录选择器目前支持Windows。
+仅接受选择凭据，不接受浏览器提交的绝对路径。目录选择器支持 Windows 与 macOS；macOS 目前需从源码编译运行。
 `GET /api/projects/{project}/lsp/{rust|java}`读取state/message/serverType；
 `POST`同路径提交`{"action":"start"}`或`{"action":"stop"}`。
 启动异步返回starting，轮询直到running/failed；重复启动复用，不另起进程。

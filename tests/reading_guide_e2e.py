@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
    expect(page.locator('.node-reading-actions .badge')).to_have_text('未记录下游')
    expect(page.locator('.reading-hint')).to_contain_text('不等于业务流程结束')
    expect(page.locator('.node-reading-actions .badge')).not_to_contain_text('失败')
-   assert '搜索列表' in page.locator('#node-next').get_attribute('aria-label')
+   assert page.locator('#node-right').get_attribute('aria-label')=='向右节点'
    artifacts=ROOT/'target/test-artifacts/iteration-two';artifacts.mkdir(parents=True,exist_ok=True)
    page.locator('#fit').click()
    for theme,width in [('light',1440),('dark',1440),('light',390),('dark',390)]:
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
    expect(wrapper.locator('.node-option-context').first).to_contain_text('main.rs:1')
    assert before==page.evaluate('window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition("search-0"))')
    wrapper.locator('[data-value="search-248"]').click();expect(page.locator('#selection-title')).to_have_text('handle248')
-   page.locator('#node-next').click();expect(page.locator('#selection-title')).to_have_text('handle249')
+   wrapper.locator('.ts-control').click();field.fill('search-249');wrapper.locator('[data-value="search-249"]').click();expect(page.locator('#selection-title')).to_have_text('handle249')
    wrapper.locator('.ts-control').click();field.fill('main.rs');expect(wrapper.locator('[data-selectable]')).to_have_count(100)
    field.fill('search-249');expect(wrapper.locator('[data-selectable]')).to_have_count(1)
    field.fill('no-such-symbol');expect(wrapper.locator('.no-results')).to_have_text('没有匹配节点')

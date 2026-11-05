@@ -5,6 +5,8 @@ const nodes=[{id:'left',style:{x:-2000,y:0},data:{height:100}},{id:'right',style
 const edges=edgeLanes([{id:'forward',from:'left',to:'right'},{id:'back',from:'right',to:'left'},{id:'parallel',from:'left',to:'right'}]);
 assert.equal(new Set(edges.map(e=>e.data.laneFraction)).size,2);
 const w=new RenderWindow({nodes,edges});const slice=w.slice(viewportBounds([0,0],500,500,1,0));assert.equal(slice.edges.length,2);assert.equal(slice.nodes.length,2);assert(!slice.nodes.some(n=>n.id==='far'));
+assert(w.slice(viewportBounds([0,0],500,500,1,0),new Set(['far'])).nodes.some(n=>n.id==='far'));
+assert(!w.slice(viewportBounds([0,0],500,500,1,0)).nodes.some(n=>n.id==='far'));
 w.move('far',[0,0]);assert(w.slice(viewportBounds([0,0],500,500,1,0)).nodes.some(n=>n.id==='far'));
 console.log('Render window: crossing edges, original endpoints, offscreen exclusion, movement, reciprocal and parallel lanes PASS');
 
