@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix='viewport-',dir=ROOT/'target') as direct
   injection='''
 window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:async()=>{await renderer.translateBy([-600,0],false);await refreshViewport(true);},
  ready:async()=>{await mountPromise;await new Promise(r=>setTimeout(r,300));},
+ logical:()=>paintWindow.data.nodes,
  positions:()=>JSON.stringify(paintWindow.data.nodes.map(n=>[n.id,n.style.x,n.style.y]))};
 '''
   bundle=root/'test.js'
@@ -41,8 +42,36 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    except AssertionError:raise AssertionError((errors,page.locator('#status').inner_text()))
    page.evaluate('window.__viewport.ready()')
    positions=page.evaluate('window.__viewport.positions()')
+   # A mounted card can enter the visible canvas without a membership redraw.
+   # Check leaf text culling, not only the Label group's visibility flag.
+   assert page.evaluate('''async()=>{const g=window.__testGraph;const failures=[];
+     for(const delta of [[0,-180],[0,180],[-180,0],[180,0]]){
+       await g.translateBy(delta,false);
+       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+       const [w,h]=g.getSize(),z=g.getZoom();
+       const mounted=new Map(g.getNodeData().map(n=>[n.id,n]));
+       for(const n of window.__viewport.logical()){
+         const [x,y]=g.getViewportByCanvas([n.style.x,n.style.y]);
+         if(x<152*z || x>w-152*z || y<50*z || y>h-50*z)continue;
+         const title=mounted.has(n.id) && g.context.element.getElement(n.id)?.getShape('title');
+         if(!title || title.attributes.text!==n.data.label){failures.push(n.id);continue;}
+         title.forEach(s=>{
+           if(s.nodeName==='text' && (s.isCulled() || !s.isVisible()))failures.push(n.id);
+         });
+       }
+     }return failures;}''')==[]
+   # Assert during motion, before any debounced restoration could mask blank cards.
+   assert page.evaluate('''async()=>{const g=window.__testGraph;for(let i=0;i<12;i++){
+     await g.translateBy([i<6?-10:10,0],false);
+     const titles=g.getNodeData().filter(n=>n.type==='execution-card').map(n=>g.context.element.getElement(n.id)?.getShape('title'));
+     if(!titles.length || titles.some(s=>!s?.isVisible()))return false;
+     await new Promise(requestAnimationFrame);
+   }return true;}''')
+   page.evaluate('window.__viewport.ready()')
    page.evaluate('''()=>{const g=window.__testGraph;window.__original=g;window.__oldShapes=new Map(g.getNodeData().map(n=>[n.id,g.context.element.getElement(n.id)]));window.__setDataCalls=0;const set=g.setData.bind(g);g.setData=(...args)=>{window.__setDataCalls++;return set(...args)};}''')
    page.evaluate('window.__viewport.pan()');page.evaluate('window.__viewport.ready()')
+   details=page.evaluate('''()=>window.__testGraph.getNodeData().map(n=>{const s=window.__testGraph.context.element.getElement(n.id);return {id:n.id,type:n.type,title:s.getShape('title')?.attributes.text,expected:n.data.label};})''')
+   assert all(n.get('title')==n['expected'] for n in details),details
    assert page.evaluate('window.__setDataCalls')==0
    assert page.evaluate('window.__testGraph.getNodeData().filter(n=>window.__oldShapes.has(n.id)).every(n=>window.__oldShapes.get(n.id)===window.__testGraph.context.element.getElement(n.id))')
    page.evaluate('window.__viewport.fit()');page.evaluate('window.__viewport.ready()')
@@ -69,6 +98,21 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    # Native hit testing still selects the rendered card after camera-only redraws.
    point=page.evaluate('window.__testGraph.getViewportByCanvas(window.__testGraph.getElementPosition("n799"))');box=page.locator('#canvas').bounding_box()
    page.mouse.click(box['x']+point[0],box['y']+point[1]);expect(page.locator('#canvas')).to_have_attribute('data-selection','n799')
+   # Inspect actual raster output at all four edges, not just scene-graph flags.
+   select_option(page,'#appearance','light');page.evaluate('window.__viewport.ready()')
+   for side in ['left','right','top','bottom']:
+    ink=page.evaluate('''async side=>{const g=window.__testGraph,[w,h]=g.getSize(),z=g.getZoom();
+      const n=g.getNodeData('n799'),p=g.getViewportByCanvas(g.getElementPosition('n799'));
+      const target={left:[160*z+8,h/2],right:[w-160*z-8,h/2],top:[w/2,n.data.height*z/2+8],bottom:[w/2,h-n.data.height*z/2-8]}[side];
+      await g.translateBy([target[0]-p[0],target[1]-p[1]],false);
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const canvas=g.getCanvas().getLayer('main').getContextService().getDomElement();
+      const ratio=canvas.width/w;
+      const pixels=canvas.getContext('2d').getImageData((target[0]-134*z)*ratio,(target[1]+(-n.data.height/2+38)*z)*ratio,200*z*ratio,20*z*ratio).data;
+      let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>128 && Math.max(pixels[i],pixels[i+1],pixels[i+2])<130)ink++;
+      return ink;
+    }''',side)
+    assert ink>15,('blank title raster',side,ink)
    assert graphfile.read_bytes()==original
    assert not errors,errors
    browser.close()

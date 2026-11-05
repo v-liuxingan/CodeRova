@@ -210,9 +210,9 @@ async function drain() {
       renderSymbols();edits.update();updateHidden();
       renderer = new Graph({
         container: $('canvas'), autoResize: false, animation: false, padding: 35,
-        // G canvas can reuse unchanged display objects for camera-only frames.
-        // Geometry/style changes still execute the normal render hooks.
-        canvas: {disableRenderHooks:true},
+        // Camera movement must refresh child-shape rendering too: a card's
+        // existing bounds do not prove its text has been painted in this frame.
+        canvas: {disableRenderHooks:false},
         data: windowData(),
         ...graphAppearance(),
         plugins: [{ type: 'window-minimap', key: 'overview', getWindow: () => paintWindow,
@@ -222,7 +222,6 @@ async function drain() {
           maskStyle: { border: '1px solid var(--accent)', background: 'var(--active-line)', opacity: '0.6', minWidth: '4px', minHeight: '4px', boxSizing: 'border-box' },
         }],
         behaviors: ['drag-canvas', 'zoom-canvas',
-          {type:'optimize-viewport-transform',enable:()=>virtualized(),debounce:120,shapes:{node:['key'],edge:['key']}},
           { type: 'drag-element', enable: event => !gesture?.branchAction && !branchAction(event) }],
       });
       const createdView = renderer;
@@ -264,7 +263,9 @@ async function drain() {
       if (version !== routeVersion) continue;
       // G6 installs a 100 ms / 10 px drag gate by default. Remove the hold
       // delay and match our click-versus-drag excursion threshold above.
-      renderer.getCanvas().getLayer('main').getConfig().renderer.setConfig({ enableDirtyRectangleRendering: false, enableCulling: true });
+      // RenderWindow already bounds membership; avoid a second per-shape cull
+      // pass while keeping camera render hooks and child text updates enabled.
+      renderer.getCanvas().getLayer('main').getConfig().renderer.setConfig({ enableDirtyRectangleRendering: false, enableCulling: false });
       renderer.getCanvas().getLayer('main').getConfig().renderer
         .getPlugin('dragndrop').setOptions({ dragstartTimeThreshold: 0, dragstartDistanceThreshold: 5 });
       if (!virtualized()) await fitReadableGraph();
