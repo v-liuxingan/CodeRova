@@ -32,6 +32,9 @@ enum Commands {
         /// 从 1 开始的 UTF-16 列，指向函数名
         #[arg(long, default_value_t = 1)]
         column: u32,
+        /// outgoing: 它调用谁；incoming: 谁调用它
+        #[arg(long, value_enum, default_value = "outgoing")]
+        direction: coderova::analysis::Direction,
         #[arg(long, default_value_t = 3)]
         max_depth: u32,
         #[arg(long, default_value_t = 200)]
@@ -109,6 +112,7 @@ async fn main() -> ExitCode {
             file,
             line,
             column,
+            direction,
             max_depth,
             request_budget,
             exclude_paths,
@@ -122,6 +126,7 @@ async fn main() -> ExitCode {
                 file,
                 line,
                 column,
+                direction,
                 max_depth,
                 request_budget,
                 exclude_paths,

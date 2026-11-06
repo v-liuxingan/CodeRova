@@ -51,6 +51,16 @@ def peer(mode):
             send({"method": "experimental/serverStatus", "params": {"quiescent": True}})
         elif method == "textDocument/prepareCallHierarchy":
             send({"id": rid, "result": [item("a", 0)]})
+        elif method == "callHierarchy/incomingCalls":
+            target = request['params']['item']
+            assert target['data']['opaque'] == target['name']
+            if mode == 'incoming-null':
+                send({'id':rid,'result':None});continue
+            caller = item('b',1) if target['name']=='a' else item('a',0)
+            line = caller['selectionRange']['start']['line']
+            ranges = [{'start':{'line':line,'character':c},'end':{'line':line,'character':c+1}} for c in [8,13]]
+            if mode == 'incoming-invalid': ranges[0]['start']['line']=99
+            send({'id':rid,'result':[{'from':caller,'fromRanges':ranges}]})
         elif method == "callHierarchy/outgoingCalls":
             caller = request["params"]["item"]
             assert caller["data"]["opaque"] == caller["name"], "opaque LSP data lost"
@@ -106,6 +116,23 @@ def run():
         assert len(graph["nodes"]) == 2 and len(graph["edges"]) == 4
         assert len(graph["analysis"]["queriedNodes"]) == 2 and not graph["analysis"]["pendingNodes"]
         assert all(edge["relation"] == "static-call" and edge.get("order") is None for edge in graph["edges"])
+        outgoing_ids = {e['id'] for e in graph['edges']}
+        result, output = invoke('incoming',extra=['--direction','incoming'])
+        assert result.returncode == 0, result.stderr.decode('utf-8')
+        incoming=json.loads(output.read_text(encoding='utf-8'))
+        assert incoming['analysis']['direction']=='incoming'
+        assert len(incoming['nodes'])==2 and len(incoming['edges'])==4
+        assert {e['id'] for e in incoming['edges']}==outgoing_ids
+        nodes={n['id']:n for n in incoming['nodes']}
+        assert all(e['line']==nodes[e['source']]['line'] for e in incoming['edges'])
+        assert any(e['target']==incoming['root'] for e in incoming['edges'])
+        assert not incoming['analysis']['pendingNodes']
+        for mode in ['incoming-null','incoming-invalid']:
+            result,output=invoke(mode,extra=['--direction','incoming'])
+            assert result.returncode==0,result.stderr.decode('utf-8')
+            partial=json.loads(output.read_text(encoding='utf-8'))
+            assert not partial['edges'] and partial['analysis']['pendingNodes']==[partial['root']]
+            assert partial['analysis']['issues']
         assert invoke("cycle")[0].returncode != 0, "existing export must not be overwritten"
         for mode in ["null", "error"]:
             result, output = invoke(mode)

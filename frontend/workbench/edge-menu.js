@@ -55,22 +55,24 @@ export function edgeMenu(onCollapse, onCollect, onAdd, onPrune, onHide, onDescri
   });
   window.addEventListener('resize', close);
   window.addEventListener('scroll', close, true);
-  return { close, open({ editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y, trigger: opener, selection, protectedCount=0 }) {
+  return { close, open({ incoming=false, editTarget: descriptionTarget, id, label, enabled, isNode=false, canCollect=false, canAdd=false, canPrune=false, file, line, x, y, trigger: opener, selection, protectedCount=0 }) {
     trigger?.setAttribute('aria-expanded','false');trigger=opener;trigger?.setAttribute('aria-expanded','true');
     hide.hidden=false;hide.disabled=!canPrune;prune.hidden=false;prune.disabled=!canPrune;
-    collect.hidden=!isNode;add.hidden=!isNode;collect.disabled=!canCollect;add.disabled=!canAdd;
+    collect.hidden=!isNode;add.hidden=!isNode || incoming;collect.disabled=!canCollect;add.disabled=!canAdd;
     editTarget = descriptionTarget; describe.hidden = !editTarget;
     target = id; heading.textContent=isNode?'节点操作':'连线操作';
     title.textContent = label; title.title = label;
     location.textContent=file?`${file.split(/[\\/]/).pop()}${line?`:${line}`:''}`:'';
     location.title=file||'';location.hidden=!file;editingDivider.hidden=false;
+    button.querySelector('span').textContent=incoming?'收起上游':'收起下游';
+    collect.querySelector('span').textContent=incoming?'查找调用者':'继续采集';
     collect.title=canCollect?'从当前源码节点继续采集':'当前节点没有可用的源码采集入口';
     add.title=canAdd?'选择源码中的函数作为后续节点':'当前图未配置 LSP 分析，暂不支持添加';
     hide.title=canPrune?'刷新后恢复，或使用恢复隐藏':'入口节点不能隐藏';
-    prune.title=canPrune?'移除节点及独占下游，保存修改后写入文件':'入口节点不能删除';
+    prune.title=canPrune?'移除节点及沿探索方向的独占分支，保存后写入文件':'入口节点不能删除';
     button.disabled = !enabled;
-    button.title=enabled?'保留此节点，收起其下游':'没有可独立收起的下游';
-    hint.textContent=isNode?'隐藏仅本次有效；删除需保存后生效。':'说明针对连线；其他操作针对箭头指向的节点。';
+    button.title=enabled?'保留此节点，收起已展开分支':'没有可收起的分支';
+    hint.textContent=isNode?'隐藏仅本次有效；删除需保存后生效。':incoming?'说明针对连线；其他操作针对调用者节点。':'说明针对连线；其他操作针对箭头指向的节点。';
     const batch=Array.isArray(selection);
     button.hidden=batch;
     hide.querySelector('span').textContent=batch?'隐藏所选':'隐藏';

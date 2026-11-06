@@ -416,3 +416,15 @@ AI接口：`POST /api/projects/select-directory`返回短期selectionId（本机
 `GET /api/projects/{project}/lsp/{rust|java}`读取state/message/serverType；
 `POST`同路径提交`{"action":"start"}`或`{"action":"stop"}`。
 启动异步返回starting，轮询直到running/failed；重复启动复用，不另起进程。
+
+### 向上查找调用者
+
+新建图选择根节点并校验源码位置后，可选择“向下采集 · 它调用谁”或“向上采集 · 谁调用它”。
+创建后继续配置采集深度和新增节点上限；入口校验不会提前启动 LSP。
+向上图以所选方法为追溯起点，调用者向上展开（横向布局向左），箭头始终表示调用者 → 被调用者。
+节点说明和源码预览保持一致，点击连线查看调用者中的调用点。
+方向随图保存，续采继承该方向；历史图默认向下。重复采集增量合并，不覆盖说明。
+“未发现调用者”只表示当前项目索引的查询结果，不证明该方法是程序入口；反射、代理等动态关系可能缺失。
+本轮向上图不提供人工添加后续节点，避免把人工关系误当成反向调用证据。
+
+CLI 同样支持 `analyze --direction incoming`；省略方向仍为 `outgoing`。

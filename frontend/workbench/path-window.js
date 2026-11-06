@@ -1,3 +1,4 @@
+import { explorationGraph, isIncoming } from './exploration.js';
 import { callReading } from './call-reading.js';
 import { indexGraph } from './graph-index.js';
 
@@ -8,6 +9,7 @@ export class PathWindow {
   constructor(graph) {
     this.graph = graph;
     this.source = indexGraph(graph);
+    this.traversal = isIncoming(graph) ? indexGraph(explorationGraph(graph)) : this.source;
     this.reset(0);
   }
   // Refresh facts without replaying expansion: occurrence IDs and collapsed
@@ -16,13 +18,14 @@ export class PathWindow {
     const previousRoot = this.graph.root;
     this.graph = graph;
     this.source = indexGraph(graph);
+    this.traversal = isIncoming(graph) ? indexGraph(explorationGraph(graph)) : this.source;
     if (previousRoot !== graph.root) { this.reset(0); return; }
     const removed = new Set();
     const incoming = new Map([...this.edges.values()].map(edge => [edge.to, edge]));
     for (const [id, node] of this.nodes) {
       const parent = this.parents.get(id);
       const edge = incoming.get(id);
-      const sourceEdge = edge && this.source.edges.get(edge.sourceId);
+      const sourceEdge = edge && this.traversal.edges.get(edge.sourceId);
       if (!this.source.nodes.has(node.sourceId) || (parent != null &&
         (!sourceEdge || sourceEdge.from !== this.nodes.get(parent)?.sourceId || sourceEdge.to !== node.sourceId))) removed.add(id);
     }
@@ -34,7 +37,7 @@ export class PathWindow {
     for (const children of this.children.values()) for (const [call, id] of children) if (removed.has(id)) children.delete(call);
     for (const [id, edge] of this.edges) {
       if (removed.has(edge.from) || removed.has(edge.to)) this.edges.delete(id);
-      else this.edges.set(id, {...this.source.edges.get(edge.sourceId), id, sourceId:edge.sourceId, from:edge.from, to:edge.to});
+      else this.edges.set(id, {...this.traversal.edges.get(edge.sourceId), id, sourceId:edge.sourceId, from:edge.from, to:edge.to});
     }
     this.first.clear();
     for (const [id, node] of this.nodes) {
@@ -67,7 +70,7 @@ export class PathWindow {
   targets(id) {
     const n = this.nodes.get(id), groups = new Map();
     if (!n || n.pathCycle) return groups;
-    const { calls } = callReading(this.source.outgoing.get(n.sourceId) || []);
+    const { calls } = callReading(this.traversal.outgoing.get(n.sourceId) || []);
     // A view occurrence represents a call record, not a unique callee. Source
     // order is only a reading order; it does not infer runtime control flow.
     for (const edge of calls) groups.set(edge.id, [edge]);
@@ -104,7 +107,7 @@ export class PathWindow {
     return added;
   }
   revealCall(parent, callId) {
-    const node = this.nodes.get(parent), edge = this.source.edges.get(callId);
+    const node = this.nodes.get(parent), edge = this.traversal.edges.get(callId);
     if (!node || node.pathCycle || !edge || edge.from !== node.sourceId) return null;
     this.connect(parent, callId, [edge]);
     return JSON.stringify(['view-edge', parent, callId]);
@@ -135,7 +138,7 @@ export class PathWindow {
     if (!this.source.nodes.has(sourceId)) return null;
     const parent = new Map([[this.graph.root, null]]), queue = [this.graph.root];
     for (let i = 0; i < queue.length && !parent.has(sourceId); i++) {
-      for (const edge of this.source.outgoing.get(queue[i]) || []) {
+      for (const edge of this.traversal.outgoing.get(queue[i]) || []) {
         if (!parent.has(edge.to)) { parent.set(edge.to, edge); queue.push(edge.to); }
       }
     }
@@ -153,6 +156,6 @@ export class PathWindow {
       outgoing.get(edge.from).push(edge);
     }
     const edges = [...outgoing.values()].flatMap(calls => callReading(calls).calls);
-    return { ...this.graph, nodes: [...this.nodes.values()], edges };
+    return { ...this.graph, nodes: [...this.nodes.values()], edges: isIncoming(this.graph) ? edges.map(edge=>({...edge,from:edge.to,to:edge.from})) : edges };
   }
 }

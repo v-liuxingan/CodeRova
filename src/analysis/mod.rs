@@ -24,9 +24,31 @@ use std::{
 };
 use url::Url;
 
+/// Exploration direction never changes the meaning of stored caller -> callee edges.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Direction {
+    #[default]
+    Outgoing,
+    Incoming,
+}
+impl Direction {
+    pub fn is_outgoing(&self) -> bool {
+        *self == Self::Outgoing
+    }
+    pub fn endpoints<'a>(&self, edge: &'a crate::model::GraphEdge) -> (&'a str, &'a str) {
+        match self {
+            Self::Outgoing => (&edge.from, &edge.to),
+            Self::Incoming => (&edge.to, &edge.from),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisReport {
+    #[serde(default, skip_serializing_if = "Direction::is_outgoing")]
+    pub direction: Direction,
     pub provider: String,
     pub scope: String,
     pub max_depth: u32,
@@ -39,6 +61,7 @@ pub struct AnalysisReport {
 }
 
 pub struct AnalyzeOptions {
+    pub direction: Direction,
     pub config: PathBuf,
     pub project: String,
     pub file: String,
@@ -56,8 +79,15 @@ fn validate_call_ranges(
     item: &CallHierarchyItem,
     calls: &[CallHierarchyOutgoingCall],
 ) -> Result<(), String> {
+    for call in calls {
+        validate_ranges(item, &call.from_ranges)?;
+    }
+    Ok(())
+}
+
+fn validate_ranges(item: &CallHierarchyItem, ranges: &[lsp_types::Range]) -> Result<(), String> {
     let key = |p: lsp_types::Position| (p.line, p.character);
-    for range in calls.iter().flat_map(|call| &call.from_ranges) {
+    for range in ranges {
         if key(range.start) < key(item.range.start)
             || key(range.end) > key(item.range.end)
             || key(range.start) > key(range.end)
@@ -251,7 +281,11 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         description: format!(
             "{} 静态调用关系。仅覆盖项目内可解析目标；不代表运行顺序、动态分派全覆盖或业务场景完整性。{}",
             language.provider(),
-            language.scope()
+            if options.direction == Direction::Incoming {
+                "向上查找调用者"
+            } else {
+                language.scope()
+            }
         ),
         source_revision: None,
         phases: vec![],
@@ -260,8 +294,13 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         analysis: None,
     };
     let mut report = AnalysisReport {
+        direction: options.direction,
         provider: language.provider().into(),
-        scope: language.scope().into(),
+        scope: if options.direction == Direction::Incoming {
+            "project-local incoming calls; static relationships only".into()
+        } else {
+            language.scope().into()
+        },
         max_depth: options.max_depth,
         request_budget: options.request_budget,
         queried_nodes: vec![],
@@ -327,14 +366,14 @@ mod tests {
     use super::*;
     #[test]
     fn hierarchy_accepts_unicode_iris_without_rewriting_opaque_data() {
-        let raw = json!({"name":"draw(Long)","kind":6,"uri":"file:///D:/抽奖系统/Activity.java",
+        let raw = json!({"name":"draw(Long)","kind":6,"uri":"file:///D:/示例项目/Activity.java",
             "range":{"start":{"line":1,"character":0},"end":{"line":3,"character":1}},
             "selectionRange":{"start":{"line":1,"character":8},"end":{"line":1,"character":12}},
-            "data":{"uri":"server-private:抽奖系统","handle":"unchanged"}});
+            "data":{"uri":"server-private:示例项目","handle":"unchanged"}});
         assert!(serde_json::from_value::<CallHierarchyItem>(raw.clone()).is_err());
         let items: Vec<CallHierarchyItem> = decode_hierarchy(json!([raw.clone()])).unwrap();
         assert_eq!(items[0].data, Some(raw["data"].clone()));
-        assert!(items[0].uri.as_str().contains("%E6%8A%BD"));
+        assert!(items[0].uri.as_str().contains("%E7%A4%BA"));
         let calls: Vec<CallHierarchyOutgoingCall> = decode_hierarchy(json!([{
             "to":raw,"fromRanges":[{"start":{"line":2,"character":0},"end":{"line":2,"character":4}}]
         }])).unwrap();

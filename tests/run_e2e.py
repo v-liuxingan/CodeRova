@@ -39,6 +39,7 @@ def main():
    run(sys.executable,str(ROOT/'tests/viewport_performance_e2e.py'))
    run(sys.executable,str(ROOT/'tests/graph_gestures_e2e.py'))
    run(sys.executable,str(ROOT/'tests/batch_node_actions_e2e.py'))
+   run(sys.executable,str(ROOT/'tests/incoming_e2e.py'))
   finally:
    if os.name=='nt':subprocess.run(['taskkill','/PID',str(server.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    else:server.terminate()

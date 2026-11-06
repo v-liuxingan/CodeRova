@@ -1,6 +1,7 @@
 //! Shared bounded breadth-first collection. Workers only return facts;
 //! graph mutation/checkpointing has exactly one owner.
 use super::{
+    Direction,
     lsp::Client,
     node,
     provider::Language,
@@ -12,7 +13,7 @@ use crate::{
     model::{CallGraph, GraphEdge, GraphNode},
     validation::resolve_source_path,
 };
-use lsp_types::{CallHierarchyItem, CallHierarchyOutgoingCall};
+use lsp_types::{CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall};
 use serde_json::json;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -33,7 +34,8 @@ pub struct Seed {
     pub depth: u32,
 }
 struct Work {
-    caller: GraphNode,
+    direction: Direction,
+    subject: GraphNode,
     item: Option<CallHierarchyItem>,
     uri: String,
     text: String,
@@ -45,7 +47,7 @@ struct Call {
     ranges: Vec<lsp_types::Range>,
 }
 struct Facts {
-    caller: GraphNode,
+    subject: GraphNode,
     depth: u32,
     calls: Vec<Call>,
     candidates: Vec<ImplementationCandidate>,
@@ -53,9 +55,9 @@ struct Facts {
     complete: bool,
 }
 impl Facts {
-    fn new(caller: GraphNode, depth: u32) -> Self {
+    fn new(subject: GraphNode, depth: u32) -> Self {
         Self {
-            caller,
+            subject,
             depth,
             calls: vec![],
             candidates: vec![],
@@ -65,7 +67,7 @@ impl Facts {
     }
     fn issue(&mut self, message: impl AsRef<str>) {
         self.issues
-            .push(format!("{}: {}", self.caller.id, message.as_ref()));
+            .push(format!("{}: {}", self.subject.id, message.as_ref()));
     }
 }
 async fn query(
@@ -75,7 +77,7 @@ async fn query(
     work: Work,
     semantics: &mut Semantics,
 ) -> Facts {
-    let mut facts = Facts::new(work.caller.clone(), work.depth);
+    let mut facts = Facts::new(work.subject.clone(), work.depth);
     let result = query_inner(client, language, root, &work, semantics, &mut facts).await;
     if let Err(error) = result {
         facts.issue(error);
@@ -97,23 +99,23 @@ async fn query_inner(
     if selected.is_none() {
         let line = text
             .lines()
-            .nth(facts.caller.line.saturating_sub(1) as usize)
+            .nth(facts.subject.line.saturating_sub(1) as usize)
             .ok_or("符号行已变化，请重新分析")?;
         let name = facts
-            .caller
+            .subject
             .label
             .split("::")
             .last()
-            .unwrap_or(&facts.caller.label)
+            .unwrap_or(&facts.subject.label)
             .split('(')
             .next()
-            .unwrap_or(&facts.caller.label);
+            .unwrap_or(&facts.subject.label);
         for (column, _) in line.match_indices(name) {
-            let value=client.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":{"line":facts.caller.line-1,"character":line[..column].encode_utf16().count()}}),language.query_timeout()).await?;
+            let value=client.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":{"line":facts.subject.line-1,"character":line[..column].encode_utf16().count()}}),language.query_timeout()).await?;
             let items: Vec<CallHierarchyItem> =
                 super::decode_hierarchy(value).map_err(|e| format!("无法解析函数身份：{e}"))?;
             for item in items {
-                if node(root, &item, &mut paths)?.id == facts.caller.id {
+                if node(root, &item, &mut paths)?.id == facts.subject.id {
                     selected = Some(item);
                     break;
                 }
@@ -125,10 +127,51 @@ async fn query_inner(
     }
     let item = selected.ok_or("无法重新确认原符号身份，请检查源码版本")?;
     if let Err(e) = semantics
-        .describe(client, root, &item, &mut facts.caller)
+        .describe(client, root, &item, &mut facts.subject)
         .await
     {
         facts.issue(e);
+    }
+    if work.direction == Direction::Incoming {
+        let value = language.incoming(client, &item).await?;
+        if value.is_null() {
+            return Err("服务器返回 null，不能确认调用者".into());
+        }
+        let calls: Vec<CallHierarchyIncomingCall> =
+            super::decode_hierarchy(value).map_err(|e| format!("无效反向调用层级：{e}"))?;
+        facts.complete = true;
+        for call in calls {
+            // incoming ranges belong to the returned caller, never to the query item.
+            if let Err(error) = super::validate_ranges(&call.from, &call.from_ranges) {
+                facts.complete = false;
+                facts.issue(error);
+                continue;
+            }
+            if call.from_ranges.is_empty() {
+                facts.complete = false;
+                facts.issue(format!("{} 缺少调用点", call.from.name));
+                continue;
+            }
+            let mut caller = match node(root, &call.from, &mut paths) {
+                Ok(node) => node,
+                Err(error) => {
+                    facts.issue(format!("{}：{error}", call.from.name));
+                    continue;
+                }
+            };
+            if let Err(error) = semantics
+                .describe(client, root, &call.from, &mut caller)
+                .await
+            {
+                facts.issue(error);
+            }
+            facts.calls.push(Call {
+                node: caller,
+                item: call.from,
+                ranges: call.from_ranges,
+            });
+        }
+        return Ok(());
     }
     let value = language.outgoing(client, &item).await?;
     if value.is_null() {
@@ -140,7 +183,7 @@ async fn query_inner(
     facts.complete = true;
     // A failed optional implementation query must not erase successful direct calls.
     match semantics
-        .candidates(client, root, &item, &facts.caller)
+        .candidates(client, root, &item, &facts.subject)
         .await
     {
         Ok((candidates, issues)) => {
@@ -188,17 +231,19 @@ async fn prepare(
     root: &Path,
     warm: &mut WarmSession,
     language: Language,
-    caller: GraphNode,
+    direction: Direction,
+    subject: GraphNode,
     seed: Seed,
 ) -> Result<Work, String> {
-    let file = resolve_source_path(root, &caller.file)?;
+    let file = resolve_source_path(root, &subject.file)?;
     let text = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
     let uri = Url::from_file_path(crate::project_catalog::tool_path(&file))
         .map_err(|_| "符号 URI 无效")?
         .to_string();
     warm.open(&uri, language, &text).await?;
     Ok(Work {
-        caller,
+        direction,
+        subject,
         item: seed.item,
         uri,
         text,
@@ -217,6 +262,7 @@ pub async fn collect(
     let node_limit = options
         .max_nodes
         .map(|n| graph.nodes.len().saturating_add(n));
+    let direction = graph.analysis.as_ref().ok_or("图缺少分析报告")?.direction;
     let concurrency = warm.transport.policy().concurrency;
     let semantics = Semantics::new(language);
     let mut workers = vec![semantics; concurrency];
@@ -256,11 +302,11 @@ pub async fn collect(
                 if !scheduled.insert(seed.id.clone()) {
                     continue;
                 }
-                let caller = graph.nodes[*known.get(&seed.id).ok_or("待采符号不存在")?].clone();
+                let subject = graph.nodes[*known.get(&seed.id).ok_or("待采符号不存在")?].clone();
                 let reason = if let Some(rule) = options
                     .exclusions
                     .iter()
-                    .find(|rule| super::excluded(&caller.file, rule))
+                    .find(|rule| super::excluded(&subject.file, rule))
                 {
                     Some(format!("主动排除（路径规则 {rule}）"))
                 } else if options.max_depth.is_some_and(|max| seed.depth >= max) {
@@ -278,7 +324,7 @@ pub async fn collect(
                 }
                 attempts += 1;
                 let depth = seed.depth;
-                let work = prepare(root, warm, language, caller.clone(), seed).await;
+                let work = prepare(root, warm, language, direction, subject.clone(), seed).await;
                 if !ready && work.is_ok() {
                     warm.transport.wait_ready(600).await?;
                     ready = true;
@@ -290,7 +336,7 @@ pub async fn collect(
                     let facts = match work {
                         Ok(work) => query(&client, language, &root, work, &mut semantics).await,
                         Err(e) => {
-                            let mut facts = Facts::new(caller, depth);
+                            let mut facts = Facts::new(subject, depth);
                             facts.issue(e);
                             facts
                         }
@@ -332,7 +378,7 @@ pub async fn collect(
                         .retain(|candidate| keep(&candidate.node.id));
                     if before_count != facts.calls.len() + facts.candidates.len() {
                         facts.complete = false;
-                        facts.issue("达到本轮新增节点上限，仍有下游待采集");
+                        facts.issue("达到本轮新增节点上限，仍有关系待采集");
                     }
                 }
                 merge(graph, facts, &mut known, &mut edges, &pruned, &mut next);
@@ -382,11 +428,12 @@ fn merge(
     pruned: &HashSet<String>,
     next: &mut BTreeMap<String, Seed>,
 ) {
-    let id = &facts.caller.id;
+    let direction = graph.analysis.as_ref().unwrap().direction;
+    let id = &facts.subject.id;
     if let Some(index) = known.get(id)
-        && facts.caller.symbol.is_some()
+        && facts.subject.symbol.is_some()
     {
-        graph.nodes[*index].symbol = facts.caller.symbol.clone();
+        graph.nodes[*index].symbol = facts.subject.symbol.clone();
     }
     let follow = facts.complete && facts.candidates.len() == 1;
     for candidate in facts.candidates {
@@ -410,6 +457,20 @@ fn merge(
             continue;
         }
         let target = call.node.id.clone();
+        let (from, to, file, method) = match direction {
+            Direction::Outgoing => (
+                id.clone(),
+                target.clone(),
+                facts.subject.file.clone(),
+                "outgoingCalls",
+            ),
+            Direction::Incoming => (
+                target.clone(),
+                id.clone(),
+                call.node.file.clone(),
+                "incomingCalls",
+            ),
+        };
         add_node(graph, call.node, known);
         next.entry(target.clone()).or_insert(Seed {
             id: target.clone(),
@@ -418,7 +479,7 @@ fn merge(
         });
         for range in call.ranges {
             let edge_id = stable_id(&format!(
-                "{id}:{target}:{}:{}",
+                "{from}:{to}:{}:{}",
                 range.start.line, range.start.character
             ));
             if !edges.insert(edge_id.clone()) {
@@ -426,8 +487,8 @@ fn merge(
             }
             graph.edges.push(GraphEdge {
                 id: edge_id,
-                from: id.clone(),
-                to: target.clone(),
+                from: from.clone(),
+                to: to.clone(),
                 kind: "static-call".into(),
                 flow_kind: "normal".into(),
                 condition: String::new(),
@@ -435,11 +496,11 @@ fn merge(
                 label: "静态调用".into(),
                 call_site_status: "exact".into(),
                 call_site_note: String::new(),
-                file: facts.caller.file.clone(),
+                file: file.clone(),
                 line: range.start.line + 1,
                 description: "语言服务器报告的调用关系；控制流程尚未分析。".into(),
                 evidence: format!(
-                    "LSP outgoingCalls; UTF-16 call site {}:{}",
+                    "LSP {method}; UTF-16 call site {}:{}",
                     range.start.line + 1,
                     range.start.character + 1
                 ),

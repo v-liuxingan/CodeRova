@@ -1,3 +1,4 @@
+import { explorationGraph, isIncoming } from './exploration.js';
 import { branchSpaceConflict } from './branch-space.js';
 // Keep existing coordinates while a branch fits. If its continuous layout
 // collides, allow the layered layout to widen branches instead of scattering
@@ -16,7 +17,7 @@ export function stablePositions(graph, baseline, previous, direction = 'TB', anc
   const visible = new Set(graph.nodes.map(n => n.id));
   if ([...previous.keys()].some(id => !visible.has(id))) return reflow();
   const positions = new Map(), rows = new Map(), parents = new Map();
-  for (const edge of graph.edges) {
+  for (const edge of explorationGraph(graph).edges) {
     if (edge.flowKind === 'loop-back') continue;
     if (!parents.has(edge.to)) parents.set(edge.to, []);
     parents.get(edge.to).push(edge.from);
@@ -30,7 +31,7 @@ export function stablePositions(graph, baseline, previous, direction = 'TB', anc
     const old = previous.get(n.id);
     if (old) { const point = { x: old.x, y: old.y }; positions.set(n.id, point); occupy(point); }
   }
-  const added = graph.nodes.filter(n => !positions.has(n.id)).sort((a,b) => baseline.get(a.id)[along] - baseline.get(b.id)[along]);
+  const added = graph.nodes.filter(n => !positions.has(n.id)).sort((a,b) => (isIncoming(graph) ? -1 : 1) * (baseline.get(a.id)[along] - baseline.get(b.id)[along]));
   for (const n of added) {
     const base = baseline.get(n.id);
     const parent = (parents.get(n.id) || []).find(id => positions.has(id));

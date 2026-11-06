@@ -35,6 +35,7 @@ export class CodeRovaApi {
   projectFiles(project) { return request(`/api/projects/${encodeURIComponent(project)}/source-files`); }
   projectSource(project, file) { return request(`/api/projects/${encodeURIComponent(project)}/source-files/${encodeURIComponent(file)}`); }
   checkProjectEntry(project, fileId, line, signal) { return request(`/api/projects/${encodeURIComponent(project)}/entry-check`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileId,line}),signal}); }
+  // direction is a graph-level exploration policy; omitted values remain outgoing.
   createGraph(data) { return request('/api/graphs', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); }
 
   constructor({ drafts = false } = {}) {

@@ -25,12 +25,20 @@ export function entryPicker(api,onAdded,options={}) {
     }
   };
   const selected=el('div');selected.className='entry-picker-selection';selected.append(selection,status);footer.prepend(selected);
-  note.hidden=!!options.hideNote;dialog.append(header,intro,context,tools,editor,note,footer);document.body.append(dialog);
+  const directionRow=el('label','采集方向'), direction=el('select');
+  direction.id=`${options.listId||'entry'}-direction`;directionRow.htmlFor=direction.id;
+  for(const [value,label] of [['outgoing','向下采集 · 它调用谁'],['incoming','向上采集 · 谁调用它']]) {
+    const option=el('option',label);option.value=value;direction.append(option);
+  }
+  directionRow.append(direction);directionRow.hidden=true;
+  directionRow.className="entry-picker-direction";
+  const showDirection=visible=>{directionRow.hidden=!options.chooseDirection || !visible;};
+  note.hidden=!!options.hideNote;dialog.append(header,intro,context,tools,editor,note,...(options.chooseDirection?[directionRow]:[]),footer);document.body.append(dialog);
   let slug,parent,files=[],runtime,selectedFile,line=1,candidate,revision=0,checking=false,checkingRequest;
   browse.disabled=true;
-  const dispose=()=>{revision++;checkingRequest?.abort();checkingRequest=null;checking=false;runtime?.dispose();runtime=null;candidate=null;add.hidden=true;check.hidden=false;};
+  const dispose=()=>{revision++;checkingRequest?.abort();checkingRequest=null;checking=false;runtime?.dispose();runtime=null;candidate=null;showDirection(false);add.hidden=true;check.hidden=false;};
   dialog.addEventListener('close',()=>dispose());close.onclick=()=>dialog.close();
-  path.addEventListener('input',()=>{candidate=null;add.disabled=true;add.hidden=true;check.hidden=false;});
+  path.addEventListener('input',()=>{candidate=null;showDirection(false);add.disabled=true;add.hidden=true;check.hidden=false;});
   open.onclick=async()=>{
     const file=files.find(f=>f.name===path.value.trim());if(!file){message('请从当前项目文件列表中选择，不能输入项目外路径。',true);return;}
     dispose();const version=revision;selectedFile=undefined;check.disabled=true;message('正在打开文件…');
@@ -39,7 +47,7 @@ export function entryPicker(api,onAdded,options={}) {
       if(version!==revision||!dialog.open)return;
       const mounted=new EntryEditor(nextLine=>{
         if(version!==revision||!dialog.open||line===nextLine)return;
-        line=nextLine;candidate=null;add.disabled=true;add.hidden=true;check.hidden=false;message('已选中代码行，点击“校验入口”。');selection.textContent=`第 ${line} 行 · ${file.name.split("/").pop()}`;
+        line=nextLine;candidate=null;showDirection(false);add.disabled=true;add.hidden=true;check.hidden=false;message('已选中代码行，点击“校验入口”。');selection.textContent=`第 ${line} 行 · ${file.name.split("/").pop()}`;
       });runtime=mounted;
       await mounted.mount(editor,{path:source.name,language:source.name.endsWith('.java')?'java':'rust',startLine:1,focusLine:1,focusEndLine:1,scope:'file',lines:source.text.split('\n').map((text,i)=>({number:i+1,text}))});
       if(version!==revision||!dialog.open){mounted.dispose();return;}
@@ -58,18 +66,18 @@ export function entryPicker(api,onAdded,options={}) {
     finally{if(dialog.open)browse.disabled=false;}
   };
   check.onclick=async()=>{
-    if(!selectedFile||checking)return;checking=true;check.disabled=true;check.textContent='正在校验…';open.disabled=true;browse.disabled=true;candidate=null;add.disabled=true;add.hidden=true;check.hidden=false;
+    if(!selectedFile||checking)return;checking=true;check.disabled=true;check.textContent='正在校验…';open.disabled=true;browse.disabled=true;candidate=null;showDirection(false);add.disabled=true;add.hidden=true;check.hidden=false;
     const version=revision,chosenLine=line,file=selectedFile;checkingRequest=new AbortController();message('正在确认源码位置…');
     try {const result=await api.checkEntry(slug,file.id,chosenLine,checkingRequest.signal);if(version!==revision||!dialog.open)return;
       if(line!==chosenLine||path.value.trim()!==file.name){message('文件或选中行已改变，请打开目标文件后重新校验。',true);return;}
-      candidate=result.candidateId;check.hidden=true;add.hidden=false;message(result.verification==='source-position' ? `入口已选好，点击“${options.action||'添加'}”。函数将在采集时确认。` : result.message);add.disabled=false;
+      candidate=result.candidateId;showDirection(true);check.hidden=true;add.hidden=false;message(result.verification==='source-position' ? `入口已选好，点击“${options.action||'添加'}”。函数将在采集时确认。` : result.message);add.disabled=false;
     }catch(error){if(version===revision)message(`无法添加：${error.message}`,true);}
     finally{if(version===revision){checking=false;checkingRequest=null;check.textContent='校验入口';check.disabled=!selectedFile;open.disabled=false;browse.disabled=!files.length;}}
   };
   add.onclick=async()=>{if(!candidate)return;add.disabled=true;const originalSlug=slug,version=revision;try{
-    const result=await api.createEntry(slug,{fromId:parent,candidateId:candidate,note:note.value});if(version===revision)dialog.close();onAdded(originalSlug,result.nodeId,result);
+    const result=await api.createEntry(slug,{fromId:parent,candidateId:candidate,note:note.value,...(options.chooseDirection?{direction:direction.value}:{})});if(version===revision)dialog.close();onAdded(originalSlug,result.nodeId,result);
   }catch(error){if(version===revision){message(error.message,true);add.disabled=false;}}};
-  return {async open(next,from){dispose();files=[];browse.disabled=true;path.disabled=true;open.disabled=true;slug=next;parent=from;path.value='';note.value='';selectedFile=undefined;check.disabled=true;add.disabled=true;selection.textContent='尚未选择代码行';intro.textContent=options.intro||'选一个源文件，找到要添加的函数。';editor.textContent='选择入口所在的源文件，例如 Main.java 或 main.rs。';context.title=options.context?.()||'';context.textContent=context.title.split(' · ')[0];context.hidden=!context.textContent;dialog.showModal();message('正在读取项目文件…');const version=revision;
+  return {async open(next,from){dispose();direction.value="outgoing";files=[];browse.disabled=true;path.disabled=true;open.disabled=true;slug=next;parent=from;path.value='';note.value='';selectedFile=undefined;check.disabled=true;add.disabled=true;selection.textContent='尚未选择代码行';intro.textContent=options.intro||'选一个源文件，找到要添加的函数。';editor.textContent='选择入口所在的源文件，例如 Main.java 或 main.rs。';context.title=options.context?.()||'';context.textContent=context.title.split(' · ')[0];context.hidden=!context.textContent;dialog.showModal();message('正在读取项目文件…');const version=revision;
     try{files=await api.entryFiles(slug);if(version!==revision)return;browse.disabled=!files.length;path.disabled=!files.length;open.disabled=!files.length;list.replaceChildren(...files.map(f=>{const o=el('option');o.value=f.name;return o;}));message(files.length?'文件选择器会打开当前项目，也可输入相对路径。':'当前项目没有可选择的 Rust 或 Java 源文件。');}
     catch(error){message(error.message,true);}
   }};

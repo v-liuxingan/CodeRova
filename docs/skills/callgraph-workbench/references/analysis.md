@@ -158,3 +158,11 @@ AI接口：`POST /api/projects/select-directory`返回短期selectionId（本机
 启动异步返回starting，轮询直到running/failed；重复启动复用，不另起进程。
 
 资料库位置、说明分离和配置变更的生效时机见[配置与备份](configuration.md)。备份必须包含隐藏说明快照，不能只复制图 JSON。
+
+## 反向调用采集
+
+新建图请求可传 `direction: "incoming"`；省略或 `"outgoing"` 为向下。
+`analysis.direction` 保存方向，旧图省略时为向下；queriedNodes / pendingNodes 仅表示本图方向。
+续采请求不传方向，继承已加载图。CLI 使用 `analyze --direction incoming`。
+LSP incomingCalls 的 from 是调用者，fromRanges 属于该调用者文件；真实边仍为 caller → callee。
+稳定边 ID 与正向采集相同，不把探索树方向写成事实边方向。部分失败、预算边界、草稿和 CAS 保存保持原契约。

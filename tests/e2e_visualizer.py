@@ -260,6 +260,7 @@ with sync_playwright() as p:
  assert bounded_op({'action':'discard'}).ok
  assert page.request.post(BASE+'/api/graphs',data={'projectId':'alpha','candidateId':'invalid','title':'x'}).status==400
  assert page.request.post(BASE+'/api/graphs',data={'projectId':'alpha','candidateId':'invalid','title':'x','root':'C:/'}).status==422
+ assert page.request.post(BASE+'/api/graphs',data={'projectId':'alpha','candidateId':'invalid','title':'x','direction':'sideways'},headers=headers).status==422
  assert page.request.get(BASE+'/api/projects/alpha/source-files/invalid').status==400
  page.get_by_role('dialog',name='继续采集',exact=True).get_by_role('button',name='取消',exact=True).click()
  page.reload();expect(page.get_by_role('dialog',name='继续采集',exact=True)).not_to_be_visible()

@@ -47,8 +47,14 @@ pub fn plan_many(graph: &CallGraph, ids: &[String]) -> Result<Plan, String> {
         return Err("节点不存在".into());
     }
     let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+    let direction = graph
+        .analysis
+        .as_ref()
+        .map(|r| r.direction)
+        .unwrap_or_default();
     for edge in &graph.edges {
-        edges.entry(&edge.from).or_default().push(&edge.to);
+        let (from, to) = direction.endpoints(edge);
+        edges.entry(from).or_default().push(to);
     }
     let candidates = reachable(
         selected.iter().copied().collect(),
@@ -189,5 +195,26 @@ mod tests {
             plan(&g, "a").unwrap().revision,
             plan(&changed, "a").unwrap().revision
         );
+    }
+}
+
+#[cfg(test)]
+mod incoming_tests {
+    use super::*;
+    #[test]
+    fn reverse_pruning_keeps_root_and_shared_callers() {
+        let graph: CallGraph = serde_json::from_value(serde_json::json!({
+            "schemaVersion":"0.4","projectId":"fixture","title":"reverse","root":"target",
+            "nodes":(["target","a","b","shared","exclusive"].map(|id|serde_json::json!({"id":id,"kind":"function","label":id,"role":"work","file":"main.rs","line":1}))),
+            "edges":([["a","target"],["b","target"],["shared","a"],["shared","b"],["exclusive","a"]].map(|[from,to]|serde_json::json!({"id":format!("{from}-{to}"),"from":from,"to":to,"kind":"static-call","file":"main.rs","line":1}))),
+            "analysis":{"direction":"incoming","provider":"rust-analyzer","scope":"project","maxDepth":3,"requestBudget":10,"pendingNodes":[],"queriedNodes":[],"issues":[]}
+        })).unwrap();
+        let plan = plan(&graph, "a").unwrap();
+        assert_eq!(plan.removed_node_ids, vec!["a", "exclusive"]);
+        assert_eq!(plan.preserved_shared_node_ids, vec!["shared"]);
+        let batch = plan_many(&graph, &["a".into(), "b".into()]).unwrap();
+        assert_eq!(batch.removed_node_ids.len(), 4);
+        assert!(!batch.removed_node_ids.contains(&graph.root));
+        assert!(plan_many(&graph, &["target".into()]).is_err());
     }
 }

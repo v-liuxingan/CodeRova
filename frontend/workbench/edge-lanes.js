@@ -1,5 +1,5 @@
 // Compute parallel lanes only when topology changes; keep original call-site IDs.
-export function edgeLanes(edges, states = new Map(), direction = 'TB') {
+export function edgeLanes(edges, states = new Map(), direction = 'TB', callSiteAtSource = false) {
   const groups = new Map();
   for (const edge of edges) {
     const key = JSON.stringify([edge.from, edge.to, edge.kind || '', edge.flowKind || '', edge.label || '', edge.order ?? null, edge.condition || '']);
@@ -12,7 +12,7 @@ export function edgeLanes(edges, states = new Map(), direction = 'TB') {
     result.push({ id: edge.id, source: edge.from, target: edge.to,
       type: direction === 'LR' ? 'adaptive-horizontal' : 'adaptive-vertical',
       data: { laneFraction: .5, memberIds }, states: states.get(edge.id) || [],
-      style: { sourcePort: `out:${edge.id}`, targetPort: `in:${edge.id}`,
+      style: { callSiteAtSource, sourcePort: `out:${edge.id}`, targetPort: `in:${edge.id}`,
         increasedLineWidthForHitTesting: 12,
         lineDash: (edge.kind === 'async-boundary' || edge.kind === 'trait-dispatch') ? [5,4] : undefined,
         labelText: edge.kind === 'trait-dispatch' ? '' : edge.id.startsWith('manual-async-') || edge.sourceId?.startsWith('manual-async-') ? '人工异步关联' : group.length > 1 ? `${group.length} 条关系` : Number.isInteger(edge.order) ? `顺序 ${edge.order}` : edge.sourceId && edge.line > 0 ? `L${edge.line}` : '',

@@ -17,6 +17,20 @@ impl Language {
         }
     }
 
+    pub async fn incoming(
+        self,
+        session: &lsp::Client,
+        item: &lsp_types::CallHierarchyItem,
+    ) -> Result<Value, String> {
+        session
+            .request(
+                "callHierarchy/incomingCalls",
+                json!({"item": item}),
+                self.query_timeout(),
+            )
+            .await
+    }
+
     pub async fn outgoing(
         self,
         session: &lsp::Client,

@@ -1,3 +1,4 @@
+import { explorationGraph, isIncoming } from './exploration.js';
 import { indexGraph } from './graph-index.js';
 
 // A display window over the complete graph, not an analysis budget. Every
@@ -5,7 +6,7 @@ import { indexGraph } from './graph-index.js';
 export class GraphWindow {
   constructor(graph) {
     this.graph = graph;
-    this.index = indexGraph(graph);
+    this.index = indexGraph(explorationGraph(graph));
     this.visible = new Set();
   }
 
@@ -95,6 +96,14 @@ export class GraphWindow {
 // target keeps one identity at its earliest layer; cross/return edges do not
 // force other branches to acquire artificial depth.
 export function layerPositions(graph, direction = 'TB') {
+  const positions = explorationPositions(explorationGraph(graph), direction);
+  if (isIncoming(graph)) for (const point of positions.values()) {
+    if (direction === 'LR') point.x = -point.x;
+    else point.y = -point.y;
+  }
+  return positions;
+}
+function explorationPositions(graph, direction) {
   if (graph.nodes.length && graph.nodes.every(n => n.sourceId)) return pathPositions(graph, direction);
   const index = indexGraph(graph), depths = new Map(), layers = [];
   const seeds = [graph.root, ...graph.nodes.map(node => node.id)];

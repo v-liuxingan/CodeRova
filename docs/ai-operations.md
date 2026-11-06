@@ -194,3 +194,12 @@ entry/link/prune/preview 的 request 与原接口相同；removeLink 使用 edge
 目录选择凭据来自 `POST /api/projects/select-directory`。原生选择器需要本机交互；自动化不能伪造路径或 selectionId。文件必须属于项目枚举目录，拒绝符号链接、构建目录和项目外文件。项目注册与 LSP 启停参见 [分析操作](skills/callgraph-workbench/references/analysis.md)。
 
 图 GET 仍返回合成后的事实与说明，API 使用者不直接编辑 `_annotations` 快照引用。磁盘结构、配置优先级与备份见[配置与备份](skills/callgraph-workbench/references/configuration.md)。
+
+## 新建反向调用图
+
+`POST /api/graphs` 接受 `{projectId,candidateId,title,direction?}`，direction 严格为
+`outgoing`（默认）或 `incoming`。候选仍由项目 entry-check 获取，不接收客户端路径。
+响应仍为 `{slug,nodeId}`。方向保存在 `analysis.direction`；续采与草稿 analyze 继承图方向，
+不接受请求级方向切换，历史未标方向的图按 outgoing 处理。
+incoming 图的 root 是追溯锚点，节点结构不变；每条调用边仍从 caller 指向 callee，调用点属于 caller。
+pendingNodes / queriedNodes 和剪枝均按图方向解释。无调用者不等于程序入口。

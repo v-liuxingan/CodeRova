@@ -484,3 +484,6 @@ button.primary:disabled {opacity:.45;}
 #catalog .tree-menu-actions button { width: 100%; text-align: left; font-size: 12px; }
 .tree-trash-row { flex-wrap: nowrap; align-items: center; }
 .tree-trash-row > span:first-child { flex: 1; min-width: 0; width: auto; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+
+.entry-picker-direction:not([hidden]) { display:flex;align-items:center;gap:12px;font-size:12px;flex-shrink:0;white-space:nowrap; }
+.entry-picker-direction .ts-wrapper { width:300px;max-width:calc(100% - 60px);min-width:0; }

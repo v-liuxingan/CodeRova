@@ -1,3 +1,4 @@
+import { isIncoming } from './exploration.js';
 export function collectionDialog(onStarted) {
   const dialog = document.createElement('dialog');
   dialog.className = 'tree-dialog collection-dialog';
@@ -37,7 +38,8 @@ export function collectionDialog(onStarted) {
       submit.textContent = '开始采集';
     }
   });
-  return { open(target, onSubmit) {
+  return { open(target, onSubmit, graph) {
+    dialog.querySelector('#collection-title').textContent = isIncoming(graph) ? '向上采集 · 谁调用它' : '继续采集';
     if (dialog.open) return;
     start = onSubmit; error.hidden = true;
     dialog.querySelector('strong').textContent = target.label;

@@ -126,6 +126,7 @@ mod tests {
         assert!(legacy.same_content(&current));
         let mut changed = current.clone();
         changed.analysis = Some(crate::analysis::AnalysisReport {
+            direction: Default::default(),
             provider: "test".into(),
             scope: "project".into(),
             max_depth: 0,

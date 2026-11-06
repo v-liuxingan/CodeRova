@@ -1,3 +1,4 @@
+import { isIncoming, explorationLabel } from './exploration.js';
 import { editDescriptions } from './description-editor.js';
 import { EntryEditor } from './entry-editor.js';
 import { projectLsp } from './project-lsp.js';
@@ -267,7 +268,7 @@ async function drain() {
       });
       renderer.on('node:pointermove', event => {
         const action = branchAction(event);
-        $('canvas').title = action === 'expand' ? `展开下游 · 最多 ${batchSize()} ${$('window-unit').value === 'layers' ? '层' : '个新节点'}` : action === 'collapse' ? '收起下游' : '';
+        $('canvas').title = action === 'expand' ? `展开${explorationLabel(current)} · 最多 ${batchSize()} ${$('window-unit').value === 'layers' ? '层' : '个新节点'}` : action === 'collapse' ? `收起${explorationLabel(current)}` : '';
       });
       renderer.on('node:pointerleave', () => { $('canvas').title = ''; });
       renderer.on('node:pointerdown', event => { if (gesture) gesture.branchAction = branchAction(event); });
@@ -281,16 +282,16 @@ async function drain() {
         event.preventDefault();
         if (loading || drawing) return;
         const edge = graphIndex.edges.get(event.target.id);
-        const target = event.targetType === 'node' ? graphIndex.nodes.get(event.target.id) : edge && graphIndex.nodes.get(edge.to);
+        const target = event.targetType === 'node' ? graphIndex.nodes.get(event.target.id) : edge && graphIndex.nodes.get(isIncoming(current)?edge.from:edge.to);
         if (!target) return;
         if(event.targetType==='node' && batchSelected.has(target.id) && batchSelected.size>1) {
           const sourceIds=[...new Set([...batchSelected].map(id=>graphIndex.nodes.get(id)?.sourceId||id))];
           const selection=sourceIds.filter(id=>id!==current.root);
-          contextMenu.open({selection,protectedCount:sourceIds.length-selection.length,label:`已选 ${batchSelected.size} 个调用位置 · 可处理 ${selection.length} 个方法`,isNode:true,canPrune:selection.length>0,
+          contextMenu.open({incoming:isIncoming(current),selection,protectedCount:sourceIds.length-selection.length,label:`已选 ${batchSelected.size} 个调用位置 · 可处理 ${selection.length} 个方法`,isNode:true,canPrune:selection.length>0,
             x:event.client?.x??event.clientX??0,y:event.client?.y??event.clientY??0});
           return;
         }
-        contextMenu.open({ editTarget: {type:event.targetType, id:event.target.id}, id: target.id, label: target.label, file:target.file, line:target.line, enabled: graphWindow.collapsible(target.id), isNode:event.targetType==='node',canCollect:canCollect(target.id),canAdd:Boolean(current.analysis),canPrune:(graphIndex.nodes.get(target.id)?.sourceId||target.id)!==current.root,
+        contextMenu.open({incoming:isIncoming(current), editTarget: {type:event.targetType, id:event.target.id}, id: target.id, label: target.label, file:target.file, line:target.line, enabled: graphWindow.collapsible(target.id), isNode:event.targetType==='node',canCollect:canCollect(target.id),canAdd:Boolean(current.analysis) && !isIncoming(current),canPrune:(graphIndex.nodes.get(target.id)?.sourceId||target.id)!==current.root,
           x: event.client?.x ?? event.clientX ?? 0, y: event.client?.y ?? event.clientY ?? 0 });
       };
       renderer.on('edge:contextmenu', openBranchMenu);
@@ -361,8 +362,9 @@ async function hideNode(id) {
     for (let i = 0; i < ancestors.length; i++) {
       const candidate = graphIndex.nodes.get(ancestors[i]);
       if (candidate && !removed.has(candidate.sourceId || candidate.id)) { anchor = candidate.id; break; }
-      for (const edge of graphIndex.incoming.get(ancestors[i]) || []) {
-        if (!seen.has(edge.from)) { seen.add(edge.from); ancestors.push(edge.from); }
+      for (const edge of (isIncoming(current)?graphIndex.outgoing:graphIndex.incoming).get(ancestors[i]) || []) {
+        const parent=isIncoming(current)?edge.to:edge.from;
+        if (!seen.has(parent)) { seen.add(parent); ancestors.push(parent); }
       }
     }
     const viewport = visibilityViewport(anchor);
@@ -395,7 +397,7 @@ async function pruneNode(id) {
   try {
     const plan=await api.pruneNodes(slug,sourceIds);
     if(slug!==activeSlug || version!==routeVersion)return;
-    if(!window.confirm(`将从图数据中移除所选 ${sourceIds.length} 个方法的所有调用位置及其独占下游：${plan.removedNodeIds.length} 个节点、${plan.removedEdgeIds.length} 条连线。保留 ${plan.preservedSharedNodeIds.length} 个共享下游节点。不影响源码，点击“保存”后写入图文件。确定删除？`))return;
+    if(!window.confirm(`将从图数据中移除所选 ${sourceIds.length} 个方法的所有调用位置及其沿探索方向的独占分支：${plan.removedNodeIds.length} 个节点、${plan.removedEdgeIds.length} 条连线。保留 ${plan.preservedSharedNodeIds.length} 个共享节点。不影响源码，点击“保存”后写入图文件。确定删除？`))return;
     await api.pruneNodes(slug,sourceIds,plan.revision);
     if(slug===activeSlug){activeSlug=undefined;navigate(slug,false);}
   }catch(error){status(error.message,true);}finally{pruning=false;}
@@ -423,7 +425,7 @@ async function collectNode(id) {
       throw error;
     }
     finally{startingCollection=false;}
-  });
+  }, current);
 }
 function addEntry(id) {
   if(!current?.analysis)return;
@@ -451,7 +453,7 @@ function renderCoverage(analysis) {
   $('coverage').hidden = !analysis; $('coverage-issues').replaceChildren();
   if (!analysis) return;
   $('coverage-title').textContent = `静态分析范围：已查询 ${analysis.queriedNodes.length} 个符号 · ${analysis.pendingNodes.length} 个待查询 · ${analysis.issues.length} 项边界说明${analysis.prunedNodeIds?.length ? ` · 已减枝 ${analysis.prunedNodeIds.length} 个符号` : ''}`;
-  $('coverage-scope').textContent = !supportsCollection(current) ? `${analysis.provider}。历史导入图，仅保留查看与编辑；需要采集请从源码新建图。` : `${analysis.provider}。初次采集深度 ${analysis.maxDepth}，初次请求预算 ${analysis.requestBudget}；页面续采按本轮预算继续。仅当前项目内静态关系，历史边界说明保留供核对；未证明业务链路完整。`;
+  $('coverage-scope').textContent = !supportsCollection(current) ? `${analysis.provider}。历史导入图，仅保留查看与编辑；需要采集请从源码新建图。` : `${analysis.provider} · ${isIncoming(current)?"向上采集":"向下采集"}。初次采集深度 ${analysis.maxDepth}，初次请求预算 ${analysis.requestBudget}；页面续采按本轮预算继续。仅当前项目内静态关系，历史边界说明保留供核对；未证明业务链路完整。`;
   $('coverage').open = false;
 }
 
@@ -572,9 +574,9 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
     const sourceId = item.sourceId || id;
     symbolPicker.select(sourceId);
     const incoming=graphWindow.source.incoming.get(sourceId)||[];
-    const pathEdge=(graphIndex.incoming.get(id)||[])[0];
+    const pathEdge=graphWindow.parents.get(id) == null ? null : (isIncoming(current) ? graphIndex.outgoing.get(id) : graphIndex.incoming.get(id))?.[0];
     const guide=readingGuide({graph:current,item,outgoing:graphWindow.source.outgoing.get(sourceId)||[],incoming,
-      canCollect:canCollect(id),collect:()=>void collectNode(id),sourceEdge:pathEdge,caller:pathEdge && graphIndex.nodes.get(pathEdge.from),
+      canCollect:canCollect(id),collect:()=>void collectNode(id),sourceEdge:pathEdge,caller:pathEdge && graphIndex.nodes.get(isIncoming(current)?pathEdge.to:pathEdge.from),
       openEvidence:()=>void select('edge',pathEdge.id,false)});
     $('node-actions-panel').prepend(guide.row);
     $('relations').append(guide.detail);
@@ -583,8 +585,8 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
     more.setAttribute('aria-label','更多节点操作');more.title='更多节点操作';
     more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded','false');more.setAttribute('aria-controls','edge-context-menu');
     more.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/></svg>';
-    more.onclick=()=>{const rect=more.getBoundingClientRect();contextMenu.open({editTarget:{type:'node',id},id,label:item.label,file:item.file,line:item.line,
-      enabled:graphWindow.collapsible(id),isNode:true,canCollect:canCollect(id),canAdd:Boolean(current.analysis),canPrune:sourceId!==current.root,
+    more.onclick=()=>{const rect=more.getBoundingClientRect();contextMenu.open({incoming:isIncoming(current),editTarget:{type:'node',id},id,label:item.label,file:item.file,line:item.line,
+      enabled:graphWindow.collapsible(id),isNode:true,canCollect:canCollect(id),canAdd:Boolean(current.analysis) && !isIncoming(current),canPrune:sourceId!==current.root,
       x:rect.right-280,y:rect.bottom+6,trigger:more});};
     $('node-actions-panel').append(more);
   } else {
@@ -758,7 +760,7 @@ function windowData(anchor = current.root, preservePositions = false) {
     const previous = new Map(paintWindow.data.nodes.map(n => [n.id, n.style]));
     positions = stablePositions(visibleGraph, positions, previous, direction, anchor);
   }
-  const edges = edgeLanes(visibleGraph.edges, elementStates, direction);
+  const edges = edgeLanes(visibleGraph.edges, elementStates, direction, isIncoming(current));
   renderedEdge = new Map(); edgeMembers = new Map();
   for (const edge of edges) {
     edgeMembers.set(edge.id, edge.data.memberIds);
@@ -773,16 +775,16 @@ function windowData(anchor = current.root, preservePositions = false) {
       const count = graphWindow.hiddenChildren(n.id);
       const source = graphIndex.nodes.get(n.id);
       if (source.pathCycle) n.data.more = '↩ 回环引用 · 停止展开';
-      else if (count) n.data.more = `${source.pathReference ? '共享引用 · ' : ''}＋ ${count} 个直接下游待展开`;
+      else if (count) n.data.more = `${source.pathReference ? '共享引用 · ' : ''}＋ ${count} 个${explorationLabel(current)}待展开`;
       else if (source.pathReference) n.data.more = '共享方法引用';
       // Reserve status space from immutable topology, not the current window.
       // Collapsing adds a hint, but must never resize the node or move its control.
       const sourceIndex = graphWindow.source || graphWindow.index;
       const hasStatus = source.pathReference || source.pathCycle ||
-        (sourceIndex.outgoing.get(source.sourceId || source.id)?.length > 0);
+        ((isIncoming(current)?sourceIndex.incoming:sourceIndex.outgoing).get(source.sourceId || source.id)?.length > 0);
       if (hasStatus) n.data.height += 24;
       n.data.canExpand = count > 0;
-      n.data.canCollapse = (graphIndex.outgoing.get(n.id) || []).some(e => e.to !== n.id && e.flowKind !== 'loop-back');
+      n.data.canCollapse = graphWindow.collapsible(n.id);
       return { ...n, style: positions.get(n.id), states: elementStates.get(n.id) || [] };
     }),
     edges,
@@ -856,7 +858,7 @@ async function changeBranch(id, action) {
   if (!graphWindow || loading || drawing || !graphWindow.visible.has(id)) return;
   const version = routeVersion;
   const changed = action === 'collapse' ? graphWindow.collapse(id) : graphWindow.expand(id, batchSize(), $('window-unit').value);
-  if (!changed) { status('下游仍被其他分支引用，已保留共享节点。'); return; }
+  if (!changed) { status('节点仍被其他分支引用，已保留共享节点。'); return; }
   const selected = $('canvas').dataset.selection;
   const selectedType = graphIndex.nodes.has(selected) ? 'node' : 'edge';
   const retained = selectedType === 'node' ? graphWindow.visible.has(selected) : graphWindow.snapshot().edges.some(e => e.id === selected);

@@ -1,12 +1,15 @@
 import { CubicVertical, CubicHorizontal, ExtensionCategory, register } from '@antv/g6';
 import { directionalPath } from './directional-path.js';
-// Anchor to the actual target port, not a percentage of the curve length:
-// long fan-outs must keep their call-site label next to the destination too.
+// Anchor labels to the exploration frontier: incoming graphs use the caller
+// port so many callers do not stack their labels at the shared callee.
 function entryLabel(edge, attributes, style, horizontal) {
   if (!style || edge.sourceNode === edge.targetNode) return style;
-  const [, target] = edge.getEndpoints(attributes);
-  return { ...style, textAlign: 'right', textBaseline: 'middle',
-    transform: [['translate', target[0] - (horizontal ? 14 : 10), target[1] - (horizontal ? 12 : 18)]] };
+  const [source, target] = edge.getEndpoints(attributes);
+  const atSource = attributes.callSiteAtSource;
+  const anchor = atSource ? source : target;
+  return { ...style, textAlign: atSource ? 'left' : 'right', textBaseline: 'middle',
+    transform: [['translate', anchor[0] + (atSource ? 1 : -1) * (horizontal ? 14 : 10),
+      anchor[1] + (atSource && !horizontal ? 18 : horizontal ? -12 : -18)]] };
 }
 class AdaptiveVertical extends CubicVertical {
   getLabelStyle(attributes) { return entryLabel(this, attributes, super.getLabelStyle(attributes), false); }

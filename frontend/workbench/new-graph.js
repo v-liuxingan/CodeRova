@@ -64,10 +64,10 @@ export function newGraph(api, onCreated) {
     entrySource: (id, file) => api.projectSource(id, file),
     selectEntryFile: id => api.selectProjectFile(id),
     checkEntry: (id, file, line, signal) => api.checkProjectEntry(id, file, line, signal),
-    createEntry: (id, data) => api.createGraph({projectId:id, title:chosenTitle, candidateId:data.candidateId}),
+    createEntry: (id, data) => api.createGraph({projectId:id, title:chosenTitle, candidateId:data.candidateId, direction:data.direction}),
   }, (_project, _node, result) => onCreated(result), {
     context:()=>`项目：${project.selectedOptions[0]?.textContent||chosenProject} · ${project.selectedOptions[0]?.dataset.root||''}`,
-    title:'选择根节点', action:'创建图', listId:'new-graph-files', hideNote:true,
+    chooseDirection:true, title:'选择根节点', action:'创建图', listId:'new-graph-files', hideNote:true,
     intro:'选一个源文件，从你想了解的函数开始。',
   });
   cancel.onclick = () => dialog.close();

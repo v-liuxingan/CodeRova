@@ -37,6 +37,8 @@ pub(super) async fn check(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct CreateGraph {
+    #[serde(default)]
+    direction: crate::analysis::Direction,
     project_id: String,
     candidate_id: String,
     title: String,
@@ -84,8 +86,13 @@ pub(super) async fn create(
         nodes: vec![candidate.node.clone()],
         edges: vec![],
         analysis: Some(crate::analysis::AnalysisReport {
+            direction: input.direction,
             provider: language.provider().into(),
-            scope: language.scope().into(),
+            scope: if input.direction == crate::analysis::Direction::Incoming {
+                "project-local incoming calls; static relationships only".into()
+            } else {
+                language.scope().into()
+            },
             max_depth: 50,
             request_budget: 100,
             queried_nodes: vec![],
