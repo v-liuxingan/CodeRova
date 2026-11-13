@@ -35,6 +35,7 @@ def main():
     except OSError:time.sleep(.1)
    run(sys.executable,str(ROOT/'tests/e2e_visualizer.py'))
    run(sys.executable,str(ROOT/'tests/component_controls_e2e.py'))
+   run(sys.executable,str(ROOT/'frontend/workbench/display-settings_e2e.py'))
    run(sys.executable,str(ROOT/'tests/reading_guide_e2e.py'))
    run(sys.executable,str(ROOT/'tests/viewport_performance_e2e.py'))
    run(sys.executable,str(ROOT/'tests/graph_gestures_e2e.py'))

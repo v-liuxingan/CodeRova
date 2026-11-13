@@ -94,7 +94,7 @@ function nodeStates(id) {
 }
 function batchHint() {
   updateNavigationButtons();
-  $('batch-selection-info').textContent = batchSelected.size ? `已框选 ${batchSelected.size} 个节点 · 拖动任一选中节点一起移动 · Esc 取消` : 'Shift 拖动框选，拖动选中节点一起移动；Esc 取消框选。';
+  $('batch-selection-label').textContent = batchSelected.size ? `已框选 ${batchSelected.size} 个 · 可拖动` : '框选节点';
 }
 function clearBatch() {
   if (!batchSelected.size) return;
@@ -552,13 +552,14 @@ async function select(type, id, focus = false, userInitiated = false, keepSource
   $('source').hidden=false;
   $('node-actions-panel').replaceChildren();
   const describe = node('button','编辑说明');
-  describe.onclick = () => editItemDescription(type, id);
-  $('node-actions-panel').append(describe);
+  describe.onclick = event => { event.preventDefault(); event.stopPropagation(); editItemDescription(type, id); };
+  $('note-action').replaceChildren(describe);
   $('selection-notes').open=true;
   $('selection-title').textContent = type === 'node' ? ((item.sourceId||item.id).startsWith('entry-position-') ? `${item.file.split('/').pop()} · 第 ${item.line} 行` : item.label) : `${graphIndex.nodes.get(item.from)?.label || item.from} → ${graphIndex.nodes.get(item.to)?.label || item.to}`;
   $('selection-description').textContent = (item.pathCycle ? '回环引用：递归或已标注的回环关系，不再向下复制。' : item.pathReference ? '共享方法在当前路径中的引用，与其他引用对应同一份源码。' : '') + (item.description || item.role || item.evidence || '');
   if (type === 'node') { const facts = symbolPresentation(item); if(facts.type) $('selection-description').textContent = [facts.type, facts.detail, $('selection-description').textContent].filter(Boolean).join(' · '); }
-  $('selection-notes').hidden=!$('selection-description').textContent.trim();
+  $('selection-notes').hidden=false;
+  $('selection-description').hidden=!$('selection-description').textContent.trim();
   $('relations').replaceChildren();
 
   const selectedNodes = new Set(type === 'node' ? [id] : [item.from, item.to]);

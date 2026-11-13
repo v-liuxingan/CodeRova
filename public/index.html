@@ -23,18 +23,18 @@
       <div class="node-search">
     <select id="symbols" data-native aria-label="搜索并选择节点"></select>
 </div>
-      <div class="node-stepper"><button id="node-left" title="向左移动（方向键）" aria-label="向左移动" aria-keyshortcuts="ArrowLeft"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 5-5 5 5 5"/></svg></button><button id="node-up" title="向上移动（方向键）" aria-label="向上移动" aria-keyshortcuts="ArrowUp"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></button><button id="node-center" title="居中当前项（空格）" aria-keyshortcuts="Space">居中当前项</button><button id="node-down" title="向下移动（方向键）" aria-label="向下移动" aria-keyshortcuts="ArrowDown"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button><button id="node-right" title="向右移动（方向键）" aria-label="向右移动" aria-keyshortcuts="ArrowRight"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></button></div>
+      <div class="node-stepper"><button id="node-left" title="向左移动（方向键）" aria-label="向左移动" aria-keyshortcuts="ArrowLeft"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 5-5 5 5 5"/></svg></button><button id="node-up" title="向上移动（方向键）" aria-label="向上移动" aria-keyshortcuts="ArrowUp"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></button><button id="node-center" title="居中当前项（空格）" aria-label="居中当前项" aria-keyshortcuts="Space"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 2v3m0 10v3M2 10h3m10 0h3"/></svg></button><button id="node-down" title="向下移动（方向键）" aria-label="向下移动" aria-keyshortcuts="ArrowDown"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button><button id="node-right" title="向右移动（方向键）" aria-label="向右移动" aria-keyshortcuts="ArrowRight"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></button></div>
     </div>
     <div class="graph-controls" aria-label="图展示范围">
       <button id="fit" disabled>适应画布</button>
       <fieldset id="direction" class="direction-switch" aria-label="布局方向"><label><input type="radio" name="direction" value="TB"><span>纵向</span></label><label><input type="radio" name="direction" value="LR" checked><span>横向</span></label></fieldset>
       <details id="display-settings" class="display-settings"><summary><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 4h12M2 12h12"/><circle cx="6" cy="4" r="2"/><circle cx="10" cy="12" r="2"/></svg>展示设置</summary><div class="settings-body" role="group" aria-labelledby="settings-title">
-      <div class="settings-heading"><strong id="settings-title">展开范围</strong><span>按需探索调用链</span></div>
+      <div class="settings-heading"><strong id="settings-title">展开范围</strong></div>
       <div class="settings-row"><label for="window-size">每次展开</label><div class="settings-value"><input id="window-size" type="number" min="1" step="1" value="50" aria-label="展开数量" aria-describedby="window-help">
       <select data-search="false" id="window-unit" aria-label="展开单位"><option value="nodes">个节点</option><option value="layers" selected>层调用</option></select></div></div>
-      <p id="window-help">点击节点展开时使用此范围，原始调用数据保留。</p>
-      <p id="batch-selection-info">Shift 拖动框选，拖动选中节点一起移动；Esc 取消框选。</p>
-      <p id="canvas-keyboard-help">画布聚焦时：方向键移向邻近节点，相连节点之间先停在调用边；边上继续移动到对应端点。无候选时停留。空格居中当前项或边，多选时方向键不跳转。</p>
+      <p id="window-help">仅影响显示，不修改图数据。</p>
+      <section class="settings-shortcuts" aria-label="画布快捷键"><h3>画布快捷键</h3><dl id="batch-selection-info"><div><dt><kbd>Shift</kbd> + 拖动</dt><dd id="batch-selection-label" title="框选后可拖动任一选中节点一起移动">框选节点</dd></div><div><dt><kbd>Esc</kbd></dt><dd>取消框选</dd></div></dl>
+      <dl id="canvas-keyboard-help" title="画布聚焦时生效；相连节点之间先停在调用边，无候选时停留，多选时不跳转。"><div><dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>移动到节点或边</dd></div><div><dt><kbd>Space</kbd></dt><dd>居中当前项</dd></div></dl></section>
       <div class="settings-footer"><button id="apply-window">重置视图<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button></div>
       </div></details>
       <details class="editor-settings"><summary>源码跳转</summary><div class="editor-settings-body">      <button id="click-source" type="button" aria-pressed="false" title="开启后，点击、方向键或导航按钮选中节点与精确调用边时自动打开编辑器">自动跳转：关</button>
@@ -66,8 +66,8 @@
     <h2 id="selection-title">未选择节点</h2>
     <div id="source-location"></div>
     <button id="open-source" type="button" hidden>在编辑器打开</button>
-    <details id="selection-notes" hidden><summary>说明</summary><p id="selection-description"></p></details>
     <div id="node-actions-panel"></div>
+    <details id="selection-notes" hidden><summary><span>说明</span><span id="note-action"></span></summary><p id="selection-description"></p></details>
 
     <div id="relations"></div>
     <section id="source" aria-label="源码预览" hidden></section>

@@ -10,9 +10,9 @@ export function collectionDialog(onStarted) {
       <label for="resume-depth">采集深度<input id="resume-depth" type="number" min="1" max="100" value="3" placeholder="不限"><small>起点为第 0 层</small></label>
       <label for="resume-budget">新增节点上限<input id="resume-budget" type="number" min="1" max="10000" value="100" placeholder="不限"><small>不计已有节点</small></label>
     </div>
-    <p class="collection-hint">可只填写一项；留空表示不限。达到任一上限即停止。重复符号与调用点自动合并，保留已有说明。</p>
+    <p class="collection-hint">留空不限，达到任一上限即停止。</p><details class="collection-policy"><summary>合并规则</summary><p>重复符号与调用点自动合并，保留已有说明。采集结果先预览，采纳后保存。</p></details>
     <p class="collection-error" role="alert" hidden></p>
-    <div class="dialog-actions"><button type="button">取消</button><button type="submit">开始采集</button></div>
+    <div class="dialog-actions"><button type="button">取消</button><button type="submit" class="primary">开始采集</button></div>
   </form>`;
   document.body.append(dialog);
   const form = dialog.querySelector('form'), input = dialog.querySelector('#resume-budget'), depth = dialog.querySelector('#resume-depth');

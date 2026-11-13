@@ -6,13 +6,13 @@ import {relationList} from './relation-list.js';
 export function readingGuide({graph,item,outgoing,incoming,collect,canCollect,sourceEdge,caller,openEvidence}) {
   const {state,hint,issues}=readingState(graph,item,outgoing,incoming);
   const row=document.createElement('div');row.className='node-reading-actions';
-  const badge=statusBadge(readingBadges);badge.set(state);row.append(badge.element);
+  const badge=statusBadge(readingBadges);badge.set(state);badge.element.title=hint;badge.element.setAttribute('aria-description',hint);row.append(badge.element);
   if(canCollect) {
-    const button=document.createElement('button');button.textContent='继续采集';
+    const button=document.createElement('button');button.textContent='继续采集';button.className='primary';
     button.title=isIncoming(graph)?'从当前节点查找调用者，保留已有说明':'从当前节点探索下游，保留已有说明';button.onclick=collect;row.append(button);
   }
   const detail=document.createElement('div');detail.className='node-reading-guide';
-  const note=document.createElement('p');note.className='reading-hint';note.textContent=hint;detail.append(note);
+  const note=document.createElement('p');note.className='reading-hint';note.textContent=hint;note.hidden=['queried','pending','provisional','unknown'].includes(state);detail.append(note);
   if(sourceEdge && caller) {
     const context=document.createElement('div');context.className='reading-origin';
     const label=document.createElement('span');label.textContent=`${isIncoming(graph)?"当前路径调用":"当前路径来自"} ${caller.label || caller.id}`;label.title=label.textContent;

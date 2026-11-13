@@ -41,6 +41,9 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
    assert page.evaluate('''() => {const g=window.__testGraph;return g.context.element.getElement('root').getShape('key').attributes.fill===getComputedStyle(document.documentElement).getPropertyValue('--card-class-bg').trim()}''')
    expect(page.locator('.node-reading-actions .badge')).to_have_text('已查询')
    expect(page.locator('.reading-hint')).to_contain_text('图入口')
+   expect(page.locator('.reading-hint')).to_be_hidden()
+   expect(page.locator('.node-reading-actions button')).to_have_class('primary')
+   expect(page.locator('#selection-notes summary button')).to_have_text('编辑说明')
    expect(page.locator('#selection-description')).to_have_text('类 · 组织一次处理流程')
    more=page.get_by_role('button',name='更多节点操作',exact=True)
    menu=page.get_by_role('menu',name='分支操作')
@@ -91,6 +94,8 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
     page.set_viewport_size({'width':width,'height':960});select_option(page,'#appearance',theme)
     page.locator('.node-reading-actions button').click()
     dialog=page.get_by_role('dialog',name='继续采集',exact=True);expect(dialog).to_be_visible()
+    expect(dialog.locator('.collection-policy')).not_to_have_attribute('open','')
+    expect(dialog.get_by_role('button',name='开始采集',exact=True)).to_have_class('primary')
     page.wait_for_timeout(250)
     page.screenshot(path=str(artifacts/f'collection-{theme}-{width}.png'))
     bounds=dialog.bounding_box();assert bounds['x']>=0 and bounds['x']+bounds['width']<=width

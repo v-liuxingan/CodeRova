@@ -5,6 +5,9 @@ export function toolbarPopover(panel) {
   const body = anchor?.nextElementSibling;
   if (!body) return;
   body.classList.add('toolbar-floating');
+  // Plain-text clicks must focus inside the panel, not its focusable page
+  // ancestor. Otherwise focusout can hide <details> during native mouse focus.
+  if (!body.hasAttribute('tabindex')) body.tabIndex = -1;
   let cleanup, revision = 0;
   panel.addEventListener('toggle', () => {
     cleanup?.(); cleanup = undefined;

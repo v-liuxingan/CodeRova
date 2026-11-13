@@ -68,17 +68,39 @@ aside { padding:20px 16px; }
 .node-stepper button { padding:6px 8px; }
 .node-stepper button:hover { background:var(--hover); }
 #node-center { font-size:12px; }
+.node-stepper #node-center { display:grid;place-items:center;margin-inline:4px;border:1px solid var(--line);border-radius:6px; }
+.graph-controls .editor-settings { margin-left:8px;padding-left:12px;border-left:1px solid var(--line); }
+.settings-body { width:320px; }
+.settings-heading { margin-bottom:14px; }
+.settings-heading strong { font-size:14px; }
+.settings-row { padding:12px;background:var(--subtle);border-radius:8px; }
+.settings-value { min-width:0; }
+.settings-value input { width:64px;min-width:0;margin:0;background:var(--input); }
+#window-help { margin:8px 0 16px;font-size:11px; }
+.settings-shortcuts { border-top:1px solid var(--line);padding-top:14px;margin-bottom:16px; }
+.settings-shortcuts h3 { margin:0 0 10px;font-size:12px;color:var(--strong);font-weight:600; }
+.settings-shortcuts #batch-selection-info,.settings-shortcuts #canvas-keyboard-help { margin:0;font-size:12px; }
+.settings-shortcuts dl > div { display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:30px; }
+.settings-shortcuts dt { display:flex;align-items:center;gap:3px;white-space:nowrap; }
+.settings-shortcuts dd { margin:0;text-align:right; }
+.settings-shortcuts kbd { min-width:20px;padding:1px 5px;border:1px solid var(--line);border-radius:4px;background:var(--subtle);font:11px/18px Consolas,monospace;text-align:center;color:var(--text); }
+.settings-footer #apply-window { padding:8px;background:var(--active);border-radius:6px; }
 #status { min-height:28px;padding:5px 24px;font-size:12px; }
 #canvas { background-color:var(--canvas);background-image:radial-gradient(var(--canvas-grid) .7px,transparent .7px);background-size:24px 24px; }
 footer { padding:9px 20px;background:var(--panel);font-size:11px; }
 .inspector #selection-title { font-size:18px;margin:8px 0 0;letter-spacing:-.02em;line-height:1.5; }
 #source-location { font-size:12px;margin:6px 0 10px; }
 #open-source { font-size:12px;padding:6px 10px;background:transparent; }
-#selection-notes { margin:16px 0 12px; }
-#selection-notes > summary { font-weight:600;color:var(--text); }
+#selection-notes { margin:4px 0 12px; }
+#selection-notes > summary { font-weight:600;color:var(--text);min-height:30px;line-height:30px; }
+#note-action { float:right; }
+#note-action button { padding:4px 8px;font-size:12px;line-height:20px;background:transparent;color:var(--muted); }
+#selection-description:empty { display:none; }
 #selection-notes #selection-description { font-size:13px;max-height:min(160px,22dvh); }
-#node-actions-panel:not(:empty) { gap:6px;padding:10px 0;margin-bottom:12px; }
-.node-reading-actions { gap:6px; }
+#node-actions-panel:not(:empty) { gap:8px;padding:12px 0;margin-bottom:8px;border-top:0; }
+.node-reading-actions { gap:8px;flex:1;min-width:0; }
+.node-reading-actions button { margin-left:auto; }
+#relations:has(.node-reading-guide > .reading-hint[hidden]:only-child) { display:none; }
 #node-actions-panel .inspector-more { margin-left:auto;width:32px;height:32px;padding:6px;display:grid;place-items:center;background:transparent; }
 .inspector-more svg { width:18px;height:18px; }
 .node-reading-guide .reading-hint { font-size:12px;line-height:1.65; }
@@ -92,6 +114,12 @@ footer { padding:9px 20px;background:var(--panel);font-size:11px; }
 .collection-dialog { border-radius:18px;padding:24px; }
 .collection-dialog h2 { font-size:22px; }
 .collection-limits { gap:16px;margin-block:20px 12px; }
+.collection-limits > label { padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--subtle); }
+.collection-limits input { background:var(--input); }
+.collection-limits small { display:block;margin-top:8px;color:var(--muted);font-size:11px; }
+.collection-policy { margin-top:12px;font-size:12px;color:var(--muted); }
+.collection-policy summary { cursor:pointer;width:fit-content; }
+.collection-dialog .dialog-actions { border-top:1px solid var(--line);padding-top:16px;margin-top:20px; }
 .collection-limits input { font-size:22px; }
 .edge-context-menu { border-radius:12px;background:var(--panel);box-shadow:var(--overlay-shadow); }
 .project-home { padding-top:32px; }
