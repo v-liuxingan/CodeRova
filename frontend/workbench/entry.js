@@ -74,6 +74,7 @@ const collection = collectionDialog(task => resume.started(task));
 let catalog = [], names = new Map(), current, renderer, activeSlug, wantedSlug;
 let loading = false, routeVersion = 0, sourceRequest, sourceEditor, graphIndex, graphWindow, visibleGraph;
 let drawing = false, elementStates = new Map();
+let selectionHighlighted = false;
 let mountedDetail = true;
 let renderedEdge = new Map(), edgeMembers = new Map();
 let paintWindow, mountedIds = new Set(), paintedBounds, viewportFrame, mountBusy = false, mountPromise = Promise.resolve(), mountAgain = false, draggingNode = false;
@@ -129,7 +130,8 @@ const node = (tag, text, className) => {
   if (className) element.className = className;
   return element;
 };
-// G6 merges shape attributes on redraw: every non-dim state must restore opacity.
+// Fade card surfaces and edge strokes, never the entire text-bearing group.
+// G6 merges shape attributes on redraw: active states restore every faded attribute.
 function graphAppearance() {
   const css = getComputedStyle(document.documentElement);
   const palette = new Map();
@@ -139,7 +141,7 @@ function graphAppearance() {
   };
   return {
     node: { type: 'execution-card', style: {
-      opacity: 1, lineDash: [], ports: d => d.data.ports || [], size: d => [304, d.data.height], radius: 12, label: false,
+      opacity: 1, fillOpacity: 1, strokeOpacity: 1, cardMuted: false, lineDash: [], ports: d => d.data.ports || [], size: d => [304, d.data.height], radius: 12, label: false,
       fill: d => color(`card-${d.data.tone}-bg`),
       stroke: d => color(`card-${d.data.tone}-line`), lineWidth: 1,
       shadowColor: color('card-shadow'), shadowBlur: 0, shadowOffsetY: 0,
@@ -147,10 +149,10 @@ function graphAppearance() {
       cardPurpose: d => d.data.purpose, cardClass: d => d.data.className,
       cardDirection: () => $('direction').querySelector('input:checked').value, cardControlFill: color('panel'),
       cardMore: d => d.data.more || '', cardExpand: d => d.data.canExpand, cardCollapse: d => d.data.canCollapse,
-      cardText: color('muted'),
+      cardText: color('graph-text'),
       cardTitleColor: color('strong'), cardAccent: d => color(`card-${d.data.tone}-text`),
-    }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 0.25 }, 'batch-selected': {opacity:1,stroke:color('accent'),lineWidth:3,lineDash:[5,3],halo:false} } },
-        edge: { type: d => d.type || 'cubic-vertical', style: { labelFill: color('muted'), labelBackground: true, labelBackgroundFill: color('bg'), labelPadding: [2,4], labelFontSize: 11, opacity: 1, stroke: color('graph-edge'), lineWidth: 1, endArrow: true, radius: 6 }, state: { selected: { opacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, dim: { opacity: 0.12 } } },
+    }, state: { selected: { opacity: 1, fillOpacity: 1, strokeOpacity: 1, cardMuted: false, stroke: color('accent'), lineWidth: 2, halo: false }, related: { opacity: 1, fillOpacity: 1, strokeOpacity: 1, cardMuted: false, stroke: color('graph-related'), lineWidth: 1.5, halo: false }, dim: { opacity: 1, fillOpacity: 0.275, strokeOpacity: 0.275, cardMuted: true }, 'batch-selected': {opacity:1,fillOpacity:1,strokeOpacity:1,cardMuted:false,stroke:color('accent'),lineWidth:3,lineDash:[5,3],halo:false} } },
+        edge: { type: d => d.type || 'cubic-vertical', style: { labelFill: color('graph-text'), labelBackground: true, labelBackgroundFill: color('canvas'), labelPadding: [2,4], labelFontSize: 11, opacity: 1, strokeOpacity: 1, stroke: color('graph-edge'), lineWidth: 1.25, endArrow: true, radius: 6 }, state: { selected: { opacity: 1, strokeOpacity: 1, stroke: color('accent'), lineWidth: 2, halo: false }, dim: { opacity: 1, strokeOpacity: 0.26 } } },
   };
 }
 
@@ -316,7 +318,7 @@ async function drain() {
       $('fit').disabled = false;
       status('');
       clearSelection();
-      if(!focusAfterLoad)void select('node',data.root);
+      if(!focusAfterLoad)void select('node',data.root,false,false,false,false);
     }
   } catch (error) {
     status(`画布加载失败：${error.message}`, true);
@@ -336,7 +338,7 @@ async function refreshVisibility({view,version,screen,anchor}=visibilityViewport
   if(view!==renderer || version!==routeVersion)return;
   renderSymbols();
   if (selected && !graphIndex.nodes.has(selected) && !graphIndex.edges.has(selected)) { clearSelection(); for (const key of elementStates.keys()) if (!graphIndex.nodes.has(key) && !graphIndex.edges.has(key)) elementStates.delete(key); }
-  else if (selected) await select(graphIndex.nodes.has(selected) ? 'node' : 'edge', selected, false, false, keepSource);
+  else if (selected) await select(graphIndex.nodes.has(selected) ? 'node' : 'edge', selected, false, false, keepSource, selectionHighlighted);
   updateHidden();
   // Resize and flush the camera before compensating for the edit bar.
   view.resize();
@@ -486,6 +488,7 @@ function resetInspector() {
 }
 
 function clearSelection() {
+  selectionHighlighted = false;
   clearBatch();
   resetInspector();
   if (!renderer || !current) return;
@@ -504,7 +507,7 @@ async function openCall(parent, callId) {
   await select('edge', edgeId, true, true);
 }
 
-async function select(type, id, focus = false, userInitiated = false, keepSource = false) {
+async function select(type, id, focus = false, userInitiated = false, keepSource = false, highlight = true) {
   const data = current, slug = activeSlug, version = routeVersion, view = renderer;
   if (!data || slug !== wantedSlug || drawing) return;
   clearBatch();
@@ -565,9 +568,10 @@ async function select(type, id, focus = false, userInitiated = false, keepSource
     for (const value of context.nodes) selectedNodes.add(value);
     for (const value of context.edges) selectedEdges.add(value);
   }
+  selectionHighlighted = highlight;
   const states = {};
-  for (const n of visibleGraph.nodes) states[n.id] = n.id === id ? ['selected'] : selectedNodes.has(n.id) ? ['related'] : ['dim'];
-  for (const e of visibleGraph.edges) states[e.id] = selectedEdges.has(e.id) ? ['selected'] : ['dim'];
+  for (const n of visibleGraph.nodes) states[n.id] = !highlight ? [] : n.id === id ? ['selected'] : selectedNodes.has(n.id) ? ['related'] : ['dim'];
+  for (const e of visibleGraph.edges) states[e.id] = !highlight ? [] : selectedEdges.has(e.id) ? ['selected'] : ['dim'];
   // Source loading is independent of drawing so a slow preview never locks the canvas.
   applyStates(view, states);
   if (type === 'node') {
@@ -852,7 +856,7 @@ $('direction').addEventListener('change', async () => {
   if (!graphWindow || loading || drawing) return;
   const id = $('canvas').dataset.selection, version = routeVersion;
   await redrawWindow(graphIndex.nodes.has(id) ? id : current.root);
-  if (version === routeVersion && id) await select(graphIndex.nodes.has(id) ? 'node' : 'edge', id);
+  if (version === routeVersion && id) await select(graphIndex.nodes.has(id) ? 'node' : 'edge', id, false, false, false, selectionHighlighted);
 });
 async function changeBranch(id, action) {
   if (!graphWindow || loading || drawing || !graphWindow.visible.has(id)) return;
@@ -866,7 +870,7 @@ async function changeBranch(id, action) {
   if (selected && !retained) resetInspector();
   await redrawWindow(id, true);
   if (version !== routeVersion) return;
-  if (selected && retained) await select(selectedType, selected);
+  if (selected && retained) await select(selectedType, selected, false, false, false, selectionHighlighted);
   status(`已${action === 'collapse' ? '收起' : '展开'} ${changed} 个节点；原始调用数据保留。`);
 }
 $('coverage').addEventListener('toggle', () => {

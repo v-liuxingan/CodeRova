@@ -11,7 +11,7 @@ class ExecutionNode extends Rect {
       fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: 12,
       textAlign: 'left', textBaseline: 'top', wordWrap: true,
       wordWrapWidth: 268, maxLines: 1, textOverflow: 'ellipsis',
-      background: false, opacity: attributes.opacity ?? 1, ...options,
+      background: false, opacity: attributes.opacity ?? 1, fillOpacity: attributes.cardMuted ? 0.5 : 1, ...options,
     }, container);
     const top = -attributes.size[1] / 2 + 14;
     this.upsert('type-badge', Label, attributes.cardBadge ? {
@@ -21,7 +21,7 @@ class ExecutionNode extends Rect {
       background: true, backgroundWidth: 17, backgroundHeight: 17,
       backgroundRadius: 4, backgroundFill: attributes.cardControlFill,
       backgroundStroke: attributes.stroke, backgroundLineWidth: 1,
-      opacity: attributes.opacity ?? 1,
+      opacity: attributes.opacity ?? 1, fillOpacity: attributes.cardMuted ? 0.5 : 1,
     } : false, container);
     text('category', attributes.cardCategory, top, { x: attributes.cardBadge ? -110 : -134, wordWrapWidth: attributes.cardBadge ? 244 : 268,
       fill: attributes.cardAccent, fontWeight: 600, fontSize: 11,
@@ -30,7 +30,7 @@ class ExecutionNode extends Rect {
     if (attributes.cardClass) text('class', attributes.cardClass, top + 24, { fontSize: 12 });
     else this.upsert('class', Label, false, container);
     text('title', attributes.cardTitle, methodY, {
-      fill: attributes.cardTitleColor, fontFamily: 'Consolas, Microsoft YaHei, monospace',
+      fill: attributes.cardMuted ? attributes.cardText : attributes.cardTitleColor, fontFamily: 'Consolas, Microsoft YaHei, monospace',
       fontWeight: 600, fontSize: 15,
     });
     if (attributes.cardPurpose) text('purpose', attributes.cardPurpose, methodY + 28);

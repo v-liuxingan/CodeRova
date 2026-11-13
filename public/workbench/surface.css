@@ -1,20 +1,23 @@
 /* Reading-first refinement. Shared components keep their own behavior; this
    layer owns surfaces, type hierarchy and spacing, never canvas geometry. */
+/* Light surfaces follow Ant Design tokens; the reading canvas is a white
+   content surface, not the gray layout background. */
 :root {
-  --bg:#f7f9fc; --panel:#ffffff; --input:#ffffff;
-  --strong:#182235; --text:#344158; --muted:#5d6d84;
-  --line:#e1e7ef; --subtle:#f4f6fa; --hover:#edf1f7;
-  --accent:#2563eb; --accent-text:#2456cf; --active:#edf3ff; --active-line:#c9d9fa;
-  --canvas:#f6f8fc; --canvas-grid:#dbe2ed;
-  --card-entry-bg:#f1f2fe; --card-entry-line:#bbc4ea; --card-entry-text:#4e51a5;
-  --card-function-bg:#ffffff; --card-function-line:#c6d6ea; --card-function-text:#315c8c;
-  --card-method-bg:#eff8f6; --card-method-line:#b5d8d0; --card-method-text:#22695d;
-  --card-pending-bg:#fffbf0; --card-pending-line:#e0cca3; --card-pending-text:#876015;
-  --card-class-bg:#eef4ff; --card-class-line:#9cbbea; --card-class-text:#285fa5;
-  --card-interface-bg:#edf8f0; --card-interface-line:#99caaa; --card-interface-text:#276b3e;
-  --card-abstract-class-bg:#f4f0fc; --card-abstract-class-line:#b9a6d9; --card-abstract-class-text:#7050a0;
-  --card-enum-bg:#fff6e8; --card-enum-line:#d9b980; --card-enum-text:#855b18;
-  --card-record-bg:#eaf7f8; --card-record-line:#8dbfc4; --card-record-text:#246a72;
+  --bg:#ffffff; --panel:#ffffff; --input:#ffffff;
+  --strong:#262626; --text:#434343; --muted:#595959;
+  --line:#d9d9d9; --subtle:#fafafa; --hover:#f5f5f5;
+  --accent:#1677ff; --accent-text:#0958d9; --active:#e6f4ff; --active-line:#91caff;
+  --canvas:#ffffff; --canvas-grid:#f0f0f0;
+  --graph-edge:#8c8c8c; --graph-text:#595959;
+  --card-entry-bg:#f9f0ff; --card-entry-line:#b37feb; --card-entry-text:#531dab;
+  --card-function-bg:#ffffff; --card-function-line:#91caff; --card-function-text:#0958d9;
+  --card-method-bg:#e6fffb; --card-method-line:#5cdbd3; --card-method-text:#006d75;
+  --card-pending-bg:#fffbe6; --card-pending-line:#ffd666; --card-pending-text:#876800;
+  --card-class-bg:#e6f4ff; --card-class-line:#69b1ff; --card-class-text:#0958d9;
+  --card-interface-bg:#f6ffed; --card-interface-line:#95de64; --card-interface-text:#237804;
+  --card-abstract-class-bg:#f9f0ff; --card-abstract-class-line:#b37feb; --card-abstract-class-text:#531dab;
+  --card-enum-bg:#fff7e6; --card-enum-line:#ffc069; --card-enum-text:#ad4e00;
+  --card-record-bg:#e6fffb; --card-record-line:#5cdbd3; --card-record-text:#006d75;
   --field-radius:8px; --field-height:36px;
 }
 :root[data-theme=dark] {
@@ -22,16 +25,17 @@
   --strong:#eef2fa; --text:#cdd7e7; --muted:#9aaac0;
   --line:#2a3649; --subtle:#1c2738; --hover:#233149;
   --accent:#8eb5ff; --accent-text:#9bbdff; --active:#243554; --active-line:#344e78;
-  --canvas:#111925; --canvas-grid:#263246;
-  --card-entry-bg:#272e49; --card-entry-line:#59648e; --card-entry-text:#c2c9fa;
-  --card-function-bg:#1a293d; --card-function-line:#3b587a; --card-function-text:#a4c9f4;
-  --card-method-bg:#1a302f; --card-method-line:#3a665d; --card-method-text:#a2dacb;
-  --card-pending-bg:#322d22; --card-pending-line:#7d6944; --card-pending-text:#e8cb8f;
-  --card-class-bg:#1d2d46; --card-class-line:#4c77b4; --card-class-text:#9cc2ff;
-  --card-interface-bg:#1c3328; --card-interface-line:#4c8a63; --card-interface-text:#9cd3ad;
-  --card-abstract-class-bg:#302840; --card-abstract-class-line:#8667af; --card-abstract-class-text:#c6a6ed;
-  --card-enum-bg:#382f20; --card-enum-line:#a07d42; --card-enum-text:#e8c27c;
-  --card-record-bg:#1b3238; --card-record-line:#4f8c97; --card-record-text:#9cd7df;
+  --canvas:#10141b; --canvas-grid:#252d39;
+  --graph-edge:#8293a9; --graph-text:#b6c2d2;
+  --card-entry-bg:#272e49; --card-entry-line:#7a87b3; --card-entry-text:#c2c9fa;
+  --card-function-bg:#202c3b; --card-function-line:#617b99; --card-function-text:#a4c9f4;
+  --card-method-bg:#1a302f; --card-method-line:#588d7f; --card-method-text:#a2dacb;
+  --card-pending-bg:#322d22; --card-pending-line:#a38a5c; --card-pending-text:#e8cb8f;
+  --card-class-bg:#1d2d46; --card-class-line:#6d94c9; --card-class-text:#9cc2ff;
+  --card-interface-bg:#1c3328; --card-interface-line:#69a87f; --card-interface-text:#9cd3ad;
+  --card-abstract-class-bg:#302840; --card-abstract-class-line:#a084c5; --card-abstract-class-text:#c6a6ed;
+  --card-enum-bg:#382f20; --card-enum-line:#bc9858; --card-enum-text:#e8c27c;
+  --card-record-bg:#1b3238; --card-record-line:#6ca7b1; --card-record-text:#9cd7df;
 }
 body { font-family:system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
 header { background:var(--panel); gap:24px; }

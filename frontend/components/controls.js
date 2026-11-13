@@ -8,10 +8,13 @@ function enhance(select) {
   if (mounted.has(select) || select.multiple) return;
   const label = select.getAttribute('aria-label') || select.labels?.[0]?.textContent.trim() || select.title || '选择选项';
   const searchable = select.dataset.search !== 'false';
+  // Tom Select creates an unlabeled empty native option while switching values.
+  // Only an authored, labeled placeholder belongs in the visible dropdown.
+  const hasEmptyOption = () => [...select.options].some(option => option.value === '' && option.text.trim());
   const control = new TomSelect(select, {
     plugins: searchable ? ['dropdown_input'] : [],
     ...(searchable ? {} : {controlInput:null}),
-    create: false, maxOptions: 200, allowEmptyOption: true, closeAfterSelect: true, openOnFocus:false,
+    create: false, maxOptions: 200, allowEmptyOption: hasEmptyOption(), closeAfterSelect: true, openOnFocus:false,
     // Preserve identifier/source-location punctuation instead of folding it away.
     diacritics: false, refreshThrottle:0,
     sortField: [{field:'$order',direction:'asc'}],
@@ -34,6 +37,7 @@ function enhance(select) {
     try {
       const next = fingerprint();
       if (next !== signature) {
+        control.settings.allowEmptyOption = hasEmptyOption();
         control.clearOptions(() => false);
         control.sync();
         signature = fingerprint();

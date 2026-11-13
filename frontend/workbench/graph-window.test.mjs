@@ -12,6 +12,6 @@ const shared={root:'a',nodes:['a','b','c','d','x'].map(id=>({id})),edges:[{id:'a
 const v=new GraphWindow(shared);v.reset(1);assert.equal(v.visible.size,1);v.reveal('d');assert.deepEqual([...v.visible],['a','d','c']);assert.equal(v.snapshot().edges.length,3);
 v.reveal('x');assert(v.visible.has('x'));v.reset(1,'layers');assert.deepEqual([...v.visible],['a','b','c']);
 const p=layerPositions(shared);assert.equal(p.get('b').y,p.get('c').y);assert(p.get('d').y>p.get('c').y);
-const ctx=indexGraph(shared).context('b');assert(ctx.nodes.has('a'));assert(ctx.nodes.has('d'));assert(ctx.edges.has('da'));
+const ctx=indexGraph(shared).context('b');assert.deepEqual([...ctx.nodes].sort(),['a','b']);assert.deepEqual([...ctx.edges],['ab']);
 const chain={root:'0',nodes,edges:nodes.slice(1).map((n,i)=>({id:`e${i}`,from:String(i),to:n.id}))};const c=new GraphWindow(chain);c.reset(50,'layers');assert.equal(c.visible.size,51);c.expand('50',50,'layers');assert.equal(c.visible.size,101);
 console.log('Graph window: paging, layers, shared targets, loops, search and alignment passed');
