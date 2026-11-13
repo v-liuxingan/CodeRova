@@ -114,7 +114,9 @@ def main():
                     assert page.locator(href).is_visible()
         assert not any("/api/" in url for url in requests), requests
         assert all(urlparse(url).netloc == urlparse(BASE_URL).netloc for url in requests)
-        page.goto(f"{BASE_URL}/scenes/index.html")
+        response = page.goto(f"{BASE_URL}/scenes/index.html")
+        assert response.status == (200 if SCENES else 404)
+        csp = response.headers["content-security-policy"]
         for slug in SCENES:
             assert page.locator(f'a[href="{slug}.html"]').count() > 0
         fixtures = json.loads(subprocess.check_output(

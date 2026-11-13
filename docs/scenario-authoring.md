@@ -7,8 +7,7 @@
 ## 交付与构建
 
 1. 在 `scenes/<slug>.mmd` 编写 Mermaid 时序图，在同名 `.json` 保存元数据。文件名用
-   小写字母、数字、连字符或下划线，不使用 `index`。现有示例为 `codex-agent-turn`
-   和 `qoreon-network-recovery`；两个文件应一起维护。
+   小写字母、数字、连字符或下划线，不使用 `index`。同名 Mermaid 与 JSON 应一起维护。默认不分发场景示例，正文提供独立格式示例。
 2. 运行 `npm run build:scenes`。共用渲染器生成 `public/scenes/<slug>.html`、场景目录和 `catalog.json`，
    无需手工登记目录，也不要修改生成后的 HTML。
 3. 运行 `npm run check:scenes` 检查数据与产物是否同步；提交 `.mmd`、元数据 JSON 与生成页面。
@@ -16,16 +15,10 @@
 4. 运行 `npm run check:content -- --project <项目ID>` 检查源码及基线。project.id 对应本地
    项目目录；location.anchor 可提供所引范围内的字面片段。详见 [证据检查](content-verification.md)。
 
-调用图与场景数据分别生成和维护，由工作台统一切换阅读视图。无需 `targetIds`、phase 映射、
-跨页选择状态或 `/api/scenarios`。旧 `scenarios/*.json` 属于 Atlas 实验协议，不是这里的输入。
-
-主页是全量项目目录：所有项目同时展示，卡片内列出场景地图和调用图。点击场景会通过
-`/?scene=<slug>` 在当前工作台直接展示时序图；点击关联调用图继续在同一工作台核对源码。
-`/scenes/<slug>.html` 保留独立阅读兼容，但不作为主目录的中转步骤。
-元数据的 `project.id` 应对应 `callgraph.projects.json` 中已登记的项目 ID，以便与调用图
-归入同一项目；缺少 ID 的旧场景仍可从首页和场景目录的未关联项目分组阅读。
-`callgraph` 仅提供可选的对应调用图标识，供统一阅读入口使用，不是节点映射。模型无需编写或手工登记 `catalog.json`，
-也无需创建首页或场景前端页面。
+本文件仅保留独立生成工具的格式说明，产品资料库不再加载或展示场景地图。
+默认 `scenes/` 无示例数据，构建不会生成场景页面或场景目录页。
+历史 `/?scene=<slug>` 入口回到项目资料库；已移除的独立场景地址返回 404。
+旧 `scenarios/*.json` Atlas 实验协议也不是此工具的输入。
 
 ## 数据结构
 

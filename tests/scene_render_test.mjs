@@ -133,7 +133,7 @@ if (process.argv.includes("--fixtures")) {
     await rm(resolve(sourceDir, "test.json"));
     await assert.rejects(buildScenes({ sourceDir, outputDir, check: true }), /未同步/);
     await buildScenes({ sourceDir, outputDir });
-    assert.deepEqual((await readdir(outputDir)).sort(), ["catalog.json", "index.html", "manual.html"]);
+    assert.deepEqual((await readdir(outputDir)).sort(), ["catalog.json", "manual.html"]);
     assert.deepEqual(JSON.parse(await readFile(resolve(outputDir, "catalog.json"), "utf8")).scenes, []);
   } finally {
     assert.equal(dirname(temp), resolve(tmpdir()));

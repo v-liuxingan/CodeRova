@@ -50,6 +50,8 @@ with sync_playwright() as p:
  expect(page.locator('#home-title')).to_have_text('项目资料库')
  expect(page.locator('.home-project')).to_have_count(2)
  expect(page.locator('.home-summary')).to_contain_text('2 个项目')
+ expect(page.locator('.home-links a[href="/?graph=sample"] .home-link-detail')).to_have_text('2 个节点 · 1 条关系')
+ expect(page.get_by_role('link',name='管理资料库',exact=True)).to_have_attribute('href','/?view=workbench')
  expect(page.get_by_role('link',name='进入工作台',exact=True)).to_be_visible()
  assert not any('/vendor/workbench/workbench.js' in url for url in requests)
  assert page.get_by_text('经典工作台',exact=True).count()==0
@@ -152,8 +154,12 @@ with sync_playwright() as p:
  page.go_back();expect(page.locator('#fit')).to_be_enabled()
  page.goto(BASE+'/v2/?graph=sample')
  expect(page).to_have_url(BASE+'/?graph=sample');expect(page.locator('#fit')).to_be_enabled()
- page.goto(BASE+'/?scene=codex-agent-turn');expect(page).to_have_url(BASE+'/scenes/codex-agent-turn.html')
- page.locator('.project-home-link').first.click();page.get_by_role('tab',name='项目资料库').click();expect(page.locator('#home-title')).to_be_visible()
+ page.goto(BASE+'/?scene=codex-agent-turn');expect(page).to_have_url(BASE+'/?view=projects')
+ expect(page.locator('#home-title')).to_be_visible()
+ assert page.locator('.home-links a[href^="/scenes/"]').count()==0
+ assert page.request.get(BASE+'/scenes/codex-agent-turn.html').status==404
+ assert page.request.get(BASE+'/scenes/qoreon-network-recovery.html').status==404
+ assert page.request.get(BASE+'/scenes/index.html').status==404
  select_option(page,'#appearance','dark');page.reload();expect(page.locator('html')).to_have_attribute('data-theme','dark')
  for width in [1440,390]:
   page.set_viewport_size({'width':width,'height':900});expect(page.locator('.home-links a').first).to_be_visible()

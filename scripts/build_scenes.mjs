@@ -49,7 +49,7 @@ export async function buildScenes({
 } = {}) {
   const scenes = await loadScenes(sourceDir);
   const output = new Map(scenes.map(({ slug, scene }) => [`${slug}.html`, renderScene(scene, slug)]));
-  output.set("index.html", renderCatalog(scenes));
+  if (scenes.length) output.set("index.html", renderCatalog(scenes));
   output.set("catalog.json", renderSceneCatalog(scenes));
   const currentFiles = await readdir(outputDir).catch((error) => {
     if (error.code === "ENOENT") return [];

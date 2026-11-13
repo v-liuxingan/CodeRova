@@ -8,10 +8,12 @@ if (url.pathname !== '/') {
   url.pathname = '/';
   history.replaceState(null, '', url);
 }
-const scene = url.searchParams.get('scene');
-if (scene && /^[a-z0-9][a-z0-9_-]*$/.test(scene)) {
-  location.replace(`/scenes/${encodeURIComponent(scene)}.html`);
-} else if (url.searchParams.has('graph') || url.searchParams.get('view') === 'workbench') {
+// Retired scene bookmarks return to the project library.
+if (url.searchParams.has('scene')) {
+  url.searchParams.delete('scene'); url.searchParams.set('view', 'projects');
+  history.replaceState(null, '', url);
+}
+if (url.searchParams.has('graph') || url.searchParams.get('view') === 'workbench') {
   document.getElementById('enter-workbench').hidden = true;
   document.querySelector('.workspace').hidden = false;
   import('/vendor/workbench/workbench.js').catch(error => {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { parseMermaid, compileMermaidScene } from "../frontend/scenes/mermaid.mjs";
 import { renderScene } from "../frontend/scenes/render.mjs";
 import { walkBlocks } from "../frontend/scenes/validate.mjs";
-import { buildScenes, loadScenes } from "../scripts/build_scenes.mjs";
+import { buildScenes } from "../scripts/build_scenes.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), "utf8"));
@@ -88,7 +88,6 @@ assert.ok(safeHtml.includes("&lt;script&gt;"));
 const large = parseMermaid("sequenceDiagram\n" + Array.from({ length: 100 }, (_, i) => `p${i}-)p${i + 1}: step ${i}`).join("\n"));
 assert.equal(large.body.length, 100);
 assert.equal(large.participants.length, 101);
-const scenes = await loadScenes();
 const annotatedSource = "sequenceDiagram\nparticipant A\n%% @evidence e1\nA->>A: 核对\n%% @evidence e1,e1\nNote over A: 依据";
 const annotated = compileMermaidScene({ ...metadata, participantRoles: [], evidence: [{ id: "e1", claim: "依据", locations: [{ file: "src/a.rs", symbol: "run" }] }] }, annotatedSource, schema, metadataSchema, "linked.mmd");
 assert.deepEqual(annotated.body.map((b) => b.evidence), [["e1"], ["e1"]]);
@@ -97,11 +96,6 @@ assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1"), /缺少消
 assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1\nopt test"), /只能标注下一条/);
 assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1,\nA->>B: test"), /依据注释格式/);
 assert.throws(() => compileMermaidScene({ ...metadata, participantRoles: [] }, "sequenceDiagram\n%% @evidence nonexistent\nA->>B: test", schema, metadataSchema, "missing.mmd"), /missing.mmd:2:.*不存在/);
-const blocks = scenes.filter(({ slug }) => slug === "codex-agent-turn")
-  .flatMap(({ scene }) => [...walkBlocks(scene.body)]);
-assert.equal(blocks.filter((b) => b.type === "message").length, 16, "curated migration retains every message");
-assert.equal(blocks.filter((b) => b.type === "note").length, 6);
-
 const temp = await mkdtemp(resolve(tmpdir(), "callgraph-mermaid-test-"));
 try {
   const sourceDir = resolve(temp, "input"), outputDir = resolve(temp, "output");

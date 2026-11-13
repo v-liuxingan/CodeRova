@@ -16,12 +16,12 @@ theme.onchange = () => {
   try { localStorage.setItem('callgraph-v2-theme', theme.value); } catch { /* Session preference. */ }
 };
 const heading = el('div', null, 'home-heading');
-const intro = el('div'); intro.append(el('h2', '项目资料库'));
+const intro = el('div', null, 'home-intro'); intro.append(el('h2', '项目资料库'));
 intro.lastChild.id = 'home-title';
 const summary = el('p', '正在读取项目…', 'home-summary'); intro.append(summary);
-const search = el('input'); search.type = 'search'; search.placeholder = '搜索项目、调用图或场景…'; search.setAttribute('aria-label', '搜索项目内容');
+const search = el('input'); search.type = 'search'; search.placeholder = '搜索项目或调用图…'; search.setAttribute('aria-label', '搜索项目内容');
 const tools = el('div', null, 'home-tools');
-const manage = el('a', '管理目录 / 回收站'); manage.href = '/?view=workbench';
+const manage = el('a', '管理资料库', 'home-manage'); manage.title = '在工作台管理项目、目录与回收站'; manage.href = '/?view=workbench';
 const create = el('button', '', 'primary');
 create.setAttribute('aria-label', '新建图'); create.title = '开始';
 create.classList.add('home-create');
@@ -52,9 +52,10 @@ composer.onsubmit = async event => {
 start.append(composer);
 tools.append(manage); heading.append(intro, tools);
 const toolbar = el('div', null, 'home-toolbar');
-const searchLabel = el('label', '查找内容', 'home-search');
+const searchLabel = el('label', null, 'home-search');
 search.id = 'home-search'; searchLabel.htmlFor = search.id; searchLabel.append(search);
-toolbar.append(searchLabel);
+const searchHint = el('span', '按项目浏览，选择一张图开始阅读', 'home-search-hint');
+toolbar.append(searchLabel, searchHint);
 const index = el('nav', null, 'home-index'); index.setAttribute('aria-label', '项目索引');
 const indexTitle = el('h2', '项目');
 const indexLinks = el('div', null, 'home-index-links'); index.append(indexTitle, indexLinks);
@@ -81,7 +82,7 @@ function switchTab(showLibrary) {
 }
 tabs.append(createTab,libraryTab);home.append(tabs,start,library);
 switchTab(new URLSearchParams(location.search).get('view')==='projects'||new URLSearchParams(location.search).has('project')||Boolean(location.hash));
-let catalog = [], scenes = [], names = new Map(), groups = [];
+let catalog = [], names = new Map(), groups = [];
 function visibleProjects(){return libraryProjects(names,catalog,groups,libraryPreferences().removedProjects);}
 function render() {
   projects.replaceChildren();
@@ -89,28 +90,30 @@ function render() {
   const query = search.value.trim().toLocaleLowerCase();
   const visible = visibleProjects();
   const ids = visible.keys();
-  summary.textContent = `${visible.size} 个项目 · ${catalog.length} 张调用图 · ${scenes.length} 张场景地图`;
+  summary.textContent = `${visible.size} 个项目 · ${catalog.length} 张调用图`;
   let count = 0;
   for (const id of ids) {
-    const name = names.get(id) || scenes.find(s => s.projectId === id)?.projectLabel || id || '未分类项目';
+    const name = names.get(id) || id || '未分类项目';
     const matches = item => `${name} ${item.title} ${item.category || ''}`.toLocaleLowerCase().includes(query);
     const graphs = catalog.filter(g => g.projectId === id && matches(g));
-    const sequences = scenes.filter(s => s.projectId === id && matches(s));
-    if (!graphs.length && !sequences.length && (query && !name.toLocaleLowerCase().includes(query))) continue;
-    count += graphs.length + sequences.length;
+    if (!graphs.length && (query && !name.toLocaleLowerCase().includes(query))) continue;
+    count += graphs.length;
     const section = el('section', null, 'home-project'); section.id = `project-${id}`;
     const jump = el('a'); jump.href = `#${encodeURIComponent(section.id)}`;
-    jump.append(el('span', name), el('small', `${graphs.length} 张图`));
+    jump.append(el('span', name), el('small', String(graphs.length)));
+    jump.title = `${name} · ${graphs.length} 张调用图`;
     indexLinks.append(jump);
     const head = el('div', null, 'home-project-heading');
-    head.append(el('h2', name), el('span', [graphs.length && `${graphs.length} 张调用图`, sequences.length && `${sequences.length} 张场景地图`].filter(Boolean).join(' · ')));
+    const identity = el('div', null, 'home-project-identity');
+    identity.append(el('h2', name), el('span', graphs.length ? `${graphs.length} 张调用图` : '尚无内容'));
+    head.append(identity);
     if(names.has(id)) {
-      const settings=el('button','项目设置');settings.type='button';settings.onclick=async()=>{
+      const settings=el('button','项目设置','home-project-settings');settings.type='button';settings.onclick=async()=>{
         try{const {newGraph}=await import('/vendor/workbench/new-graph.js');creator ||= newGraph(api,result=>location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));await creator.open({projectId:id,settings:true});}catch(e){feedback.textContent=e.message;}
       };head.append(settings);
     }
     section.append(head);
-    if(!graphs.length&&!sequences.length) {
+    if(!graphs.length) {
       const empty=el('p','暂无调用图。');const add=el('button','新建图');add.onclick=async()=>{const {newGraph}=await import('/vendor/workbench/new-graph.js');creator ||= newGraph(api,result=>location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));await creator.open({projectId:id});};section.append(empty,add);
     }
     const groups = new Map();
@@ -119,40 +122,49 @@ function render() {
       if (!groups.has(group)) groups.set(group, []);
       groups.get(group).push(graph);
     }
-    for (const [name, items] of groups) section.append(contentGroup(name, items, false));
-    if (sequences.length) section.append(contentGroup('场景地图', sequences, true));
+    for (const [name, items] of groups) section.append(contentGroup(name, items));
     projects.append(section);
   }
-  const references=scenes.filter(scene=>!names.has(scene.projectId)&&!catalog.some(g=>g.projectId===scene.projectId)).filter(scene=>`${scene.projectLabel || scene.projectId} ${scene.title}`.toLocaleLowerCase().includes(query));
-  if(references.length){const section=el('section',null,'home-reference-scenes');section.append(contentGroup('参考场景 · 未接入项目',references,true));projects.append(section);count+=references.length;}
   feedback.textContent = count ? '' : query ? '没有匹配的内容。试试项目名或方法名。' : '暂无调用图。点击“新建图”，从源码入口开始。';
-  index.hidden = !count;
+  index.hidden = !indexLinks.childElementCount;
+  searchHint.textContent = query ? `找到 ${count} 项内容` : '按项目浏览，选择一张图开始阅读';
+  markProject();
 }
-function contentGroup(name, items, scene) {
-  const group = el('div', null, 'home-group'); group.append(el('h3', name));
+function contentGroup(name, items) {
+  const group = el('div', null, 'home-group');
+  const label = el('h3', name); label.append(el('span', String(items.length), 'home-group-count')); group.append(label);
   const list = el('ul', null, 'home-links');
   for (const item of items) {
     const link = el('a');
-    link.href = scene ? `/scenes/${encodeURIComponent(item.slug)}.html` : `/?graph=${encodeURIComponent(item.slug)}`;
+    link.href = `/?graph=${encodeURIComponent(item.slug)}`;
     const text = el('span', item.title, 'home-link-title');
+    const copy = el('span', null, 'home-link-copy');
+    copy.append(el('span', '调用图', 'home-kind'), text);
+    const detail = [Number.isFinite(item.nodeCount) && `${item.nodeCount.toLocaleString()} 个节点`, Number.isFinite(item.edgeCount) && `${item.edgeCount.toLocaleString()} 条关系`].filter(Boolean).join(' · ');
+    if (detail) copy.append(el('span', detail, 'home-link-detail'));
     const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     arrow.setAttribute('viewBox', '0 0 16 16'); arrow.setAttribute('aria-hidden', 'true'); arrow.classList.add('home-arrow');
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', 'M3 8h10M9 4l4 4-4 4'); arrow.append(path);
-    link.append(el('span', scene ? '时序' : '调用', 'home-kind'), text, arrow);
+    link.append(copy, arrow);
     const row = el('li'); row.append(link); list.append(row);
   }
   group.append(list); return group;
 }
+function markProject() {
+  for (const link of indexLinks.children) {
+    if (link.hash === location.hash) link.setAttribute('aria-current', 'location');
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', markProject);
 search.addEventListener('input', render);
 try {
-  const results = await Promise.allSettled([api.listGraphs(), api.health(), api.listSceneCatalog(), api.library()]);
+  const results = await Promise.allSettled([api.listGraphs(), api.health(), api.library()]);
   if (results[0].status === 'rejected') throw results[0].reason;
   catalog = results[0].value;
   if (results[1].status === 'fulfilled') names = new Map((results[1].value.projects || []).map(p => [p.id, p.name]));
-  if (results[2].status === 'fulfilled') scenes = results[2].value.scenes || [];
-  groups = results[3].status === 'fulfilled' ? results[3].value.groups : libraryPreferences().groups;
+  groups = results[2].status === 'fulfilled' ? results[2].value.groups : libraryPreferences().groups;
   render();
-  if (results[2].status === 'rejected') feedback.textContent = '场景目录暂时不可用，调用图仍可访问。刷新可重试。';
   const project = new URL(location.href).searchParams.get('project');
   if (project) document.getElementById(`project-${project}`)?.scrollIntoView({block:'start'});
 } catch (error) {

@@ -25,9 +25,9 @@
 
 ![创建入口](docs/images/create-entry-v012.png)
 
-**项目资料库** — 按项目统一浏览调用图与场景地图。
+**项目资料库** — 按项目、分组浏览图卡片，查看节点与关系数量，搜索后直接进入源码工作台。
 
-![项目资料库](docs/images/project-library-v012.png)
+![项目资料库 v0.1.2 历史界面，当前版本已采用卡片布局](docs/images/project-library-v012.png)
 
 **调用图工作台** — 从入口逐层展开，结合调用位置、缩略图与源码定位理解分支。
 
@@ -46,7 +46,6 @@
 | 验证源码 | Monaco 预览、搜索与行选择；上下各次加载 20 行，自动补满视口，所有节点共用换行设置；跳转 VS Code / IntelliJ IDEA |
 | 审阅后保存 | 采集结果先预览，新增与删除在草稿中整理，确认后保存；离开未保存页面会提示 |
 | 管理图谱 | 末尾“⋯”菜单新建项目/目录/图、重命名、移动与回收站；资料库位置可配置 |
-| 场景时序图 | Mermaid 文本与元数据由共享渲染器生成页面，无需手写页面或布局坐标 |
 | AI 操作 | 提供工作台 Skill、HTTP API 和操作脚本，可生成、续采、整理并保存图谱 |
 
 > 调用图是静态分析结果，不是运行时轨迹。反射、框架回调、动态分派、宏等可能需要补充或人工确认；调用位置也不等于实际执行次数。
@@ -337,7 +336,7 @@ Java 首次导入大型项目需要建立索引和解析依赖，可能明显慢
 - [配置与备份](docs/skills/callgraph-workbench/references/configuration.md)：存储位置、说明分离、配置优先级与升级迁移。
 - [分析与自动化](docs/skills/callgraph-workbench/references/analysis.md)：初始图、断点采集、异步节点与验收。
 - [AI 操作协议](docs/ai-operations.md)：HTTP API 与草稿操作。
-- [图内容生成](docs/graph-authoring.md)：调用图与 Mermaid 场景地图的统一入口。
+- [图内容生成](docs/graph-authoring.md)：调用图内容与源码依据的编写入口。
 - [证据检查](docs/content-verification.md)：验证源码位置、内容和过期证据。
 
 ## 开发与验证
@@ -361,7 +360,7 @@ Python 用于测试和可选操作脚本，日常运行服务无需 Python。浏
 | `frontend/workbench/` | G6 渲染、布局与交互 |
 | `public/` | 页面、主题、Logo 和构建后的本地资源 |
 | `graphs/` | 调用图 JSON |
-| `scenes/` | 场景时序图输入，执行 `npm run build:scenes` 生成页面 |
+| `scenes/` | 保留的生成工具输入目录，默认不包含场景示例；产品入口仅展示调用图 |
 | `schema/` | 数据格式约束 |
 | `docs/` | 系统设计、操作手册与开发约定 |
 
