@@ -35,7 +35,10 @@ impl Failure {
         }
     }
 }
+static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 struct Shared {
+    identity: u64,
+    hierarchy_sequence: tokio::sync::Mutex<()>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     send: mpsc::Sender<Value>,
     next: AtomicU64,
@@ -105,6 +108,8 @@ impl Session {
         let (send, mut receive) = mpsc::channel::<Value>(128);
         let (ready, _) = watch::channel(false);
         let shared = Arc::new(Shared {
+            identity: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
+            hierarchy_sequence: tokio::sync::Mutex::new(()),
             pending: Mutex::new(HashMap::new()),
             send,
             next: AtomicU64::new(1),
@@ -226,6 +231,12 @@ impl Drop for Pending {
     }
 }
 impl Client {
+    pub fn identity(&self) -> u64 {
+        self.shared.identity
+    }
+    pub async fn hierarchy_sequence(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.shared.hierarchy_sequence.lock().await
+    }
     pub fn usable(&self) -> bool {
         self.shared.usable.load(Ordering::Relaxed)
     }

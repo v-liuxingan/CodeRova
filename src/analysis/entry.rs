@@ -176,9 +176,10 @@ pub(crate) async fn check(
         let symbol = candidates
             .first()
             .ok_or("该行不在可采集函数或方法内，请选择函数定义或函数体内的一行")?;
-        let items = session
-            .request(
-                "textDocument/prepareCallHierarchy",
+        let items = language
+            .profile()
+            .prepare_with_timeout(
+                session,
                 json!({"textDocument":{"uri":uri},"position":symbol["selectionRange"]["start"]}),
                 30,
             )

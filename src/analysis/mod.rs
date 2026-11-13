@@ -1,4 +1,5 @@
 //! V2 analysis: language-server facts remain separate from execution interpretation.
+mod adapter;
 mod collector;
 pub mod config;
 pub mod entry;
@@ -7,7 +8,9 @@ mod lsp;
 pub mod provider;
 pub mod resume;
 mod semantics;
+mod server_profile;
 pub(crate) mod session_cache;
+mod symbol_index;
 
 use crate::{
     model::{CallGraph, GraphNode},
@@ -258,7 +261,7 @@ async fn run(options: AnalyzeOptions) -> Result<(), String> {
         )
         .await?;
     session.wait_ready(600).await?;
-    let items: Vec<CallHierarchyItem> = decode_hierarchy(session.request("textDocument/prepareCallHierarchy", json!({"textDocument":{"uri":uri},"position":{"line":options.line-1,"character":options.column-1}}), language.query_timeout()).await?).map_err(|_| "入口未解析到调用符号，请检查函数名所在的行列".to_owned())?;
+    let items: Vec<CallHierarchyItem> = decode_hierarchy(language.profile().prepare(&session, json!({"textDocument":{"uri":uri},"position":{"line":options.line-1,"character":options.column-1}})).await?).map_err(|_| "入口未解析到调用符号，请检查函数名所在的行列".to_owned())?;
     if items.len() != 1 {
         return Err(format!(
             "入口匹配 {} 个符号，请选择明确的函数名位置",
@@ -388,11 +391,17 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            provider::Language::Java.outgoing_item(&item).range.start,
+            server_profile::ServerProfile::Jdt
+                .outgoing_item(&item)
+                .range
+                .start,
             item.selection_range.start
         );
         assert_eq!(
-            provider::Language::Rust.outgoing_item(&item).range.start,
+            server_profile::ServerProfile::Standard
+                .outgoing_item(&item)
+                .range
+                .start,
             item.range.start
         );
         let mut call = CallHierarchyOutgoingCall {

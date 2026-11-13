@@ -1,7 +1,7 @@
 # LSP 采集扩展边界
 
-状态：设计约定，尚未完成下述结构重构。当前实际支持仍为 Rust/rust-analyzer 与 Java/JDT LS。
-本轮只确定内部扩展路线，不新增语言、启动配置、HTTP 字段或图格式，不迁移现有图。
+状态：首轮内部边界重构已实施；后续扩展仍按本文设计推进。当前实际支持仍为 Rust/rust-analyzer 与 Java/JDT LS。
+本轮未新增语言、启动配置、HTTP 字段或图格式，也未迁移现有图。
 
 ## 要解决的问题
 
@@ -9,8 +9,16 @@
 验收以同一份源码的正反向关系一致、重复续采无重复事实、源码位置可核验为基础；十分钟理解任务仍按 product-strategy.md 单独验收。
 
 当前已有可复用基础：collector.rs 统一调度、预算、循环终止和合并；resume.rs 管理续采差异与草稿；session_cache.rs 管理会话；前端按图事实展示循环引用。
-当前耦合点：provider.rs 的 Language 同时决定启动、请求修正与符号显示；mod.rs 的 node 直接从 CallHierarchyItem 生成身份；JavaSymbols 同时承担文档索引、身份修复、修饰符和实现关系。
-Java 反向递归的复现证明，协议返回的位置不总能直接充当持久化身份；单独补一个 Java 分支不能作为后续接入模式。
+本轮已落地：
+
+- `adapter.rs` 统一重新确认符号及正反向查询归一化，向采集器交付 CallFact/CallBatch；collector.rs 不再解码调用层级响应。
+- `server_profile.rs` 提供 Standard/Jdt 静态档案。JDT 的请求锚点修正、fresh prepare 及反向声明修正从语言路由和可选语义中移出；同会话内相关 prepare/query 序列互斥，标准查询保持并发。
+- `symbol_index.rs` 提供共享文档索引，按会话身份和 URI 隔离；同一轮共享请求，逐次核对源码内容。源码改变时拒绝混用旧声明，下一轮建立新缓存。不能从扁平符号中伪造精确声明位置。
+- `java.rs` 保留 Java 类别、修饰符和实现候选；其词法掩码仍缓存。入口、续采和实现候选的 prepare 都经过服务器档案，保持各入口原有超时。
+- `tests/lsp_adapter_test.py` 用同一个协议 peer 参数化覆盖两种档案、两个方向，固定旧 ID 算法作为外部断言；覆盖循环、多调用点、句柄保留、并发序列、null/空/错误、歧义、扁平符号和源码变更。
+
+当前兼容保留：图 ID 工厂仍使用原有算法；Language 仍负责既有配置与文件识别；公开查询状态仍通过原有 issues/pendingNodes 表达。
+后续尚未实施：通用服务器配置与版本档案、完整的能力矩阵、独立 ResolvedSymbol/结构化 QueryOutcome、跨服务器身份迁移。不能把本轮静态 Standard 档案当作任意服务器已经可配置或可用。
 
 ## 分层与禁止跨越的边界
 
@@ -118,3 +126,5 @@ prepare + outgoing 若依赖服务器共享上下文，必须作为档案要求�
 
 本设计对照当前 provider.rs、java.rs、semantics.rs、collector.rs、mod.rs、session_cache.rs。当前真实递归验证仅覆盖 Rust/Java；不能据此声称 Python、Go、TypeScript 或其他服务器已支持。
 协议依据：[LSP 3.17 Call Hierarchy 原文](https://raw.githubusercontent.com/microsoft/language-server-protocol/gh-pages/_specifications/lsp/3.17/language/callHierarchy.md)：请求句柄的 data 应保留，incoming 与 outgoing 的调用范围均属于调用者。这里的分层、缓存和准入要求是项目设计决策。
+
+首轮重构验收（2026-11-14）：cargo fmt --check、cargo test（78 通过，1 项既有忽略）、cargo clippy --all-targets --all-features -- -D warnings 和 tests/run_e2e.py 全部通过。统一档案协议测试另验证源码变更拒绝；真实 JDT LS 覆盖直接/相互递归、双向查询、逐节点重复续采及跨文件/Javadoc。真实 rust-analyzer 重新采集随附递归示例，root、4 个节点 ID、6 个调用点边 ID 与已提交示例逐项相同。所有额外图与协议日志均位于忽略的 target 临时目录，未修改用户图。

@@ -1,5 +1,7 @@
 //! Optional language capabilities, normalized before graph traversal.
-use super::{java::JavaSymbols, lsp::Client, node, provider::Language, stable_id};
+use super::{
+    java::JavaSymbols, lsp::Client, node, provider::Language, stable_id, symbol_index::SymbolIndex,
+};
 use crate::model::{GraphEdge, GraphNode};
 use lsp_types::CallHierarchyItem;
 use std::{collections::HashMap, path::Path};
@@ -17,21 +19,13 @@ pub(super) enum Semantics {
 }
 impl Semantics {
     pub fn new(language: Language) -> Self {
+        Self::with_index(language, SymbolIndex::default())
+    }
+    pub fn with_index(language: Language, index: SymbolIndex) -> Self {
         match language {
             Language::Rust => Self::Basic,
-            Language::Java => Self::Java(JavaSymbols::default()),
+            Language::Java => Self::Java(JavaSymbols::new(index)),
         }
-    }
-    pub async fn caller_declaration(
-        &mut self,
-        session: &Client,
-        root: &Path,
-        item: &mut CallHierarchyItem,
-    ) -> Result<(), String> {
-        if let Self::Java(java) = self {
-            java.caller_declaration(session, root, item).await?;
-        }
-        Ok(())
     }
     pub async fn describe(
         &mut self,

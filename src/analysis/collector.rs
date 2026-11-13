@@ -2,10 +2,10 @@
 //! graph mutation/checkpointing has exactly one owner.
 use super::{
     Direction,
+    adapter::{AnalysisAdapter, CallFact as Call},
     lsp::Client,
-    node,
     provider::Language,
-    semantics::{ImplementationCandidate, Semantics},
+    semantics::ImplementationCandidate,
     session_cache::WarmSession,
     stable_id,
 };
@@ -13,8 +13,7 @@ use crate::{
     model::{CallGraph, GraphEdge, GraphNode},
     validation::resolve_source_path,
 };
-use lsp_types::{CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall};
-use serde_json::json;
+use lsp_types::CallHierarchyItem;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::Path,
@@ -41,11 +40,6 @@ struct Work {
     text: String,
     depth: u32,
 }
-struct Call {
-    node: GraphNode,
-    item: CallHierarchyItem,
-    ranges: Vec<lsp_types::Range>,
-}
 struct Facts {
     subject: GraphNode,
     depth: u32,
@@ -70,15 +64,9 @@ impl Facts {
             .push(format!("{}: {}", self.subject.id, message.as_ref()));
     }
 }
-async fn query(
-    client: &Client,
-    language: Language,
-    root: &Path,
-    work: Work,
-    semantics: &mut Semantics,
-) -> Facts {
+async fn query(client: &Client, root: &Path, work: Work, adapter: &mut AnalysisAdapter) -> Facts {
     let mut facts = Facts::new(work.subject.clone(), work.depth);
-    let result = query_inner(client, language, root, &work, semantics, &mut facts).await;
+    let result = query_inner(client, root, &work, adapter, &mut facts).await;
     if let Err(error) = result {
         facts.issue(error);
     }
@@ -86,111 +74,40 @@ async fn query(
 }
 async fn query_inner(
     client: &Client,
-    language: Language,
     root: &Path,
     work: &Work,
-    semantics: &mut Semantics,
+    adapter: &mut AnalysisAdapter,
     facts: &mut Facts,
 ) -> Result<(), String> {
-    let mut paths = HashMap::new();
-    let mut selected = work.item.clone();
-    let uri = &work.uri;
-    let text = &work.text;
-    if selected.is_none() {
-        let line = text
-            .lines()
-            .nth(facts.subject.line.saturating_sub(1) as usize)
-            .ok_or("符号行已变化，请重新分析")?;
-        let name = facts
-            .subject
-            .label
-            .split("::")
-            .last()
-            .unwrap_or(&facts.subject.label)
-            .split('(')
-            .next()
-            .unwrap_or(&facts.subject.label);
-        for (column, _) in line.match_indices(name) {
-            let value=client.request("textDocument/prepareCallHierarchy",json!({"textDocument":{"uri":uri},"position":{"line":facts.subject.line-1,"character":line[..column].encode_utf16().count()}}),language.query_timeout()).await?;
-            let items: Vec<CallHierarchyItem> =
-                super::decode_hierarchy(value).map_err(|e| format!("无法解析函数身份：{e}"))?;
-            for item in items {
-                if node(root, &item, &mut paths)?.id == facts.subject.id {
-                    selected = Some(item);
-                    break;
-                }
-            }
-            if selected.is_some() {
-                break;
-            }
-        }
-    }
-    let item = selected.ok_or("无法重新确认原符号身份，请检查源码版本")?;
-    if let Err(e) = semantics
+    let item = adapter
+        .resolve(
+            client,
+            root,
+            &facts.subject,
+            work.item.clone(),
+            &work.uri,
+            &work.text,
+        )
+        .await?;
+    if let Err(e) = adapter
+        .semantics
         .describe(client, root, &item, &mut facts.subject)
         .await
     {
         facts.issue(e);
     }
+    let calls = adapter
+        .calls(client, root, &item, work.direction, &facts.subject)
+        .await?;
+    facts.complete = calls.complete;
+    facts.issues.extend(calls.issues);
+    facts.calls = calls.calls;
     if work.direction == Direction::Incoming {
-        let value = language.incoming(client, &item).await?;
-        if value.is_null() {
-            return Err("服务器返回 null，不能确认调用者".into());
-        }
-        let calls: Vec<CallHierarchyIncomingCall> =
-            super::decode_hierarchy(value).map_err(|e| format!("无效反向调用层级：{e}"))?;
-        facts.complete = true;
-        for mut call in calls {
-            if let Err(error) = semantics
-                .caller_declaration(client, root, &mut call.from)
-                .await
-            {
-                facts.complete = false;
-                facts.issue(error);
-                continue;
-            }
-            // incoming ranges belong to the returned caller, never to the query item.
-            if let Err(error) = super::validate_ranges(&call.from, &call.from_ranges) {
-                facts.complete = false;
-                facts.issue(error);
-                continue;
-            }
-            if call.from_ranges.is_empty() {
-                facts.complete = false;
-                facts.issue(format!("{} 缺少调用点", call.from.name));
-                continue;
-            }
-            let mut caller = match node(root, &call.from, &mut paths) {
-                Ok(node) => node,
-                Err(error) => {
-                    facts.issue(format!("{}：{error}", call.from.name));
-                    continue;
-                }
-            };
-            if let Err(error) = semantics
-                .describe(client, root, &call.from, &mut caller)
-                .await
-            {
-                facts.issue(error);
-            }
-            facts.calls.push(Call {
-                node: caller,
-                item: call.from,
-                ranges: call.from_ranges,
-            });
-        }
         return Ok(());
     }
-    let value = language.outgoing(client, &item).await?;
-    if value.is_null() {
-        return Err("服务器返回 null，不能确认下游".into());
-    }
-    let calls: Vec<CallHierarchyOutgoingCall> =
-        super::decode_hierarchy(value).map_err(|e| format!("无效调用层级：{e}"))?;
-    super::validate_call_ranges(&item, &calls)?;
-    facts.complete = true;
     // A failed optional implementation query must not erase successful direct calls.
-    match semantics
+    match adapter
+        .semantics
         .candidates(client, root, &item, &facts.subject)
         .await
     {
@@ -207,31 +124,6 @@ async fn query_inner(
             facts.complete = false;
             facts.issue(format!("候选实现查询失败：{e}"));
         }
-    }
-    for call in calls {
-        if call.from_ranges.is_empty() {
-            facts.complete = false;
-            facts.issue(format!("{} 缺少调用点", call.to.name));
-            continue;
-        }
-        let mut target = match node(root, &call.to, &mut paths) {
-            Ok(n) => n,
-            Err(e) => {
-                facts.issue(format!("{}：{e}", call.to.name));
-                continue;
-            }
-        };
-        if let Err(e) = semantics
-            .describe(client, root, &call.to, &mut target)
-            .await
-        {
-            facts.issues.push(format!("{}: {e}", target.id));
-        }
-        facts.calls.push(Call {
-            node: target,
-            item: call.to,
-            ranges: call.from_ranges,
-        });
     }
     Ok(())
 }
@@ -272,8 +164,8 @@ pub async fn collect(
         .map(|n| graph.nodes.len().saturating_add(n));
     let direction = graph.analysis.as_ref().ok_or("图缺少分析报告")?.direction;
     let concurrency = warm.transport.policy().concurrency;
-    let semantics = Semantics::new(language);
-    let mut workers = vec![semantics; concurrency];
+    let adapter = AnalysisAdapter::new(language);
+    let mut workers = vec![adapter; concurrency];
     let mut frontier = seeds;
     let mut scheduled = HashSet::new();
     let mut known: HashMap<_, _> = graph
@@ -337,19 +229,19 @@ pub async fn collect(
                     warm.transport.wait_ready(600).await?;
                     ready = true;
                 }
-                let mut semantics = workers.pop().unwrap();
+                let mut adapter = workers.pop().unwrap();
                 let client = warm.transport.client();
                 let root = root.to_path_buf();
                 active.spawn(async move {
                     let facts = match work {
-                        Ok(work) => query(&client, language, &root, work, &mut semantics).await,
+                        Ok(work) => query(&client, &root, work, &mut adapter).await,
                         Err(e) => {
                             let mut facts = Facts::new(subject, depth);
                             facts.issue(e);
                             facts
                         }
                     };
-                    (semantics, facts)
+                    (adapter, facts)
                 });
             }
             // Boundary annotations contain no new source facts. Persist this batch
@@ -368,8 +260,8 @@ pub async fn collect(
             let before = graph.clone();
             let mut batch = 0;
             for finished in ready_results(result, &mut active) {
-                let (semantics, facts) = finished.map_err(|e| format!("采集工作任务失败：{e}"))?;
-                workers.push(semantics);
+                let (adapter, facts) = finished.map_err(|e| format!("采集工作任务失败：{e}"))?;
+                workers.push(adapter);
                 completed += 1;
                 batch += 1;
                 let mut facts = facts;
@@ -562,6 +454,7 @@ fn ready_results<T: 'static>(
 #[cfg(test)]
 mod batching_tests {
     use super::*;
+    use serde_json::json;
     #[test]
     fn overlapping_results_preserve_notes_and_distinct_call_sites() {
         let mut graph: CallGraph = serde_json::from_value(json!({

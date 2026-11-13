@@ -14,6 +14,7 @@ def main():
  binary=(target/'debug'/('coderova.exe' if os.name=='nt' else 'coderova')).resolve()
  env['CALLGRAPH_TEST_BINARY']=str(binary)
  run(sys.executable,str(ROOT/'tests/lsp_analysis_test.py'))
+ run(sys.executable,str(ROOT/'tests/lsp_adapter_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_session_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_parallel_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_java_partial_test.py'))

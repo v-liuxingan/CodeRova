@@ -1,5 +1,5 @@
 //! JDT-specific symbol facts. No graph traversal or persistence policy lives here.
-use super::{lsp::Client, relative_file};
+use super::{lsp::Client, relative_file, server_profile::ServerProfile, symbol_index::SymbolIndex};
 use crate::model::SymbolInfo;
 use lsp_types::{CallHierarchyItem, DocumentSymbol, Position, Range, SymbolKind};
 use serde_json::{Value, json};
@@ -8,9 +8,7 @@ use std::{
     path::Path,
     sync::{Arc, Mutex},
 };
-use tokio::sync::OnceCell;
-type FileFacts = (Vec<DocumentSymbol>, String);
-type FileCache = Arc<Mutex<HashMap<String, Arc<OnceCell<FileFacts>>>>>;
+type MaskCache = Arc<Mutex<HashMap<(u64, String), Arc<String>>>>;
 
 pub(super) fn symbol_text(item: &CallHierarchyItem) -> (String, String) {
     let signature = item.name.split(" : ").next().unwrap_or(&item.name);
@@ -28,7 +26,8 @@ pub(super) fn symbol_text(item: &CallHierarchyItem) -> (String, String) {
 
 #[derive(Clone, Default)]
 pub(super) struct JavaSymbols {
-    files: FileCache,
+    index: SymbolIndex,
+    masks: MaskCache,
 }
 
 fn contains(range: Range, p: Position) -> bool {
@@ -201,89 +200,33 @@ fn facts(
     None
 }
 
-// JDT incoming selectionRange can point at a call expression inside the caller.
-// Resolve the enclosing declaration, never prepare at that expression (the callee).
-fn caller_symbol<'a>(
-    symbols: &'a [DocumentSymbol],
-    item: &CallHierarchyItem,
-) -> Option<&'a DocumentSymbol> {
-    for symbol in symbols {
-        if !contains(symbol.range, item.selection_range.start) {
-            continue;
-        }
-        if let Some(found) = symbol
-            .children
-            .as_deref()
-            .and_then(|children| caller_symbol(children, item))
-        {
-            return Some(found);
-        }
-        if symbol.kind == item.kind
-            && symbol.name.split(" : ").next() == item.name.split(" : ").next()
-        {
-            return Some(symbol);
-        }
-    }
-    None
-}
-
 impl JavaSymbols {
-    async fn file_facts(
-        &mut self,
-        session: &Client,
-        root: &Path,
-        item: &CallHierarchyItem,
-    ) -> Result<Arc<OnceCell<FileFacts>>, String> {
-        let uri = item.uri.to_string();
-        let cell = self
-            .files
-            .lock()
-            .map_err(|e| e.to_string())?
-            .entry(uri.clone())
-            .or_default()
-            .clone();
-        cell.get_or_try_init(|| async {
-            let file = relative_file(root, &uri)?;
-            let text = std::fs::read_to_string(root.join(file)).map_err(|e| e.to_string())?;
-            let value = session
-                .request(
-                    "textDocument/documentSymbol",
-                    json!({"textDocument":{"uri":uri}}),
-                    180,
-                )
-                .await?;
-            let symbols: Vec<DocumentSymbol> =
-                serde_json::from_value(value).map_err(|e| format!("Java 符号信息不可用：{e}"))?;
-            Ok::<_, String>((symbols, masked(&text)))
-        })
-        .await?;
-        Ok(cell)
+    pub fn new(index: SymbolIndex) -> Self {
+        Self {
+            index,
+            masks: MaskCache::default(),
+        }
     }
-
     pub async fn describe(
         &mut self,
         session: &Client,
         root: &Path,
         item: &CallHierarchyItem,
     ) -> Result<Option<SymbolInfo>, String> {
-        let cell = self.file_facts(session, root, item).await?;
-        let (symbols, text) = cell.get().ok_or("Java 符号信息未加载")?;
-        Ok(facts(symbols, text, item.selection_range.start, None))
-    }
-
-    pub async fn caller_declaration(
-        &mut self,
-        session: &Client,
-        root: &Path,
-        item: &mut CallHierarchyItem,
-    ) -> Result<(), String> {
-        let cell = self.file_facts(session, root, item).await?;
-        let (symbols, _) = cell.get().ok_or("Java 符号信息未加载")?;
-        let symbol =
-            caller_symbol(symbols, item).ok_or("无法确认 Java 调用者声明，保留为未完成采集")?;
-        item.range = symbol.range;
-        item.selection_range = symbol.selection_range;
-        Ok(())
+        let file = self.index.load(session, root, item, 180).await?;
+        let text = self
+            .masks
+            .lock()
+            .map_err(|e| e.to_string())?
+            .entry((session.identity(), item.uri.to_string()))
+            .or_insert_with(|| Arc::new(masked(&file.text)))
+            .clone();
+        Ok(facts(
+            &file.symbols,
+            &text,
+            item.selection_range.start,
+            None,
+        ))
     }
 
     pub async fn implementations(
@@ -329,11 +272,10 @@ impl JavaSymbols {
                 .get("targetSelectionRange")
                 .unwrap_or(&location["range"])["start"]
                 .clone();
-            let value = session
-                .request(
-                    "textDocument/prepareCallHierarchy",
+            let value = ServerProfile::Jdt
+                .prepare(
+                    session,
                     json!({"textDocument":{"uri":uri},"position":position}),
-                    180,
                 )
                 .await;
             let items: Vec<CallHierarchyItem> = match value.and_then(|value| {
@@ -369,32 +311,6 @@ impl JavaSymbols {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn incoming_call_site_resolves_only_the_matching_declaration() {
-        let range = Range::new(Position::new(2, 1), Position::new(2, 90));
-        let selection = Range::new(Position::new(2, 13), Position::new(2, 19));
-        let symbols: Vec<DocumentSymbol> = serde_json::from_value(json!([{
-            "name":"direct(int) : void", "kind":6, "range":range,
-            "selectionRange":selection
-        }]))
-        .unwrap();
-        let mut item: CallHierarchyItem = serde_json::from_value(json!({
-            "name":"direct(int) : void", "kind":6, "uri":"file:///fixture/Main.java",
-            "range":range,
-            "selectionRange":Range::new(Position::new(2, 42), Position::new(2, 55))
-        }))
-        .unwrap();
-        assert_eq!(
-            caller_symbol(&symbols, &item).unwrap().selection_range,
-            selection
-        );
-        item.name = "direct(String) : void".into();
-        assert!(caller_symbol(&symbols, &item).is_none());
-        item.name = "direct(int) : void".into();
-        item.selection_range.start = Position::new(3, 1);
-        assert!(caller_symbol(&symbols, &item).is_none());
-    }
 
     #[test]
     fn masking_preserves_utf16_positions_and_ignores_comment_keywords() {
