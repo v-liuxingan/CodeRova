@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
    expect(page.locator('.node-reading-actions .badge')).to_have_text('未记录下游')
    expect(page.locator('.reading-hint')).to_contain_text('不等于业务流程结束')
    expect(page.locator('.node-reading-actions .badge')).not_to_contain_text('失败')
-   assert page.locator('#node-right').get_attribute('aria-label')=='向右节点'
+   assert page.locator('#node-right').get_attribute('aria-label')=='向右移动'
    artifacts=ROOT/'target/test-artifacts/iteration-two';artifacts.mkdir(parents=True,exist_ok=True)
    page.locator('#fit').click()
    for theme,width in [('light',1440),('dark',1440),('light',390),('dark',390)]:

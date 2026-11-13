@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "title": "Renderer fixture",
+  "summary": "Synthetic request and response for rendering tests.",
+  "project": {"label": "Fixture", "revision": "synthetic"},
+  "scope": {"startEnd": "Request to response", "boundary": "Test data only"},
+  "evidence": [{"id": "e1", "claim": "Synthetic evidence", "locations": [{"file": "src/fixture.rs", "line": 2, "endLine": 3, "symbol": "request"}]}]
+}

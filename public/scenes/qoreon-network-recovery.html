@@ -3,7 +3,7 @@
 <html lang="zh-CN" data-theme="editorial"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="description" content="一次 CLI 执行失败后，运行时区分认证和网络错误，尝试即时重试，并在必要时为同一会话创建延迟恢复 run。重点区分原任务的失败与后续恢复任务的等待。"/><title>Qoreon：网络失败后如何重试与安排恢复 · 场景地图</title><link rel="stylesheet" href="/scenes/scenes.css"/></head>
 <body><main class="page">
-<nav class="page-nav" aria-label="页面导航"><a class="project-home-link" href="/?project=qoreon">← 项目目录 · Qoreon</a><a href="/scenes/index.html#project-qoreon">场景目录</a><a class="callgraph-link" href="/?graph=qoreon-network-recovery">查看调用图 →</a></nav>
+<nav class="page-nav" aria-label="页面导航"><a class="project-home-link" href="/?project=qoreon">← 项目目录 · Qoreon</a><a href="/scenes/index.html#project-qoreon">场景目录</a></nav>
 <header><p class="kicker">Qoreon · EXECUTION SEQUENCE</p><h1>Qoreon：网络失败后如何重试与安排恢复</h1><p class="lead">一次 CLI 执行失败后，运行时区分认证和网络错误，尝试即时重试，并在必要时为同一会话创建延迟恢复 run。重点区分原任务的失败与后续恢复任务的等待。</p>
 <dl class="scope"><div><dt>开始 → 结束</dt><dd>CLI 非零退出 → 即时恢复成功、停止重试或安排新恢复 run</dd></div><div><dt>本页范围</dt><dd>只分析网络恢复分支；进程启动、超时/用户中断处理、profile 缺失降级及新 run 的最终执行结果不展开。</dd></div><div><dt>阅读提示</dt><dd>消息为职责层面的交接，并非每条都对应独立函数。loop 内退出条件按源码说明；不意味着全部分支依次执行。</dd></div></dl></header>
 <section aria-labelledby="sequence-heading"><div class="figure-heading"><h2 id="sequence-heading">执行时序</h2><p>按语义展开 · 窄屏可横向滚动</p></div>
@@ -88,5 +88,5 @@
 <li id="evidence-dispatch">调度器存在且 CCB_SCHEDULER 不为 0 时注册延迟定时器 <small>源码依据 · 作者核对</small><br/><code>task_dashboard/runtime/execution_runtime.py:381–387</code> · <code>_schedule_network_resume_run</code></li>
 <li id="evidence-fallback">降级后台线程到期后只恢复未隐藏且仍在 retry_waiting 的 run，先改 queued 再进入执行 <small>源码依据 · 作者核对</small><br/><code>task_dashboard/runtime/execution_runtime.py:302–332</code> · <code>_schedule_retry_waiting_fallback</code></li>
 <li id="evidence-backlink">原 run 记录恢复 run ID 与计划时间；此处不把原 run 改为 done <small>源码依据 · 作者核对</small><br/><code>task_dashboard/runtime/network_recovery.py:29–41</code> · <code>apply_network_resume_schedule</code></li></ol>
-<p><a class="callgraph-link" href="/?graph=qoreon-network-recovery">打开调用图，核对函数、调用点和源码 →</a></p></section>
-<footer class="page-footer"><a class="project-home-link" href="/?project=qoreon">← 项目目录 · Qoreon</a><a class="callgraph-link" href="/?graph=qoreon-network-recovery">查看调用图 →</a></footer></main></body></html>
+<p></p></section>
+<footer class="page-footer"><a class="project-home-link" href="/?project=qoreon">← 项目目录 · Qoreon</a></footer></main></body></html>

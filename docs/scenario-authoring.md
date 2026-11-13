@@ -7,8 +7,8 @@
 ## 交付与构建
 
 1. 在 `scenes/<slug>.mmd` 编写 Mermaid 时序图，在同名 `.json` 保存元数据。文件名用
-   小写字母、数字、连字符或下划线，不使用 `index`。现有示例为 `codex-message-roundtrip`
-   和 `codex-agent-turn`；两个文件应一起维护。
+   小写字母、数字、连字符或下划线，不使用 `index`。现有示例为 `codex-agent-turn`
+   和 `qoreon-network-recovery`；两个文件应一起维护。
 2. 运行 `npm run build:scenes`。共用渲染器生成 `public/scenes/<slug>.html`、场景目录和 `catalog.json`，
    无需手工登记目录，也不要修改生成后的 HTML。
 3. 运行 `npm run check:scenes` 检查数据与产物是否同步；提交 `.mmd`、元数据 JSON 与生成页面。

@@ -3,7 +3,7 @@
 <html lang="zh-CN" data-theme="editorial"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="description" content="一次用户回合可能包含多次模型请求。沿着历史输入、模型输出、工具结果和退出判断，理解为什么看到一段回答或一个工具完成后，Codex 还会继续。"/><title>模型、工具与回合结束 · 场景地图</title><link rel="stylesheet" href="/scenes/scenes.css"/></head>
 <body><main class="page">
-<nav class="page-nav" aria-label="页面导航"><a class="project-home-link" href="/?project=codex">← 项目目录 · Codex</a><a href="/scenes/index.html#project-codex">场景目录</a><a class="callgraph-link" href="/?graph=codex-end-to-end-agent-loop">查看调用图 →</a></nav>
+<nav class="page-nav" aria-label="页面导航"><a class="project-home-link" href="/?project=codex">← 项目目录 · Codex</a><a href="/scenes/index.html#project-codex">场景目录</a></nav>
 <header><p class="kicker">Codex · EXECUTION SEQUENCE</p><h1>模型、工具与回合结束</h1><p class="lead">一次用户回合可能包含多次模型请求。沿着历史输入、模型输出、工具结果和退出判断，理解为什么看到一段回答或一个工具完成后，Codex 还会继续。</p>
 <dl class="scope"><div><dt>开始 → 结束</dt><dd>普通 Agent 回合已开始 → 正常任务返回，收尾并发布回合完成事件。</dd></div><div><dt>本页范围</dt><dd>模型流、工具结果续跑、回合中压缩、停止钩子；具体工具、取消与错误恢复见调用图。</dd></div><div><dt>阅读提示</dt><dd>泳道表示职责，不表示独立进程。工具可能并发；纵向只表达已确认的依赖，不表达完成速度。</dd></div></dl></header>
 <section aria-labelledby="sequence-heading"><div class="figure-heading"><h2 id="sequence-heading">执行时序</h2><p>按语义展开 · 窄屏可横向滚动</p></div>
@@ -79,5 +79,5 @@
 <li id="evidence-e4">模型流结束与工具收集 <small>依据分类未标注</small><br/><code>codex-rs/core/src/session/turn.rs:2211</code> · <code>try_run_sampling_request / drain_in_flight</code><br/><code>codex-rs/core/src/session/turn.rs:2501</code> · <code>try_run_sampling_request / drain_in_flight</code><br/><code>codex-rs/core/src/session/turn.rs:2698</code> · <code>try_run_sampling_request / drain_in_flight</code><br/><code>codex-rs/core/src/session/turn.rs:2116</code> · <code>try_run_sampling_request / drain_in_flight</code></li>
 <li id="evidence-e5">工具派发与并发运行 <small>依据分类未标注</small><br/><code>codex-rs/core/src/stream_events_utils.rs:321</code> · <code>handle_output_item_done / ToolCallRuntime</code><br/><code>codex-rs/core/src/tools/parallel.rs:75</code> · <code>handle_output_item_done / ToolCallRuntime</code></li>
 <li id="evidence-e6">正常任务返回后发出回合完成事件 <small>依据分类未标注</small><br/><code>codex-rs/core/src/tasks/mod.rs:580</code> · <code>on_task_finished / EventMsg::TurnComplete</code><br/><code>codex-rs/core/src/tasks/mod.rs:803</code> · <code>on_task_finished / EventMsg::TurnComplete</code></li></ol>
-<p><a class="callgraph-link" href="/?graph=codex-end-to-end-agent-loop">打开调用图，核对函数、调用点和源码 →</a></p></section>
-<footer class="page-footer"><a class="project-home-link" href="/?project=codex">← 项目目录 · Codex</a><a class="callgraph-link" href="/?graph=codex-end-to-end-agent-loop">查看调用图 →</a></footer></main></body></html>
+<p></p></section>
+<footer class="page-footer"><a class="project-home-link" href="/?project=codex">← 项目目录 · Codex</a></footer></main></body></html>

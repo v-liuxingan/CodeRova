@@ -11,7 +11,7 @@ const root = resolve(import.meta.dirname, "..");
 const readJson = async (path) => JSON.parse(await readFile(resolve(root, path), "utf8"));
 const schema = await readJson("schema/sequence-scene.schema.json");
 const metadataSchema = await readJson("schema/mermaid-scene.schema.json");
-const metadata = await readJson("scenes/codex-message-roundtrip.json");
+const metadata = await readJson("tests/fixtures/scene-metadata.json");
 delete metadata.participantRoles;
 const source = `sequenceDiagram
     participant client as 客户端
@@ -97,10 +97,10 @@ assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1"), /缺少消
 assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1\nopt test"), /只能标注下一条/);
 assert.throws(() => parseMermaid("sequenceDiagram\n%% @evidence e1,\nA->>B: test"), /依据注释格式/);
 assert.throws(() => compileMermaidScene({ ...metadata, participantRoles: [] }, "sequenceDiagram\n%% @evidence nonexistent\nA->>B: test", schema, metadataSchema, "missing.mmd"), /missing.mmd:2:.*不存在/);
-const blocks = scenes.filter(({ slug }) => ["codex-message-roundtrip", "codex-agent-turn"].includes(slug))
+const blocks = scenes.filter(({ slug }) => slug === "codex-agent-turn")
   .flatMap(({ scene }) => [...walkBlocks(scene.body)]);
-assert.equal(blocks.filter((b) => b.type === "message").length, 26, "curated migration retains every message");
-assert.equal(blocks.filter((b) => b.type === "note").length, 9);
+assert.equal(blocks.filter((b) => b.type === "message").length, 16, "curated migration retains every message");
+assert.equal(blocks.filter((b) => b.type === "note").length, 6);
 
 const temp = await mkdtemp(resolve(tmpdir(), "callgraph-mermaid-test-"));
 try {

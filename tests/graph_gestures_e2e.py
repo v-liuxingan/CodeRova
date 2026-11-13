@@ -44,12 +44,16 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    page.locator('#canvas').focus();page.keyboard.press('ArrowLeft')
    expect(page.locator('#selection-title')).to_have_text('function0')
    page.keyboard.press('ArrowRight')
+   expect(page.locator('#selection-title')).to_have_text('function0 → function2')
+   page.keyboard.press('ArrowRight')
    expect(page.locator('#selection-title')).to_have_text('function2')
    page.keyboard.press('ArrowUp')
    expect(page.locator('#selection-title')).to_have_text('function1')
    page.keyboard.press('ArrowDown')
    expect(page.locator('#selection-title')).to_have_text('function2')
    page.locator('#canvas').focus();page.keyboard.press('ArrowLeft')
+   expect(page.locator('#selection-title')).to_have_text('function0 → function2')
+   page.keyboard.press('ArrowLeft')
    expect(page.locator('#selection-title')).to_have_text('function0')
    page.locator('#node-center').focus();page.keyboard.press('ArrowDown')
    expect(page.locator('#selection-title')).to_have_text('function0')
@@ -58,9 +62,28 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    page.locator('#filter').fill('')
    # Buttons use precisely the same spatial neighbors as arrow keys.
    expect(page.locator('#node-left')).to_be_disabled()
-   for button,title in [('right','function2'),('up','function1'),('down','function2'),('left','function0')]:
+   for button,title in [('right','function0 → function2'),('right','function2'),('up','function1'),('down','function2'),('left','function0 → function2'),('left','function0')]:
     page.locator('#node-'+button).click();page.evaluate('window.__viewport.navigationIdle()')
     expect(page.locator('#selection-title')).to_have_text(title)
+   # Automatic editor navigation applies equally to edge keys and node buttons.
+   opened=[]
+   def source_link(route):
+    opened.append(route.request.post_data_json)
+    route.fulfill(json={'uri':'#source-test','path':'main.rs','line':1,'column':1})
+   page.route('**/api/open',source_link)
+   page.locator('.editor-settings > summary').click();page.locator('#click-source').click()
+   page.keyboard.press('Escape');page.locator('#canvas').focus();page.keyboard.press('ArrowRight')
+   expect(page.locator('#selection-title')).to_have_text('function0 → function2')
+   expect(page.locator('#open-source')).to_be_enabled()
+   assert len(opened)==1 and opened[-1]['targetType']=='edge',opened
+   page.locator('#canvas').focus();page.keyboard.press('Space');page.evaluate('window.__viewport.navigationIdle()')
+   assert len(opened)==1,'centering must not relaunch the editor'
+   page.locator('#node-right').click();page.evaluate('window.__viewport.navigationIdle()')
+   expect(page.locator('#open-source')).to_be_enabled()
+   assert len(opened)==2 and opened[-1]['targetType']=='node',opened
+   page.locator('.editor-settings > summary').click();page.locator('#click-source').click();page.keyboard.press('Escape')
+   for _ in range(2):page.locator('#node-left').click();page.evaluate('window.__viewport.navigationIdle()')
+   expect(page.locator('#selection-title')).to_have_text('function0');assert len(opened)==2
    # Space and the center button produce the same camera position without zooming.
    zoom=page.evaluate('window.__testGraph.getZoom()')
    page.evaluate('window.__viewport.pan()');page.locator('#canvas').focus();page.keyboard.press('Space')
@@ -79,10 +102,10 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    page.evaluate('window.__viewport.holdNextSelection()')
    page.locator('#canvas').focus();page.keyboard.press('ArrowRight')
    page.wait_for_function('()=>typeof window.__releaseNavigation==="function"')
-   expect(page.locator('#selection-title')).to_have_text('function2')
+   expect(page.locator('#selection-title')).to_have_text('function0 → function2')
    page.keyboard.press('ArrowDown');page.locator('#filter').focus()
    page.evaluate('window.__releaseNavigation()');page.evaluate('window.__viewport.navigationIdle()')
-   expect(page.locator('#selection-title')).to_have_text('function2')
+   expect(page.locator('#selection-title')).to_have_text('function0 → function2')
    page.evaluate('window.__viewport.select("n0")')
    page.evaluate('window.__viewport.ready()')
    # Fit the small fixture so a real native Shift-brush can enclose nodes.

@@ -28,7 +28,7 @@ import { PathWindow } from './path-window.js';
 import { indexGraph } from './graph-index.js';
 import { edgeLanes, edgePorts } from './edge-lanes.js';
 import { RenderWindow, viewportBounds, containsBounds, mountDelta } from './render-window.js';
-import { directionalNeighbor } from './directional-navigation.js';
+import { directionalTarget } from './directional-navigation.js';
 import { CodeRovaApi, supportsCollection, isImplementationCandidate, symbolPresentation } from '../../public/js/api.js';
 
 const api = new CodeRovaApi({drafts:true});
@@ -501,10 +501,10 @@ async function openCall(parent, callId) {
   if (!edgeId) return;
   if (!graphIndex.edges.has(edgeId)) await redrawWindow(parent, true);
   if (version !== routeVersion || view !== renderer) return;
-  await select('edge', edgeId, true);
+  await select('edge', edgeId, true, true);
 }
 
-async function select(type, id, focus = false, clicked = false, keepSource = false) {
+async function select(type, id, focus = false, userInitiated = false, keepSource = false) {
   const data = current, slug = activeSlug, version = routeVersion, view = renderer;
   if (!data || slug !== wantedSlug || drawing) return;
   clearBatch();
@@ -577,7 +577,7 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
     const pathEdge=graphWindow.parents.get(id) == null ? null : (isIncoming(current) ? graphIndex.outgoing.get(id) : graphIndex.incoming.get(id))?.[0];
     const guide=readingGuide({graph:current,item,outgoing:graphWindow.source.outgoing.get(sourceId)||[],incoming,
       canCollect:canCollect(id),collect:()=>void collectNode(id),sourceEdge:pathEdge,caller:pathEdge && graphIndex.nodes.get(isIncoming(current)?pathEdge.to:pathEdge.from),
-      openEvidence:()=>void select('edge',pathEdge.id,false)});
+      openEvidence:()=>void select('edge',pathEdge.id,false,true)});
     $('node-actions-panel').prepend(guide.row);
     $('relations').append(guide.detail);
     // Share the canvas menu instead of maintaining a second editing surface.
@@ -605,17 +605,17 @@ async function select(type, id, focus = false, clicked = false, keepSource = fal
       for (const member of members) {
         const original = graphIndex.edges.get(member);
         const button = node('button', `调用点 ${original.file || ''}:${original.line || '—'}`);
-        button.addEventListener('click', () => { void select('edge', member); });
+        button.addEventListener('click', () => { void select('edge', member,false,true); });
         $('relations').append(button);
       }
     }
     for (const endpoint of [item.from, item.to]) {
       const target = graphIndex.nodes.get(endpoint);
       const button = node('button', `查看符号 ${target?.label || endpoint}`);
-      button.addEventListener('click', () => { void select('node', endpoint); }); $('relations').append(button);
+      button.addEventListener('click', () => { void select('node', endpoint,false,true); }); $('relations').append(button);
     }
   }
-  sourceNavigationController.select(current, slug, type, item.sourceId || id, clicked);
+  sourceNavigationController.select(current, slug, type, item.sourceId || id, userInitiated);
   $('source-location').textContent = item.file ? `${item.file}:${item.line}` : '无精确源码位置';
   if(keepSource)return;
   sourceRequest?.abort(); sourceRequest = new AbortController();
@@ -886,7 +886,7 @@ $('coverage').addEventListener('toggle', () => {
 $('filter').addEventListener('input', () => tree.filter($('filter').value));
 $('symbols').addEventListener('change', async () => {
   if (!$('symbols').value) { clearSelection(); return; }
-  await select('node', $('symbols').value, true);
+  await select('node', $('symbols').value, true, true);
 });
 $('fit').addEventListener('click', () => { void fitLogicalGraph(); });
 let resizeFrame, resizingSidebar = false;
@@ -929,14 +929,15 @@ try {
   } else status('尚无调用图。点击“新建图”选择源码入口。');
 } catch (error) { status(error.message, true); }
 
+function navigableSelection(id) { return graphIndex?.nodes.has(id) || graphIndex?.edges.has(id); }
 function navigationPoints(view=renderer) {
   return (paintWindow?.data.nodes || []).map(n=>{const [x,y]=view.getViewportByCanvas([n.style.x,n.style.y]);return {id:n.id,x,y};});
 }
 function updateNavigationButtons() {
   const id=$('canvas').dataset.selection;
-  const valid=renderer && graphIndex?.nodes.has(id);
+  const valid=renderer && navigableSelection(id);
   const points=valid?navigationPoints():[];
-  for(const [button,key] of Object.entries(directionControls)) $(button).disabled=!valid || batchSelected.size>0 || !directionalNeighbor(points,id,key);
+  for(const [button,key] of Object.entries(directionControls)) $(button).disabled=!valid || batchSelected.size>0 || !directionalTarget(points,graphIndex,id,key);
   $('node-center').disabled=!valid;
 }
 let directionalTask = false, pendingDirection = null;
@@ -955,19 +956,20 @@ async function moveDirection(key, keyboard=false) {
       const {key:direction,keyboard:requiresFocus}=pendingDirection;pendingDirection=null;
       if((requiresFocus && !canvasFocused()) || version!==routeVersion || view!==renderer || loading || drawing || draggingNode || !$('edge-context-menu').hidden)break;
       const id=$('canvas').dataset.selection;
-      if(!graphIndex?.nodes.has(id))break;
+      if(!navigableSelection(id))break;
       if(direction==='Center') {
-        if(!mountedIds.has(id))await mountAt(id);
+        const edge=graphIndex.edges.get(id), renderId=edge ? renderedEdge.get(id)||id : id;
+        if(!mountedIds.has(renderId))await mountAt(edge ? edge.from : id);
         if(version!==routeVersion || view!==renderer)break;
-        await view.focusElement(id,false);await refreshViewport(true);
+        await view.focusElement(renderId,false);await refreshViewport(true);
         continue;
       }
       if(batchSelected.size)break;
       const points=navigationPoints(view);
-      const next=directionalNeighbor(points,id,direction);
+      const next=directionalTarget(points,graphIndex,id,direction);
       if(!next)continue;
-      await select('node',next,true);
-      if($('canvas').dataset.selection!==next)break;
+      await select(next.type,next.id,true,true);
+      if($('canvas').dataset.selection!==next.id)break;
     }
   } finally {pendingDirection=null;directionalTask=false;updateNavigationButtons();}
 }
@@ -979,12 +981,12 @@ $('canvas').addEventListener('keydown', event => {
   if(event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing)return;
   if(event.key==='Escape') {clearBatch();return;}
   if(event.code==='Space' || event.key===' ') {
-    if(!graphIndex?.nodes.has($('canvas').dataset.selection))return;
+    if(!navigableSelection($('canvas').dataset.selection))return;
     event.preventDefault();event.stopPropagation();
     if(!event.repeat)void moveDirection('Center',true);
     return;
   }
-  if(!['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key) || !graphIndex?.nodes.has($('canvas').dataset.selection))return;
+  if(!['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key) || !navigableSelection($('canvas').dataset.selection))return;
   event.preventDefault();event.stopPropagation();
   if(!batchSelected.size && (!event.repeat || !directionalTask))void moveDirection(event.key,true);
 });

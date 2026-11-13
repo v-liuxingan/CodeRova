@@ -140,7 +140,6 @@
       ]
     }
   ],
-  "callgraph": "codex-end-to-end-agent-loop",
   "participantRoles": [
     {
       "id": "turn",

@@ -4,12 +4,14 @@ import { dirname, basename, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { validateScene, walkBlocks } from "../frontend/scenes/validate.mjs";
 import { renderScene, wrapText, GENERATED_MARKER } from "../frontend/scenes/render.mjs";
-import { buildScenes, loadScenes } from "../scripts/build_scenes.mjs";
+import { buildScenes } from "../scripts/build_scenes.mjs";
 import { compileMermaidScene } from "../frontend/scenes/mermaid.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const schema = JSON.parse(await readFile(resolve(root, "schema/sequence-scene.schema.json"), "utf8"));
-const base = (await loadScenes()).find(({ slug }) => slug === "codex-message-roundtrip").scene;
+const base = { ...JSON.parse(await readFile(resolve(root, "tests/fixtures/scene-metadata.json"), "utf8")),
+  participants: [{id:"solo",label:"Fixture"}],
+  body: [{type:"message",from:"solo",to:"solo",kind:"call",label:"Request",evidence:["e1"]}] };
 const message = (from = "solo", to = from) => ({ type: "message", from, to, kind: "call", label: "执行操作" });
 
 function fixtures() {

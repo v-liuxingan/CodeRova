@@ -19,11 +19,11 @@
     <button id="toggle-inspector" class="sidebar-handle sidebar-handle-right" aria-expanded="true" aria-controls="source-inspector" aria-label="收起证据栏" title="收起证据栏"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
     <section class="heading"><div><h1 id="title">选择一个调用图</h1></div>    <div id="edit-bar" hidden class="edit-bar" aria-label="图修改"><span id="edit-state" role="status">已保存</span><button id="restore-hidden" hidden>恢复隐藏</button><button id="discard-edits" disabled>放弃修改</button><button id="save-edits" class="primary" disabled>保存</button></div></section>
     <div class="workbench-toolbar">
-    <div class="node-toolbar" role="toolbar" aria-label="节点导航">
+    <div class="node-toolbar" role="toolbar" aria-label="节点与调用边导航">
       <div class="node-search">
     <select id="symbols" data-native aria-label="搜索并选择节点"></select>
 </div>
-      <div class="node-stepper"><button id="node-left" title="向左节点（方向键）" aria-label="向左节点" aria-keyshortcuts="ArrowLeft"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 5-5 5 5 5"/></svg></button><button id="node-up" title="向上节点（方向键）" aria-label="向上节点" aria-keyshortcuts="ArrowUp"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></button><button id="node-center" title="居中当前节点（空格）" aria-keyshortcuts="Space">居中当前节点</button><button id="node-down" title="向下节点（方向键）" aria-label="向下节点" aria-keyshortcuts="ArrowDown"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button><button id="node-right" title="向右节点（方向键）" aria-label="向右节点" aria-keyshortcuts="ArrowRight"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></button></div>
+      <div class="node-stepper"><button id="node-left" title="向左移动（方向键）" aria-label="向左移动" aria-keyshortcuts="ArrowLeft"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m12 5-5 5 5 5"/></svg></button><button id="node-up" title="向上移动（方向键）" aria-label="向上移动" aria-keyshortcuts="ArrowUp"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></button><button id="node-center" title="居中当前项（空格）" aria-keyshortcuts="Space">居中当前项</button><button id="node-down" title="向下移动（方向键）" aria-label="向下移动" aria-keyshortcuts="ArrowDown"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button><button id="node-right" title="向右移动（方向键）" aria-label="向右移动" aria-keyshortcuts="ArrowRight"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 5 5-5 5"/></svg></button></div>
     </div>
     <div class="graph-controls" aria-label="图展示范围">
       <button id="fit" disabled>适应画布</button>
@@ -34,10 +34,10 @@
       <select data-search="false" id="window-unit" aria-label="展开单位"><option value="nodes">个节点</option><option value="layers" selected>层调用</option></select></div></div>
       <p id="window-help">点击节点展开时使用此范围，原始调用数据保留。</p>
       <p id="batch-selection-info">Shift 拖动框选，拖动选中节点一起移动；Esc 取消框选。</p>
-      <p id="canvas-keyboard-help">画布聚焦时：方向键移向对应方向的邻近节点；该方向没有节点则停留。空格居中当前节点，多选时方向键不跳转。</p>
+      <p id="canvas-keyboard-help">画布聚焦时：方向键移向邻近节点，相连节点之间先停在调用边；边上继续移动到对应端点。无候选时停留。空格居中当前项或边，多选时方向键不跳转。</p>
       <div class="settings-footer"><button id="apply-window">重置视图<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button></div>
       </div></details>
-      <details class="editor-settings"><summary>源码跳转</summary><div class="editor-settings-body">      <button id="click-source" type="button" aria-pressed="false" title="开启后，点击节点或精确调用连线时打开编辑器">点击跳转：关</button>
+      <details class="editor-settings"><summary>源码跳转</summary><div class="editor-settings-body">      <button id="click-source" type="button" aria-pressed="false" title="开启后，点击、方向键或导航按钮选中节点与精确调用边时自动打开编辑器">自动跳转：关</button>
       <select data-search="false" id="source-editor" aria-label="源码编辑器" title="源码跳转使用的编辑器；IDEA 需注册 idea:// 协议"><option value="vscode">VS Code</option><option value="idea">IntelliJ IDEA</option></select>
 </div></details>
       <details id="lsp-settings" class="lsp-settings"><summary><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2" y="2" width="12" height="5" rx="1.5"/><rect x="2" y="9" width="12" height="5" rx="1.5"/><path d="M4 4.5h1M4 11.5h1M8 4.5h4M8 11.5h4"/></svg>语言服务器</summary><div class="lsp-settings-body" role="group" aria-labelledby="lsp-panel-title">

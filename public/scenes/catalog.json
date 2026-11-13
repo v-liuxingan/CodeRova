@@ -8,15 +8,7 @@
       "projectLabel": "Codex",
       "title": "模型、工具与回合结束",
       "summary": "一次用户回合可能包含多次模型请求。沿着历史输入、模型输出、工具结果和退出判断，理解为什么看到一段回答或一个工具完成后，Codex 还会继续。",
-      "callgraph": "codex-end-to-end-agent-loop"
-    },
-    {
-      "slug": "codex-message-roundtrip",
-      "projectId": "codex",
-      "projectLabel": "Codex",
-      "title": "用户消息如何穿过 Codex 并回到界面",
-      "summary": "沿着一次新消息，看清请求如何进入执行核心，以及执行事实如何通过通知回到界面。关键边界是请求回复、Core 事件和线程消费。",
-      "callgraph": "codex-end-to-end-agent-loop"
+      "callgraph": null
     },
     {
       "slug": "qoreon-network-recovery",
@@ -24,7 +16,7 @@
       "projectLabel": "Qoreon",
       "title": "Qoreon：网络失败后如何重试与安排恢复",
       "summary": "一次 CLI 执行失败后，运行时区分认证和网络错误，尝试即时重试，并在必要时为同一会话创建延迟恢复 run。重点区分原任务的失败与后续恢复任务的等待。",
-      "callgraph": "qoreon-network-recovery"
+      "callgraph": null
     }
   ]
 }

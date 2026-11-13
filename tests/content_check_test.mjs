@@ -18,6 +18,11 @@ try {
   const build = () => buildScenes({ sourceDir: resolve(root, "scenes"), outputDir: resolve(root, "public/scenes") });
   await build();
   const options = { root, project: "test", graphValidator: () => ({ valid: true, warnings: [], errors: [] }) };
+  await mkdir(resolve(root, "graphs/.annotations-example"));
+  await save("graphs/.annotations-example/history.json", "{");
+  const isolated = await checkContent({ root, graphValidator: () => { throw new Error("Runtime state must not be validated as a graph"); } });
+  assert.equal(isolated.graphs, 0);
+  assert.equal(isolated.valid, true);
   assert.equal((await checkContent(options)).valid, true);
   assert.equal((await checkContent({ ...options, snapshot: true })).valid, true);
   const baseline = await readFile(resolve(root, "evidence/baselines/test.json"), "utf8");

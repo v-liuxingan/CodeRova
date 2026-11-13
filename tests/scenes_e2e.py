@@ -165,48 +165,13 @@ def main():
             page.emulate_media(media="screen")
         static.close()
 
-        # Simulate the retired scenario service failing: callgraphs must still load.
-        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        # Standalone scenes remain readable without private callgraph data.
+        context = browser.new_context()
         page = context.new_page()
-        errors = []
-        scenario_requests = []
-        page.on("pageerror", lambda error: errors.append(str(error)))
-        page.on("request", lambda request: scenario_requests.append(request.url)
-                if "/api/scenarios" in request.url else None)
-        page.route("**/api/scenarios**", lambda route: route.abort())
-        page.goto(f"{BASE_URL}/scenes/qoreon-network-recovery.html")
-        page.locator(".page-nav .callgraph-link").click()
-        page.wait_for_selector(".graph-node")
-        assert page.locator(".graph-option.active").get_attribute("data-slug") == "qoreon-network-recovery"
-        response = page.request.post(f"{BASE_URL}/api/preview", data={
-            "graph": "qoreon-network-recovery", "targetType": "node", "id": "schedule",
-        })
-        assert response.status == 200
-        assert "_schedule_network_resume_run" in response.text()
-        page.goto(f"{BASE_URL}/scenes/codex-message-roundtrip.html")
-        page.locator(".page-nav .callgraph-link").click()
-        page.wait_for_selector(".graph-node")
-        assert page.locator(".graph-option.active").get_attribute("data-slug") == (
-            "codex-end-to-end-agent-loop"
-        )
-        assert page.locator(".workspace").get_attribute("data-workspace-view") == "code"
-        assert page.locator("#phase-navigator, #architecture-scenario-navigator").count() == 0
-        assert page.locator(".source-stepper").is_visible()
-        page.locator('#reading-switcher a[href="/?scene=codex-message-roundtrip"]').click()
-        page.wait_for_url("**/?scene=codex-message-roundtrip")
-        page.go_back()
-        page.wait_for_selector(".graph-node")
-        assert page.locator(".graph-option.active").get_attribute("data-slug") == (
-            "codex-end-to-end-agent-loop"
-        )
-        page.goto(f"{BASE_URL}/?graph=unknown-scene-graph")
-        page.wait_for_selector(".graph-node")
-        page.wait_for_function(
-            "() => document.querySelector('#toast-region').textContent.includes('调用图不存在')"
-        )
-        assert page.locator(".graph-option.active").count() == 1
-        assert not scenario_requests, scenario_requests
-        assert not errors, errors
+        for slug in SCENES:
+            page.goto(f"{BASE_URL}/scenes/{slug}.html")
+            assert page.locator("svg.sequence").is_visible()
+            assert page.locator(".page-nav .callgraph-link").count() == 0
         context.close()
         browser.close()
     print("Standalone scene E2E OK: no-JS reading, geometry, CSP, navigation, API isolation")

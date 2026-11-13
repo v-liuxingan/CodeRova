@@ -16,3 +16,18 @@ assert.equal(next(nodes.map(n=>({...n,x:n.x*.001,y:n.y*.001})),'center','ArrowDo
 assert.equal(next(rotated,'center','ArrowDown'),'right','use actual screen direction');
 assert.equal(next(nodes.filter(n=>n.id!=='right'),'center','ArrowRight'),null,'excluded nodes cannot become targets');
 console.log('Directional navigation PASS: all directions, boundaries, overlaps, diagonal rejection, ties and path identity');
+
+const {directionalTarget}=await import('./directional-navigation.js');
+const {indexGraph}=await import('./graph-index.js');
+const edge={id:'call',from:'center',to:'right'};
+const index=indexGraph({nodes,edges:[edge]});
+assert.deepEqual(directionalTarget(nodes,index,'center','ArrowRight'),{type:'edge',id:'call'});
+assert.deepEqual(directionalTarget(nodes,index,'call','ArrowRight'),{type:'node',id:'right'});
+assert.deepEqual(directionalTarget(nodes,index,'right','ArrowLeft'),{type:'edge',id:'call'});
+assert.deepEqual(directionalTarget(nodes,index,'call','ArrowLeft'),{type:'node',id:'center'});
+assert.equal(directionalTarget(nodes,index,'call','ArrowUp'),null);
+assert.deepEqual(directionalTarget(nodes,index,'center','ArrowDown'),{type:'node',id:'down'});
+const reverse=indexGraph({nodes,edges:[{...edge,from:'right',to:'center'}]});
+assert.deepEqual(directionalTarget(nodes,reverse,'center','ArrowRight'),{type:'edge',id:'call'});
+assert.equal(directionalTarget(nodes.filter(n=>n.id!=='right'),index,'call','ArrowRight'),null);
+console.log('Node-edge-node navigation: both directions, reverse calls, siblings and missing endpoints PASS');

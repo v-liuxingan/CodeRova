@@ -12,6 +12,8 @@ async function filesIn(dir, recursive = false) {
   const entries = await readdir(dir, { withFileTypes: true });
   const result = [];
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    // Match the library: dot-prefixed directories hold private runtime state.
+    if (recursive && entry.isDirectory() && entry.name.startsWith(".")) continue;
     if (entry.isFile()) result.push(resolve(dir, entry.name));
     else if (recursive && entry.isDirectory()) result.push(...await filesIn(resolve(dir, entry.name), true));
   }

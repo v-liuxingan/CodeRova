@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {sourceNavigation} from './source-navigation.js';
+class Control extends EventTarget { setAttribute() {} click(){this.dispatchEvent(new Event('click'));} }
+const toggle=new Control(),button=new Control(), launched=[],requests=[],errors=[];
+const api={buildSourceLink:(slug,type,id)=>new Promise((resolve,reject)=>requests.push({slug,type,id,resolve,reject}))};
+const nav=sourceNavigation({api,toggle,button,notify:(message,error)=>{if(error)errors.push(message);},launch:uri=>launched.push(uri)});
+const graph={nodes:['a','b','c'].map(id=>({id,file:'source.rs',line:1})),edges:[{id:'ab',from:'a',to:'b',file:'source.rs',line:2},{id:'unknown',from:'a',to:'b',callSiteStatus:'unavailable'}]};
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+nav.select(graph,'demo','node','a',true);assert.equal(requests.length,0);
+toggle.click();nav.select(graph,'demo','edge','ab',true);assert.equal(requests[0].type,'edge');
+nav.select(graph,'demo','node','b',true);nav.select(graph,'demo','node','c',true);
+requests[0].resolve({uri:'old'});await flush();assert.deepEqual(launched,[]);
+assert.equal(requests.length,2);assert.equal(requests[1].id,'c');
+requests[1].resolve({uri:'current'});await flush();assert.deepEqual(launched,['current']);
+nav.select(graph,'demo','node','a',true);toggle.click();toggle.click();
+requests[2].resolve({uri:'cancelled'});await flush();assert.deepEqual(launched,['current']);
+nav.select(graph,'demo','edge','unknown',true);assert.equal(requests.length,3);assert(button.hidden);
+nav.select(graph,'demo','node','a');assert.equal(requests.length,3,'passive refresh does not launch');
+button.click();requests[3].resolve({uri:'manual'});await flush();assert.deepEqual(launched,['current','manual']);
+nav.select(graph,'demo','node','b',true);nav.clear();requests[4].reject(new Error('stale'));await flush();assert.deepEqual(errors,[]);
+console.log('Source navigation: latest selection wins, toggle cancellation, exact edges, passive refresh and manual open PASS');

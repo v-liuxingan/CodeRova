@@ -155,7 +155,6 @@
       ]
     }
   ],
-  "callgraph": "qoreon-network-recovery",
   "reading": [
     {
       "title": "关闭即时重试不等于停止恢复",

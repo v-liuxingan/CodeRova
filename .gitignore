@@ -14,8 +14,6 @@ __pycache__/
 !/graphs/AGENTS.md
 !/graphs/project/
 !/graphs/project/callgraph-visualizer-graph-loading.json
-!/graphs/project/callgraph-visualizer-interaction-loop.json
-!/graphs/project/callgraph-visualizer-source-evidence.json
 !/graphs/analysis/
 !/graphs/analysis/callgraph-v2-validation.json
 /tests/artifacts/codex-startup/
