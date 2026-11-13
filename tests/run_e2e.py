@@ -38,6 +38,8 @@ def main():
    run(sys.executable,str(ROOT/'frontend/workbench/display-settings_e2e.py'))
    run(sys.executable,str(ROOT/'tests/reading_guide_e2e.py'))
    run(sys.executable,str(ROOT/'tests/viewport_performance_e2e.py'))
+   run(sys.executable,str(ROOT/'frontend/workbench/viewport-anchor_e2e.py'))
+   run(sys.executable,str(ROOT/'frontend/workbench/toolbar-disclosure_e2e.py'))
    run(sys.executable,str(ROOT/'tests/graph_gestures_e2e.py'))
    run(sys.executable,str(ROOT/'tests/batch_node_actions_e2e.py'))
    run(sys.executable,str(ROOT/'tests/incoming_e2e.py'))

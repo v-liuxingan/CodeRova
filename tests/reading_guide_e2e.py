@@ -126,6 +126,7 @@ with tempfile.TemporaryDirectory(prefix='reading-guide-',dir=ROOT/'target') as d
    page.screenshot(path=str(artifacts/'unified-node-search.png'))
    for theme,width in [('light',1440),('dark',390)]:
     page.set_viewport_size({'width':width,'height':960});select_option(page,'#appearance',theme)
+    if page.locator('#graph-toolbar').is_hidden():page.locator('#toggle-toolbar').click()
     wrapper.locator('.ts-control').click();field.fill('SearchOwner');page.wait_for_timeout(250)
     page.screenshot(path=str(artifacts/f'node-search-{theme}-{width}.png'))
     assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth')

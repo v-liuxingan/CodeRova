@@ -22,6 +22,17 @@ impl Semantics {
             Language::Java => Self::Java(JavaSymbols::default()),
         }
     }
+    pub async fn caller_declaration(
+        &mut self,
+        session: &Client,
+        root: &Path,
+        item: &mut CallHierarchyItem,
+    ) -> Result<(), String> {
+        if let Self::Java(java) = self {
+            java.caller_declaration(session, root, item).await?;
+        }
+        Ok(())
+    }
     pub async fn describe(
         &mut self,
         session: &Client,

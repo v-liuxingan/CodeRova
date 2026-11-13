@@ -99,6 +99,8 @@ with tempfile.TemporaryDirectory(prefix='resume-',dir=ROOT/'target') as tmp:
    assert not page.evaluate("Object.keys(localStorage).some(k=>k.startsWith('callgraph:loaded-result:'))")
    with page.expect_event('dialog') as dialog:page.evaluate('setTimeout(()=>location.reload(),0)')
    assert dialog.value.type=='beforeunload';dialog.value.dismiss()
+   expect(page.locator('#graph-toolbar')).to_be_visible()
+   if not page.locator('#graph-details').evaluate('(el)=>el.open'):page.locator('#graph-details > summary').click()
    page.once('dialog',lambda dialog:dialog.accept());page.locator('#resume-discard').click()
    expect(page.locator('#active-collection')).to_be_hidden()
    expect(page.locator('#save-edits')).to_be_disabled();assert output.read_bytes()==original

@@ -19,6 +19,12 @@
 
 操作与升级细节见[使用手册](docs/skills/callgraph-workbench/SKILL.md)和[配置与备份](docs/skills/callgraph-workbench/references/configuration.md)。
 
+## 递归调用示例
+
+源码版启动后，在 CodeRova 默认项目的「项目自身」中打开「递归调用：直接递归与相互递归」，或访问 `/?graph=recursive-calls`。图包含 4 个方法、6 个调用点，展示两处自调用和两个方法之间的相互递归。节点说明解释递减参数与退出条件，点击连线可核验调用源码。
+
+随附源码：[examples/recursion.rs](examples/recursion.rs)，运行 `cargo run --example recursion` 可验证示例正常结束。图由 rust-analyzer 实际采集，浏览示例无需启动语言服务器；继续采集需要配置 rust-analyzer。
+
 ## 页面预览
 
 **创建入口** — 输入想理解的流程，从项目内源码建立调用图。

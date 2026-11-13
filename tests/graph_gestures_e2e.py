@@ -154,6 +154,8 @@ window.__viewport={fit:fitLogicalGraph,select:id=>select('node',id,true),pan:asy
    assert page.evaluate('window.__testGraph.getElementDataByState("node","batch-selected").length')==0
    assert page.evaluate('window.__testGraph.getNodeData().every(n=>!window.__testGraph.context.element.getElement(n.id).getShape("key").attributes.lineDash?.length)')
    page.set_viewport_size({'width':390,'height':844})
+   expect(page.locator('#graph-toolbar')).to_be_hidden()
+   page.locator('#toggle-toolbar').click()
    page.locator('#display-settings > summary').click()
    expect(page.locator('#canvas-keyboard-help')).to_be_visible()
    page.wait_for_function("()=>{const b=document.getElementById('canvas-keyboard-help').getBoundingClientRect();return b.top>=0 && b.bottom<=innerHeight;}")

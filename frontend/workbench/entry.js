@@ -5,6 +5,8 @@ import { projectLsp } from './project-lsp.js';
 import { toolbarPopover } from '../components/toolbar-popover.js';
 import { newGraph, connectProject } from './new-graph.js';
 import { sidebarWidths } from './sidebar-widths.js';
+import { viewportAnchor } from './viewport-anchor.js';
+import { toolbarDisclosure } from './toolbar-disclosure.js';
 import { sourceNavigation } from './source-navigation.js';
 import { relationList } from './relation-list.js';
 import { readingGuide } from './reading-guide.js';
@@ -258,6 +260,7 @@ async function drain() {
             enable:()=>!loading&&!drawing&&!draggingNode},
           { type: 'drag-element', state:'batch-selected', enable: event => !gesture?.shift && !gesture?.branchAction && !branchAction(event) }],
       });
+      canvasAnchor.reset(renderer);
       const createdView = renderer;
       renderer.on('aftertransform', scheduleViewport);
       renderer.on('aftertransform', contextMenu.close);
@@ -348,6 +351,7 @@ async function refreshVisibility({view,version,screen,anchor}=visibilityViewport
   const point = paintWindow.data.nodes.find(n => n.id === anchor)?.style || {x:0,y:0};
   const nextRect=$('canvas').getBoundingClientRect(), next=view.getViewportByCanvas([point.x,point.y]);
   await view.translateBy([screen[0]-next[0]-nextRect.left,screen[1]-next[1]-nextRect.top],false);
+  canvasAnchor.reset(view);
   scheduleViewport();
 }
 async function hideNode(id) {
@@ -894,14 +898,15 @@ $('symbols').addEventListener('change', async () => {
   await select('node', $('symbols').value, true, true);
 });
 $('fit').addEventListener('click', () => { void fitLogicalGraph(); });
+toolbarDisclosure($('toggle-toolbar'), $('graph-toolbar'));
+const canvasAnchor = viewportAnchor($('canvas'));
 let resizeFrame, resizingSidebar = false;
 function scheduleCanvasResize() {
   cancelAnimationFrame(resizeFrame);
-  if (resizingSidebar) return;
   resizeFrame = requestAnimationFrame(() => {
-    if (changingVisibility || resizingSidebar) return;
-    renderer?.resize();
-    scheduleViewport();
+    if (changingVisibility || loading) return;
+    canvasAnchor.update(renderer, !resizingSidebar);
+    if (!resizingSidebar) scheduleViewport();
   });
 }
 sidebarWidths(document.querySelector('.workspace'), { library:$('resize-library'), inspector:$('resize-inspector') }, {
@@ -916,6 +921,9 @@ sidebarWidths(document.querySelector('.workspace'), { library:$('resize-library'
 const creator = newGraph(api, result => location.assign(`/?graph=${encodeURIComponent(result.slug)}&collect=1`));
 
 new ResizeObserver(scheduleCanvasResize).observe($('canvas'));
+// On narrow screens the library sits above the reader: collapsing it moves the
+// canvas without changing its dimensions, so ResizeObserver alone cannot see it.
+new MutationObserver(scheduleCanvasResize).observe(document.querySelector('.workspace'), { attributes:true, attributeFilter:['class'] });
 window.addEventListener('popstate', () => navigate(new URL(location.href).searchParams.get('graph') || catalog[0]?.slug, false));
 try {
   const [graphs, health] = await Promise.all([api.listGraphs(), api.health()]);

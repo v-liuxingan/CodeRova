@@ -75,6 +75,7 @@ with sync_playwright() as p:
   assert title.evaluate('(el)=>getComputedStyle(el).whiteSpace')=='nowrap'
   assert trigger.bounding_box()['width']==28
   trigger.click();expect(row.locator('[popover]')).to_be_visible();page.keyboard.press('Escape')
+  if page.locator('#graph-toolbar').is_hidden():page.locator('#toggle-toolbar').click()
   page.locator('.editor-settings > summary').click()
   page.locator('[data-select-id="source-editor"] .ts-control').click()
   option=page.locator('[data-select-id="source-editor"] .option[data-value="idea"]')

@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix='display-settings-',dir=ROOT/'target') a
    except AssertionError:raise AssertionError((errors,page.locator('#status').inner_text()))
    for theme,width in [('light',1440),('dark',1440),('light',390),('dark',390)]:
     page.set_viewport_size({'width':width,'height':960});select_option(page,'#appearance',theme)
+    if page.locator('#graph-toolbar').is_hidden():page.locator('#toggle-toolbar').click()
     panel=page.locator('#display-settings');trigger=panel.locator(':scope > summary')
     trigger.click();expect(panel).to_have_attribute('open','')
     for selector in ['#settings-title','#window-help','.settings-shortcuts h3','#batch-selection-info dd','#canvas-keyboard-help dd']:

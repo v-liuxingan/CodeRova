@@ -140,7 +140,15 @@ async fn query_inner(
         let calls: Vec<CallHierarchyIncomingCall> =
             super::decode_hierarchy(value).map_err(|e| format!("无效反向调用层级：{e}"))?;
         facts.complete = true;
-        for call in calls {
+        for mut call in calls {
+            if let Err(error) = semantics
+                .caller_declaration(client, root, &mut call.from)
+                .await
+            {
+                facts.complete = false;
+                facts.issue(error);
+                continue;
+            }
             // incoming ranges belong to the returned caller, never to the query item.
             if let Err(error) = super::validate_ranges(&call.from, &call.from_ranges) {
                 facts.complete = false;

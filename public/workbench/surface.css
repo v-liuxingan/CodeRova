@@ -147,3 +147,14 @@ footer { padding:9px 20px;background:var(--panel);font-size:11px; }
   .node-stepper button { min-height:40px; }
   #node-actions-panel button { min-height:36px; }
 }
+
+/* One disclosure in the title row; collapsed controls leave no empty toolbar. */
+#toggle-toolbar { display:inline-flex;align-items:center;gap:6px;flex:none;min-height:32px;padding:5px 9px;color:var(--muted);background:transparent;border-color:var(--line);font-size:12px; }
+#toggle-toolbar[aria-expanded=false] svg { transform:rotate(180deg); }
+#graph-toolbar[hidden] { display:none; }
+.heading > div:first-child { overflow:hidden; }
+.heading h1 { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+@media(max-width:800px), (max-height:650px) {
+  .heading { padding:10px 16px;gap:8px;align-items:center; }
+  .heading h1 { font-size:16px; }
+}
