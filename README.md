@@ -19,6 +19,20 @@
 
 操作与升级细节见[使用手册](docs/skills/callgraph-workbench/SKILL.md)和[配置与备份](docs/skills/callgraph-workbench/references/configuration.md)。
 
+## 节点直达
+
+节点详情操作栏支持“复制节点链接”。打开 `/?graph=<图标识>&node=<节点ID>` 后自动展开到节点并居中，刷新仍可直达。链接只包含图和符号标识，不包含本机源码路径；共享方法会定位到该符号的一条路径。
+
+命令行可生成或打开同一链接（先启动服务，图文件须在该服务的资料库中）：
+
+```sh
+coderova link graphs/project/recursive-calls.json --node lsp-4dec4e1420330011 --base-url http://127.0.0.1:4317/ --launch
+```
+
+去掉 `--launch` 只输出链接；已有 `coderova open` 仍用于源码 URI。
+
+源码运行时将 `coderova` 替换成 `cargo run --`。`--base-url` 默认端口为 4317，使用其他端口时传入实际地址；命令不会自动启动服务。草稿新增节点须保存后再分享，节点删除或 ID 变化后需重新复制链接。localhost 链接仅在当前电脑有效。更多边界见[节点直达操作手册](docs/skills/callgraph-workbench/references/workbench.md#节点直达与复制链接)。
+
 ## 递归调用示例
 
 源码版启动后，在 CodeRova 默认项目的「项目自身」中打开「递归调用：直接递归与相互递归」，或访问 `/?graph=recursive-calls`。图包含 4 个方法、6 个调用点，展示两处自调用和两个方法之间的相互递归。节点说明解释递减参数与退出条件，点击连线可核验调用源码。

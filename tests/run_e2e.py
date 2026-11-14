@@ -13,6 +13,7 @@ def main():
  run('cargo','build','--quiet','--target-dir',str(target))
  binary=(target/'debug'/('coderova.exe' if os.name=='nt' else 'coderova')).resolve()
  env['CALLGRAPH_TEST_BINARY']=str(binary)
+ run(sys.executable,str(ROOT/'tests/node_link_cli_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_analysis_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_adapter_test.py'))
  run(sys.executable,str(ROOT/'tests/lsp_session_test.py'))
@@ -35,6 +36,7 @@ def main():
      with urlopen(env['CALLGRAPH_TEST_URL']+'/api/health',timeout=1):break
     except OSError:time.sleep(.1)
    run(sys.executable,str(ROOT/'tests/e2e_visualizer.py'))
+   run(sys.executable,str(ROOT/'frontend/workbench/node-link_e2e.py'))
    run(sys.executable,str(ROOT/'tests/component_controls_e2e.py'))
    run(sys.executable,str(ROOT/'frontend/workbench/display-settings_e2e.py'))
    run(sys.executable,str(ROOT/'tests/reading_guide_e2e.py'))

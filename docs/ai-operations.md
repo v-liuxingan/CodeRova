@@ -24,6 +24,20 @@
 
 ## 不依赖浏览器的客户端
 
+### 交付到具体节点的链接
+
+从 `GET /api/graphs` 获取真实 slug，再从 `GET /api/graphs/{slug}` 的 `nodes[].id` 获取持久化节点 ID，构造 `/?graph=<URL 编码的 slug>&node=<URL 编码的 ID>`。不要用节点名称或画布中的临时路径引用 ID。打开后自动展开路径并居中，不触发 LSP 或外部编辑器。
+
+本地也可通过 CLI 生成链接：
+
+```sh
+coderova link graphs/project/recursive-calls.json --node lsp-4dec4e1420330011 --base-url http://127.0.0.1:4317/
+```
+
+仅在用户需要打开页面时追加 `--launch`。该命令不启动服务；目标服务须包含该图，端口取实际运行值。未保存的新节点须先按授权保存，否则链接无法恢复草稿。缺失节点会提示，图重命名或节点 ID 变化后应重新生成链接。共享节点链接定位到符号的一条路径，不承诺恢复某个调用位置。完整操作说明见 [节点直达](skills/callgraph-workbench/references/workbench.md#节点直达与复制链接)。
+
+### HTTP 自动化客户端
+
 `scripts/atlas_agent.py` 使用 Python 标准库，输出 JSON，不出现交互确认。
 
 ```powershell

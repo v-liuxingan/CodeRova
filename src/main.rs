@@ -19,6 +19,16 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// 生成调用图节点直达链接；--launch 使用系统浏览器打开（服务须已启动）
+    Link {
+        graph: PathBuf,
+        #[arg(long)]
+        node: String,
+        #[arg(long, default_value = "http://127.0.0.1:4317/")]
+        base_url: String,
+        #[arg(long)]
+        launch: bool,
+    },
     /// 通过 Rust / Java LSP 生成项目内静态调用图（不覆盖已有文件）
     Analyze {
         #[arg(long, default_value = "callgraph.projects.json")]
@@ -106,6 +116,12 @@ async fn main() -> ExitCode {
         public: PathBuf::from("public"),
         layouts: PathBuf::from("layouts"),
     }) {
+        Commands::Link {
+            graph,
+            node,
+            base_url,
+            launch,
+        } => node_link_command(&graph, &node, &base_url, launch),
         Commands::Analyze {
             config,
             project,
@@ -216,6 +232,60 @@ fn validate_command(graph_path: &Path, config_path: &Path, json: bool) -> Result
     } else {
         Err(format!("校验失败，共 {} 个错误", report.errors.len()))
     }
+}
+
+fn node_link_command(
+    graph_path: &Path,
+    node_id: &str,
+    base: &str,
+    launch: bool,
+) -> Result<(), String> {
+    let graph = read_graph_file(graph_path)?;
+    if !graph.nodes.iter().any(|node| node.id == node_id) {
+        return Err("节点不存在".into());
+    }
+    let slug = graph_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or("图文件名无效")?;
+    let mut url = url::Url::parse(base).map_err(|_| "服务地址无效")?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("服务地址必须是无凭据的 HTTP(S) 地址".into());
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.query_pairs_mut()
+        .append_pair("graph", slug)
+        .append_pair("node", node_id);
+    println!("{url}");
+    if launch {
+        // CLI-only user action. Arguments never pass through a shell.
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            use std::os::windows::process::CommandExt;
+            let mut command = std::process::Command::new("rundll32.exe");
+            command
+                .arg("url.dll,FileProtocolHandler")
+                .creation_flags(0x08000000);
+            command
+        };
+        #[cfg(target_os = "macos")]
+        let mut command = std::process::Command::new("open");
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let mut command = std::process::Command::new("xdg-open");
+        let status = command
+            .arg(url.as_str())
+            .status()
+            .map_err(|e| format!("无法打开浏览器：{e}"))?;
+        if !status.success() {
+            return Err("浏览器启动失败，请手动打开上方链接".into());
+        }
+    }
+    Ok(())
 }
 
 fn open_command(

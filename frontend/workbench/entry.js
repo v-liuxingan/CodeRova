@@ -11,6 +11,7 @@ import { sourceNavigation } from './source-navigation.js';
 import { relationList } from './relation-list.js';
 import { readingGuide } from './reading-guide.js';
 import { nodePicker } from './node-picker.js';
+import { nodeLink } from './node-link.js';
 import { collectionDialog } from './collection-dialog.js';
 import { editSession } from './edit-session.js';
 import { entryPicker } from './entry-picker.js';
@@ -207,7 +208,7 @@ async function navigate(slug, history = true) {
   wantedSlug = slug; routeVersion++;
   sourceRequest?.abort();
   if (history) {
-    const url = new URL(location.href); url.searchParams.set('graph', slug);
+    const url = new URL(location.href); url.searchParams.set('graph', slug); url.searchParams.delete('node');
     window.history.pushState({}, '', url);
   }
   renderCatalog();
@@ -321,7 +322,7 @@ async function drain() {
       $('fit').disabled = false;
       status('');
       clearSelection();
-      if(!focusAfterLoad)void select('node',data.root,false,false,false,false);
+      if(!focusAfterLoad)await select('node',data.root,false,false,false,false);
     }
   } catch (error) {
     status(`画布加载失败：${error.message}`, true);
@@ -588,6 +589,15 @@ async function select(type, id, focus = false, userInitiated = false, keepSource
       canCollect:canCollect(id),collect:()=>void collectNode(id),sourceEdge:pathEdge,caller:pathEdge && graphIndex.nodes.get(isIncoming(current)?pathEdge.to:pathEdge.from),
       openEvidence:()=>void select('edge',pathEdge.id,false,true)});
     $('node-actions-panel').prepend(guide.row);
+    const copyLink = node('button', undefined, 'inspector-more');
+    copyLink.type = 'button'; copyLink.title = '复制节点链接';
+    copyLink.setAttribute('aria-label', '复制节点链接');
+    copyLink.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1" transform="translate(1 1) scale(.9)"/></svg>';
+    copyLink.onclick = async () => {
+      try { await navigator.clipboard.writeText(nodeLink(location.href, slug, sourceId)); status('节点链接已复制'); }
+      catch { status('无法写入剪贴板，请允许浏览器访问剪贴板后重试。', true); }
+    };
+    $('node-actions-panel').append(copyLink);
     $('relations').append(guide.detail);
     // Share the canvas menu instead of maintaining a second editing surface.
     const more=node('button',undefined,'inspector-more');more.type='button';
@@ -924,7 +934,22 @@ new ResizeObserver(scheduleCanvasResize).observe($('canvas'));
 // On narrow screens the library sits above the reader: collapsing it moves the
 // canvas without changing its dimensions, so ResizeObserver alone cannot see it.
 new MutationObserver(scheduleCanvasResize).observe(document.querySelector('.workspace'), { attributes:true, attributeFilter:['class'] });
-window.addEventListener('popstate', () => navigate(new URL(location.href).searchParams.get('graph') || catalog[0]?.slug, false));
+async function followNodeLink() {
+  const url = new URL(location.href), id = url.searchParams.get('node');
+  if (!id || activeSlug !== url.searchParams.get('graph') || loading) return;
+  if (!graphWindow?.source.nodes.has(id)) { status('链接中的节点不存在，可能已被删除或图已更新。', true); return; }
+  // Reveal only this path, including previously hidden ancestors in this session.
+  const occurrence = graphWindow.reveal(id);
+  const hidden = hiddenNodes.get(activeSlug);
+  for (let next = occurrence; next != null; next = graphWindow.parents.get(next)) hidden?.delete(graphWindow.nodes.get(next)?.sourceId);
+  await redrawWindow();
+  if (location.href !== url.href) return;
+  await select('node', occurrence, true);
+}
+window.addEventListener('popstate', async () => {
+  await navigate(new URL(location.href).searchParams.get('graph') || catalog[0]?.slug, false);
+  await followNodeLink();
+});
 try {
   const [graphs, health] = await Promise.all([api.listGraphs(), api.health()]);
   catalog = graphs; names = new Map((health.projects || []).map(p => [p.id, p.name]));
@@ -933,6 +958,7 @@ try {
   const slug = new URL(location.href).searchParams.get('graph') || catalog[0]?.slug;
   if (slug) {
     await navigate(slug, false);
+    await followNodeLink();
     const url = new URL(location.href);
     if (url.searchParams.has('collect')) {
       url.searchParams.delete('collect'); history.replaceState(null, '', url);
